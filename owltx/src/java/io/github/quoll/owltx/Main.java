@@ -1,4 +1,4 @@
-package org.mulgara.owltx;
+package io.github.quoll.owltx;
 
 import org.semanticweb.owlapi.apibinding.OWLManager;
 import org.semanticweb.owlapi.dlesyntax.DLESyntaxStorer;

@@ -205,13 +205,13 @@ AT_IMPORT     : '@import'    ;
 DOMAIN : 'domain' ;
 RANGE  : 'range'  ;
 
-// Textbook role-axiom keywords — must precede NAME
-TRANS : 'Trans' ;
-FUNC  : 'Func'  ;
-REF   : 'Ref'   ;
-IRREF : 'Irref' ;
-SYM   : 'Sym'   ;
-ASYM  : 'Asym'  ;
+// Textbook role-axiom keywords — must precede NAME; full-word forms accepted too
+TRANS : 'Trans'       | 'Transitive'  ;
+FUNC  : 'Func'        | 'Functional'  ;
+REF   : 'Ref'         | 'Reflexive'   ;
+IRREF : 'Irref'       | 'Irreflexive' ;
+SYM   : 'Sym'         | 'Symmetric'   ;
+ASYM  : 'Asym'        | 'Asymmetric'  ;
 DISJ  : 'Disj'  ;
 
 // Boolean literals — must precede NAME

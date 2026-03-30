@@ -791,10 +791,10 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
      * than a class in a restriction with role {@code propName}.
      */
     private boolean isPredicateName(String propName, String fillerName) {
-        // Data property fillers are data ranges, never predicates
-        if (dataPropertyNames.contains(propName)) return false;
-        // Explicitly declared predicate
+        // Explicitly declared predicates take priority over property type
         if (predicateNames.contains(fillerName)) return true;
+        // Data property fillers that are not predicates are data ranges
+        if (dataPropertyNames.contains(propName)) return false;
         // Already known as a property (shouldn't be a filler, but guard anyway)
         if (objectPropertyNames.contains(fillerName) || dataPropertyNames.contains(fillerName)) return false;
         // Prefixed names (e.g. owl:Thing, xsd:string) are never predicates
