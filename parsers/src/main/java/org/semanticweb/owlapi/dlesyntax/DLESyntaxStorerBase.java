@@ -6,7 +6,10 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.PrintWriter;
 import java.nio.charset.StandardCharsets;
+import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Map;
 import java.util.Set;
 
 import javax.annotation.Nullable;
@@ -31,6 +34,20 @@ import org.semanticweb.owlapi.util.DefaultPrefixManager;
  */
 public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
 
+    /** Prefix/namespace pairs that are implicit in every DLE file and need not be declared. */
+    static final Map<String, String> DLE_DEFAULT_PREFIXES;
+    static {
+        Map<String, String> m = new HashMap<>();
+        m.put(":",     "http://quoll.github.io/DLe/ontology#");
+        m.put("dle:",  "http://quoll.github.io/DLe/vocab#");
+        m.put("owl:",  "http://www.w3.org/2002/07/owl#");
+        m.put("rdf:",  "http://www.w3.org/1999/02/22-rdf-syntax-ns#");
+        m.put("rdfs:", "http://www.w3.org/2000/01/rdf-schema#");
+        m.put("xsd:",  "http://www.w3.org/2001/XMLSchema#");
+        m.put("xml:",  "http://www.w3.org/XML/1998/namespace");
+        DLE_DEFAULT_PREFIXES = Collections.unmodifiableMap(m);
+    }
+
     private final DLESyntaxObjectRenderer renderer = new DLESyntaxObjectRenderer();
 
     // Per-storeOntology state: tracks which annotation assertions have already been
@@ -40,6 +57,9 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
     @Nullable private PrefixDocumentFormat currentPrefixFormat;
     // Set to true when getRendering returns "" so endWritingAxiom suppresses the blank line.
     private boolean lastRenderingEmpty = false;
+    // Set to true whenever an axiom renders to non-empty content for the current entity.
+    // endWritingAxioms emits a blank-line separator only when this is true.
+    private boolean entityHadContent = false;
 
     @Override
     protected void storeOntology(OWLOntology o, PrintWriter printWriter, OWLDocumentFormat outputFormat) {
@@ -66,6 +86,7 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
 
     @Override
     protected void beginWritingAxioms(OWLEntity entity, PrintWriter writer) {
+        entityHadContent = false;
         // Suppress internal dle: entities — their labels are embedded inline in expressions.
         if (entity.getIRI().toString().startsWith(DLESyntaxAxiomVisitor.DLE_NS)) {
             // Mark their annotations as written to prevent re-emission later.
@@ -84,6 +105,14 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
                 endWritingAxiom(writer);
             }
         });
+    }
+
+    @Override
+    protected void endWritingAxioms(PrintWriter writer) {
+        if (entityHadContent) {
+            writer.println();
+            entityHadContent = false;
+        }
     }
 
     @Override
@@ -125,7 +154,7 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
         } catch (IOException e) {
             throw new IllegalStateException("Failed to read DLE syntax header resource: " + e.getMessage(), e);
         }
-        writer.println();
+        // The header resource already ends with a blank line; no extra println() needed.
 
         // Emit ontology/version/import declarations if present.
         OWLOntologyID id = ontology.getOntologyID();
@@ -142,11 +171,18 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
             writer.println();
         }
 
-        // Emit prefix declarations so the file is self-contained for parsing.
+        // Emit prefix declarations that differ from the DLE defaults.
+        // The six standard prefixes are implicit in every DLE file and need not be repeated.
         if (currentPrefixFormat != null) {
-            currentPrefixFormat.getPrefixName2PrefixMap().forEach((prefix, iri) ->
-                writer.println("@prefix " + prefix + " <" + iri + ">"));
-            writer.println();
+            long[] count = {0};
+            currentPrefixFormat.getPrefixName2PrefixMap().forEach((prefix, iri) -> {
+                String defaultIri = DLE_DEFAULT_PREFIXES.get(prefix);
+                if (defaultIri == null || !defaultIri.equals(iri)) {
+                    writer.println("@prefix " + prefix + " <" + iri + ">");
+                    count[0]++;
+                }
+            });
+            if (count[0] > 0) writer.println();
         }
 
         // Emit predicate definitions (rdf:value annotations with '→') near the top,
@@ -172,15 +208,22 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
 
     @Override
     protected String getRendering(@Nullable OWLEntity subject, OWLAxiom axiom) {
-        // Suppress declarations for dle: internal classes (they only appear via their labels).
+        // Declaration axioms carry no DL content and the base renderer produces ""
+        // for them, which would cause a spurious blank line from endWritingAxiom.
         if (axiom instanceof OWLDeclarationAxiom) {
-            OWLEntity e = ((OWLDeclarationAxiom) axiom).getEntity();
-            if (e.getIRI().toString().startsWith(DLESyntaxAxiomVisitor.DLE_NS)) {
-                lastRenderingEmpty = true;
-                return "";
-            }
+            lastRenderingEmpty = true;
+            return "";
+        }
+        // Suppress all axioms in the entity block of dle: internal classes —
+        // their content (EquivalentClasses, rdfs:label) is either rendered inline
+        // elsewhere or is an internal implementation detail.
+        if (subject != null && subject.getIRI().toString().startsWith(DLESyntaxAxiomVisitor.DLE_NS)) {
+            lastRenderingEmpty = true;
+            return "";
         }
         lastRenderingEmpty = false;
-        return renderer.render(axiom);
+        String rendered = renderer.render(axiom);
+        if (!rendered.isEmpty()) entityHadContent = true;
+        return rendered;
     }
 }

@@ -5,19 +5,12 @@
 # Annotations (lines beginning with @):
 #
 # @label <IRI> "text"  — display name of the resource
-#
 # @doc <IRI> "text"  — description of the resource
-#
 # @db <IRI> "name"  — resource appears explicitly in the database and is queried using this label
-#
 # @storage <IRI> "text"  — describes database storage details
-#
 # @ann <IRI> <annotation-property> "text"  — annotation using the given property
-#
 # @prefix <prefix>: <namespace>  — declares a prefix
-#
 # @import <IRI>  — imports another ontology
-#
 # @ontology <IRI>  — declares the ontology IRI
 #
 # IRIs:
@@ -25,8 +18,6 @@
 # - Unprefixed names (e.g., Application) are in the default namespace (:Application)
 #
 # DLe extensions:
-#
 # ≝  — defines a symbol or predicate; right-hand side is not DL
-#
 # ∃r₁,…,rₙ.P  — predicate restriction: role values r₁,…,rₙ satisfy predicate P
 

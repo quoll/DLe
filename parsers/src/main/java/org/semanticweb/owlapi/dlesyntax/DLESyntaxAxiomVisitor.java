@@ -33,6 +33,7 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
     /** Prefix map: pre-populated with standard prefixes, extended by {@code @prefix} declarations. */
     private final Map<String, String> prefixes = new LinkedHashMap<String, String>() {{
         put(":",     "http://quoll.github.io/DLe/ontology#");
+        put("dle:",  DLE_NS);
         put("owl:",  "http://www.w3.org/2002/07/owl#");
         put("rdf:",  "http://www.w3.org/1999/02/22-rdf-syntax-ns#");
         put("rdfs:", "http://www.w3.org/2000/01/rdf-schema#");
@@ -822,9 +823,6 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
         String prefix = "\u2203".equals(quantifier) ? "E_" : "A_";
         IRI classIRI = IRI.create(DLE_NS + prefix + String.format("%08x", expr.hashCode()));
         OWLClass dleClass = df.getOWLClass(classIRI);
-
-        // Lazily register the dle: prefix
-        prefixes.putIfAbsent("dle:", DLE_NS);
 
         // Declare class and annotate with its expression (addAxioms deduplicates)
         axioms.add(df.getOWLDeclarationAxiom(dleClass));
