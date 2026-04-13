@@ -16,7 +16,7 @@ import java.util.Map;
 /**
  * owltx: OWL syntax converter.
  *
- * Usage: owltx [--format <fmt>] <input-file> [<output-file>]
+ * Usage: {@code owltx [--format <fmt>] <input-file> [<output-file>]}
  *
  * If no output file is given, writes to stdout.
  * If no format is given, it is inferred from the output file extension,
