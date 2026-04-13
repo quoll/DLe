@@ -1,9 +1,7 @@
 # DLe — Description Logic (Extended)
-#
 # This document uses standard Description Logic (DL) syntax for ontology axioms, with the following extensions:
 #
 # Annotations (lines beginning with @):
-#
 # @label <IRI> "text"  — display name of the resource
 # @doc <IRI> "text"  — description of the resource
 # @db <IRI> "name"  — resource appears explicitly in the database and is queried using this label
@@ -19,5 +17,5 @@
 #
 # DLe extensions:
 # ≝  — defines a symbol or predicate; right-hand side is not DL
-# ∃r₁,…,rₙ.P  — predicate restriction: role values r₁,…,rₙ satisfy predicate P
+# ∃r₁,…,rₙ.P  — predicate restriction: P(r₁,…,rₙ) holds over the role values
 
