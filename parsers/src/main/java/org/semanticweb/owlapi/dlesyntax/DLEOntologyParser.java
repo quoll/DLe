@@ -68,11 +68,14 @@ public class DLEOntologyParser extends AbstractOWLParser {
             scanner.propagatePropertyTypes();
 
             // Pass 2 — axiom construction
+            // Fill the token stream so hidden comment tokens are available for retrieval.
+            tokens.fill();
             DLESyntaxAxiomVisitor visitor = new DLESyntaxAxiomVisitor(
                 ontology.getOWLOntologyManager().getOWLDataFactory(),
                 scanner.getObjectPropertyNames(),
                 scanner.getDataPropertyNames(),
-                scanner.getPredicateNames());
+                scanner.getPredicateNames(),
+                tokens);
             visitor.visit(tree);
 
             ontology.getOWLOntologyManager()

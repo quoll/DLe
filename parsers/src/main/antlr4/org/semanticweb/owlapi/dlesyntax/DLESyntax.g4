@@ -250,6 +250,6 @@ fragment NameStart : [a-zA-Z_] | '\u00C0'..'\u02FF' | '\u0370'..'\u037D'
 fragment NameChar : NameStart | [0-9] | '-' ;
 
 // Comments and whitespace
-LINE_COMMENT : '#' ~[\r\n]* -> skip ;
+LINE_COMMENT : '#' ~[\r\n]* -> channel(HIDDEN) ;
 WS           : [ \t\r\n]+   -> skip ;
 

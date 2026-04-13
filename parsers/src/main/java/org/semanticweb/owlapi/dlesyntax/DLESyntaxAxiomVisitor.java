@@ -8,6 +8,8 @@ import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
+import org.antlr.v4.runtime.CommonTokenStream;
+import org.antlr.v4.runtime.Token;
 import org.semanticweb.owlapi.model.*;
 import org.semanticweb.owlapi.vocab.OWLFacet;
 import org.semanticweb.owlapi.vocab.OWLRDFVocabulary;
@@ -22,6 +24,8 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
 
     /** IRI namespace for internally-generated predicate restriction classes. */
     static final String DLE_NS = "http://quoll.github.io/DLe/vocab#";
+    /** Annotation property IRI used to preserve DLE {@code #} comments through the OWL model. */
+    static final IRI DLE_COMMENT_IRI = IRI.create(DLE_NS + "comment");
     private static final IRI RDF_VALUE_IRI =
         IRI.create("http://www.w3.org/1999/02/22-rdf-syntax-ns#value");
 
@@ -29,6 +33,8 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
     private final Set<String> objectPropertyNames;
     private final Set<String> dataPropertyNames;
     private final Set<String> predicateNames;
+    /** Token stream used to retrieve hidden comment tokens; null means comments are not captured. */
+    private final CommonTokenStream tokenStream;
 
     /** Prefix map: pre-populated with standard prefixes, extended by {@code @prefix} declarations. */
     private final Map<String, String> prefixes = new LinkedHashMap<String, String>() {{
@@ -53,11 +59,13 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
     DLESyntaxAxiomVisitor(OWLDataFactory df,
                           Set<String> objectPropertyNames,
                           Set<String> dataPropertyNames,
-                          Set<String> predicateNames) {
+                          Set<String> predicateNames,
+                          CommonTokenStream tokenStream) {
         this.df = df;
         this.objectPropertyNames = objectPropertyNames;
         this.dataPropertyNames   = dataPropertyNames;
         this.predicateNames      = predicateNames;
+        this.tokenStream         = tokenStream;
     }
 
     List<OWLAxiom> getAxioms()        { return axioms; }
@@ -712,6 +720,91 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
     public OWLObject visitEmptyAtom(DLESyntaxParser.EmptyAtomContext ctx) {
         // () is an empty data range (no valid values)
         return df.getOWLDataOneOf();
+    }
+
+    // ── Comment capture ──────────────────────────────────────────────────────
+
+    /**
+     * For each statement, collect any hidden {@code #} comment tokens that immediately
+     * precede it and attach them as {@code dle:comment} annotation assertions on the
+     * first named entity referenced in the statement.
+     */
+    @Override
+    public OWLObject visitStatement(DLESyntaxParser.StatementContext ctx) {
+        OWLObject result = visitChildren(ctx);
+        if (tokenStream == null) return result;
+
+        List<Token> hidden = tokenStream.getHiddenTokensToLeft(
+            ctx.start.getTokenIndex(), Token.HIDDEN_CHANNEL);
+        if (hidden == null || hidden.isEmpty()) return result;
+
+        // Strip the file header: the initial contiguous block of comment lines that
+        // begins at line 1. The header is terminated by the first blank line (gap in
+        // line numbers) or by the first non-comment content. Because WS is skipped,
+        // blank lines appear as gaps between consecutive LINE_COMMENT line numbers.
+        int realStart = 0;
+        if (hidden.get(0).getLine() == 1) {
+            int prevLine = 0;
+            while (realStart < hidden.size()) {
+                int line = hidden.get(realStart).getLine();
+                if (realStart == 0 || line == prevLine + 1) {
+                    prevLine = line;
+                    realStart++;
+                } else {
+                    break; // blank line found — header ends before this token
+                }
+            }
+        }
+        hidden = hidden.subList(realStart, hidden.size());
+        if (hidden.isEmpty()) return result;
+
+        IRI subjectIRI = findFirstNameIRI(ctx);
+        if (subjectIRI == null) return result;
+
+        // Store the entire comment block as a single multi-line literal so that
+        // within-block order is preserved even after OWL axiom sorting.
+        StringBuilder sb = new StringBuilder();
+        for (Token tok : hidden) {
+            String text = tok.getText();
+            if (text.startsWith("#")) text = text.substring(1);
+            if (!text.isEmpty() && text.charAt(0) == ' ') text = text.substring(1);
+            if (sb.length() > 0) sb.append('\n');
+            sb.append(text);
+        }
+        if (sb.length() > 0) {
+            OWLAnnotationProperty commentProp = df.getOWLAnnotationProperty(DLE_COMMENT_IRI);
+            axioms.add(df.getOWLAnnotationAssertionAxiom(
+                commentProp, subjectIRI, df.getOWLLiteral(sb.toString())));
+        }
+        return result;
+    }
+
+    /** Returns the IRI of the first NAME or PREFIXED_NAME token in the statement, or null. */
+    private IRI findFirstNameIRI(DLESyntaxParser.StatementContext ctx) {
+        int start = ctx.start.getTokenIndex();
+        int stop  = ctx.stop != null ? ctx.stop.getTokenIndex() : start;
+        for (int i = start; i <= stop; i++) {
+            Token tok = tokenStream.get(i);
+            int type = tok.getType();
+            if (type == DLESyntaxLexer.NAME || type == DLESyntaxLexer.PREFIXED_NAME) {
+                return expandNameText(tok.getText());
+            }
+        }
+        return null;
+    }
+
+    /** Resolves a raw name token text (bare or prefixed) to a full IRI using the prefix map. */
+    private IRI expandNameText(String text) {
+        int colon = text.indexOf(':');
+        if (colon > 0) {
+            String prefix = text.substring(0, colon + 1);
+            String local  = text.substring(colon + 1);
+            String base   = prefixes.get(prefix);
+            if (base == null) return null;
+            return IRI.create(base + local);
+        }
+        String base = prefixes.getOrDefault(":", "");
+        return IRI.create(base + text);
     }
 
     // ── Private helpers ──────────────────────────────────────────────────────

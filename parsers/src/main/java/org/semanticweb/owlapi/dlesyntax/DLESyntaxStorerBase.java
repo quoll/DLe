@@ -96,8 +96,23 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
             }
             return;
         }
-        // Emit annotations for this entity inline, before its logical axioms.
         if (currentOntology == null || writtenAnnotations == null) return;
+
+        // Emit dle:comment annotations as # lines before the entity's logical axioms.
+        // Each annotation may contain a multi-line block (lines joined with \n).
+        currentOntology.annotationAssertionAxioms(entity.getIRI())
+            .filter(ax -> DLESyntaxAxiomVisitor.DLE_COMMENT_IRI.equals(ax.getProperty().getIRI()))
+            .sorted()
+            .forEach(ax -> {
+                if (writtenAnnotations.add(ax) && ax.getValue() instanceof OWLLiteral) {
+                    for (String line : ((OWLLiteral) ax.getValue()).getLiteral().split("\n", -1)) {
+                        writer.println("# " + line);
+                    }
+                    entityHadContent = true;
+                }
+            });
+
+        // Emit all other annotations for this entity inline, before its logical axioms.
         currentOntology.annotationAssertionAxioms(entity.getIRI()).sorted().forEach(ax -> {
             if (writtenAnnotations.add(ax)) {
                 beginWritingAxiom(writer);
@@ -127,10 +142,12 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
     protected void endWritingOntology(OWLOntology ontology, PrintWriter writer) {
         // Write any annotation assertions whose subject was not a named entity
         // in the ontology signature (e.g. annotations on external IRIs, blank nodes).
+        // dle:comment annotations are internal and are never emitted standalone.
         Set<OWLAnnotationAssertionAxiom> already = writtenAnnotations != null
             ? writtenAnnotations : new HashSet<>();
         ontology.axioms(AxiomType.ANNOTATION_ASSERTION).sorted()
             .filter(ax -> !already.contains(ax))
+            .filter(ax -> !DLESyntaxAxiomVisitor.DLE_COMMENT_IRI.equals(ax.getProperty().getIRI()))
             .forEach(ax -> {
                 beginWritingAxiom(writer);
                 writeAxiom(null, ax, writer);
@@ -220,6 +237,14 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
         if (subject != null && subject.getIRI().toString().startsWith(DLESyntaxAxiomVisitor.DLE_NS)) {
             lastRenderingEmpty = true;
             return "";
+        }
+        // dle:comment annotations are emitted as # lines in beginWritingAxioms — suppress here.
+        if (axiom instanceof OWLAnnotationAssertionAxiom) {
+            IRI propIRI = ((OWLAnnotationAssertionAxiom) axiom).getProperty().getIRI();
+            if (DLESyntaxAxiomVisitor.DLE_COMMENT_IRI.equals(propIRI)) {
+                lastRenderingEmpty = true;
+                return "";
+            }
         }
         lastRenderingEmpty = false;
         String rendered = renderer.render(axiom);
