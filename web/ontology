@@ -1,0 +1,14 @@
+@prefix : <http://quoll.github.io/DLe/ontology#> .
+@prefix dle: <http://quoll.github.io/DLe/vocab#> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+
+<http://quoll.github.io/DLe/ontology> a owl:Ontology ;
+                                      owl:versionIRI <http://quoll.github.io/DLe/ontologies/v1> .
+
+dle:comment a rdfs:Property ;
+            rdfs:domain rdf:Resource ;
+            rdfs:range rdf:Literal ;
+            rdfs:label "Comment" ;
+            rdfs:comment "A DLe syntactic comment. Attaches to the next resource in the DLe file" .
+
