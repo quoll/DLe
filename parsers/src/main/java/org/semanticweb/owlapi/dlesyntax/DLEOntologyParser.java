@@ -40,6 +40,9 @@ public class DLEOntologyParser extends AbstractOWLParser {
 
     private static final long serialVersionUID = 1L;
 
+    /** Creates a new instance of this parser. */
+    public DLEOntologyParser() {}
+
     @Override
     public OWLDocumentFormat parse(OWLOntologyDocumentSource source,
                                    OWLOntology ontology,

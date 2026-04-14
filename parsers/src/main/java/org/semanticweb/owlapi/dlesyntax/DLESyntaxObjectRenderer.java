@@ -75,11 +75,19 @@ import org.semanticweb.owlapi.vocab.OWLRDFVocabulary;
  */
 public class DLESyntaxObjectRenderer extends DLSyntaxObjectRenderer {
 
+    /** Creates a new renderer with no ontology or prefix manager set. */
+    public DLESyntaxObjectRenderer() {}
+
     @Nullable
     private PrefixManager prefixManager;
     @Nullable
     private OWLOntology ontology;
 
+    /**
+     * Sets the ontology used to resolve DLE-namespace IRIs back to their original labels.
+     *
+     * @param ontology the ontology to use for label lookup, or {@code null} to clear it
+     */
     public void setOntology(@Nullable OWLOntology ontology) {
         this.ontology = ontology;
     }
@@ -125,6 +133,8 @@ public class DLESyntaxObjectRenderer extends DLSyntaxObjectRenderer {
     /**
      * Sets the prefix manager used to produce short-form IRIs.
      * Also updates the parent's ShortFormProvider so entity rendering is consistent.
+     *
+     * @param pm the prefix manager to use, or {@code null} to clear it
      */
     public void setPrefixManager(@Nullable PrefixManager pm) {
         prefixManager = pm;

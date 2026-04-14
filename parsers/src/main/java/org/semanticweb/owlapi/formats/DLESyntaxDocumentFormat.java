@@ -10,6 +10,9 @@ package org.semanticweb.owlapi.formats;
  */
 public class DLESyntaxDocumentFormat extends PrefixDocumentFormatImpl {
 
+    /** Creates a new instance of this document format. */
+    public DLESyntaxDocumentFormat() {}
+
     @Override
     public String getKey() {
         return "DLE Syntax Format";

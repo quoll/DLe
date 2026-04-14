@@ -8,6 +8,9 @@ import org.semanticweb.owlapi.util.OWLDocumentFormatFactoryImpl;
  */
 public class DLESyntaxDocumentFormatFactory extends OWLDocumentFormatFactoryImpl {
 
+    /** Creates a new instance of this factory. */
+    public DLESyntaxDocumentFormatFactory() {}
+
     @Override
     public String getKey() {
         return "DLE Syntax Format";

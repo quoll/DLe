@@ -11,6 +11,9 @@ public class DLEOntologyParserFactory implements OWLParserFactory {
 
     private static final long serialVersionUID = 1L;
 
+    /** Creates a new instance of this factory. */
+    public DLEOntologyParserFactory() {}
+
     @Override
     public OWLParser createParser() {
         return new DLEOntologyParser();

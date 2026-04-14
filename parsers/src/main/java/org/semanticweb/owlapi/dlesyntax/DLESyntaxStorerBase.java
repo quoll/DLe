@@ -34,6 +34,9 @@ import org.semanticweb.owlapi.util.DefaultPrefixManager;
  */
 public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
 
+    /** Creates a new base storer instance. */
+    protected DLESyntaxStorerBase() {}
+
     /** Prefix/namespace pairs that are implicit in every DLE file and need not be declared. */
     static final Map<String, String> DLE_DEFAULT_PREFIXES;
     static {
@@ -48,17 +51,19 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
         DLE_DEFAULT_PREFIXES = Collections.unmodifiableMap(m);
     }
 
+    /** Renderer used to produce DLE syntax strings for axioms. */
     private final DLESyntaxObjectRenderer renderer = new DLESyntaxObjectRenderer();
 
-    // Per-storeOntology state: tracks which annotation assertions have already been
-    // written inline (next to their subject entity) so endWritingOntology can skip them.
+    /** Current ontology being stored; set for the duration of {@code storeOntology}. */
     @Nullable private OWLOntology currentOntology;
+    /** Annotation assertions already written inline; set for the duration of {@code storeOntology}. */
     @Nullable private Set<OWLAnnotationAssertionAxiom> writtenAnnotations;
+    /** Prefix format of the ontology being stored, if any. */
     @Nullable private PrefixDocumentFormat currentPrefixFormat;
-    // Set to true when getRendering returns "" so endWritingAxiom suppresses the blank line.
+    /** Set to true when {@code getRendering} returns {@code ""} so {@code endWritingAxiom} suppresses the blank line. */
     private boolean lastRenderingEmpty = false;
-    // Set to true whenever an axiom renders to non-empty content for the current entity.
-    // endWritingAxioms emits a blank-line separator only when this is true.
+    /** Set to true whenever an axiom renders to non-empty content for the current entity;
+     *  {@code endWritingAxioms} emits a blank-line separator only when this is true. */
     private boolean entityHadContent = false;
 
     @Override
