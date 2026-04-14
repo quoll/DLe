@@ -24,6 +24,9 @@ import java.util.Map;
  */
 public class Main {
 
+    /** Not instantiated. */
+    private Main() {}
+
     // Maps format name aliases (lowercase) to OWLDocumentFormat instances
     private static final Map<String, OWLDocumentFormat> FORMAT_BY_NAME = new HashMap<>();
 
@@ -84,6 +87,12 @@ public class Main {
         FORMAT_BY_EXT.put("tex",    latex);
     }
 
+    /**
+     * Entry point. Parses arguments and converts the input ontology to the requested format.
+     *
+     * @param args command-line arguments
+     * @throws Exception if the ontology cannot be loaded or written
+     */
     public static void main(String[] args) throws Exception {
         String formatName  = null;
         String inputFile   = null;
