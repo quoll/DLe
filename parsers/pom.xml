@@ -8,7 +8,7 @@
     <parent>
         <groupId>io.github.quoll.owlapi</groupId>
         <artifactId>dlextended-parent</artifactId>
-        <version>0.1</version>
+        <version>0.2</version>
         <relativePath>../pom.xml</relativePath>
     </parent>
 
@@ -43,6 +43,58 @@
 
     <build>
         <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-jar-plugin</artifactId>
+                <version>3.3.0</version>
+                <configuration>
+                    <archive>
+                        <manifestFile>${project.build.outputDirectory}/META-INF/MANIFEST.MF</manifestFile>
+                    </archive>
+                </configuration>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-javadoc-plugin</artifactId>
+                <configuration>
+                    <sourcepath>${project.build.sourceDirectory}:${project.build.directory}/generated-sources/antlr4</sourcepath>
+                    <sourceFileExcludes>
+                        <sourceFileExclude>**/DLESyntaxLexer.java</sourceFileExclude>
+                        <sourceFileExclude>**/DLESyntaxParser.java</sourceFileExclude>
+                        <sourceFileExclude>**/DLESyntaxBaseVisitor.java</sourceFileExclude>
+                        <sourceFileExclude>**/DLESyntaxVisitor.java</sourceFileExclude>
+                    </sourceFileExcludes>
+                </configuration>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.felix</groupId>
+                <artifactId>maven-bundle-plugin</artifactId>
+                <version>5.1.9</version>
+                <extensions>true</extensions>
+                <configuration>
+                    <instructions>
+                        <Bundle-SymbolicName>io.github.quoll.owlapi.dlextended</Bundle-SymbolicName>
+                        <Bundle-Name>DL Extended Syntax for OWLAPI</Bundle-Name>
+                        <Bundle-Version>${project.version}</Bundle-Version>
+                        <Export-Package>
+                            org.semanticweb.owlapi.dlesyntax,
+                            org.semanticweb.owlapi.formats
+                        </Export-Package>
+                        <Import-Package>
+                            org.semanticweb.owlapi.*;resolution:=optional,
+                            org.antlr.v4.runtime.*;resolution:=optional,
+                            *
+                        </Import-Package>
+                    </instructions>
+                </configuration>
+                <executions>
+                    <execution>
+                        <id>bundle-manifest</id>
+                        <phase>process-classes</phase>
+                        <goals><goal>manifest</goal></goals>
+                    </execution>
+                </executions>
+            </plugin>
             <plugin>
                 <groupId>org.antlr</groupId>
                 <artifactId>antlr4-maven-plugin</artifactId>

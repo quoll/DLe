@@ -1,3 +1,4 @@
 #!/bin/sh
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-exec java -jar "$SCRIPT_DIR/target/owltx-1.0-SNAPSHOT.jar" "$@"
+VERSION="$(cat "$SCRIPT_DIR/VERSION")"
+exec java -jar "$HOME/.m2/repository/io/github/quoll/owlapi/owltx/$VERSION/owltx-$VERSION.jar" "$@"

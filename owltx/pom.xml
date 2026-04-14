@@ -8,7 +8,7 @@
     <parent>
         <groupId>io.github.quoll.owlapi</groupId>
         <artifactId>dlextended-parent</artifactId>
-        <version>0.1</version>
+        <version>0.2</version>
         <relativePath>../pom.xml</relativePath>
     </parent>
 
@@ -38,6 +38,23 @@
         <sourceDirectory>src/java</sourceDirectory>
 
         <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-antrun-plugin</artifactId>
+                <version>3.1.0</version>
+                <executions>
+                    <execution>
+                        <id>write-version</id>
+                        <phase>generate-resources</phase>
+                        <goals><goal>run</goal></goals>
+                        <configuration>
+                            <target>
+                                <echo file="${project.basedir}/VERSION" append="false">${project.version}</echo>
+                            </target>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-shade-plugin</artifactId>
