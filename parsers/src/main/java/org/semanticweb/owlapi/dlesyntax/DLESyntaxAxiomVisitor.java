@@ -914,7 +914,7 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
         String expr = sb.toString();
 
         String prefix = "\u2203".equals(quantifier) ? "E_" : "A_";
-        IRI classIRI = IRI.create(DLE_NS + prefix + String.format("%08x", expr.hashCode()));
+        IRI classIRI = IRI.create(DLE_NS + prefix + predName + "_" + String.format("%08x", expr.hashCode()));
         OWLClass dleClass = df.getOWLClass(classIRI);
 
         // Declare class and annotate with its expression (addAxioms deduplicates)
