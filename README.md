@@ -5,6 +5,19 @@ It provides a compact, formal, and declarative way to describe ontologies, data 
 
 DLe is implemented as a module for [OWLAPI](https://github.com/owlcs/owlapi).
 
+## What is it?
+DLe is a "storer" and "parser" for the OWLAPI library.
+
+### How do I use it?
+This can be added to the ontology manager and used like any other syntax of OWL.
+
+Alternatively, if you have DLe installed (via Maven), then you can run it with the `owltx` utility.
+```bash
+$ mvn install
+$ cd owltx
+$ ./owltx /path/to/input/file.ofn /path/to/output/file.dle
+```
+
 ## What this is for
 
 DLe is intended as an interface language between ontologies and LLMs.
