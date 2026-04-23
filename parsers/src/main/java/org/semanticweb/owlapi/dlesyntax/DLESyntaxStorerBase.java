@@ -253,7 +253,11 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
         }
         lastRenderingEmpty = false;
         String rendered = renderer.render(axiom);
-        if (!rendered.isEmpty()) entityHadContent = true;
+        if (rendered.isEmpty()) {
+            lastRenderingEmpty = true;
+        } else {
+            entityHadContent = true;
+        }
         return rendered;
     }
 }

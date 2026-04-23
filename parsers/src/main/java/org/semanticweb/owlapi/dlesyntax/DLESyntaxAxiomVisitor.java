@@ -119,8 +119,13 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
         String body = ctx.DEFINED_AS_LINE().getText().substring(1).trim();
         String rdfValue = String.join(",", args) + " \u2192 " + body;  // → U+2192
 
+        String label = ctx.name(0).getText() + "(" + String.join(",", args) + ")";
+
         OWLAnnotationProperty predProp = df.getOWLAnnotationProperty(predicateIRI);
         axioms.add(df.getOWLDeclarationAxiom(predProp));
+        axioms.add(df.getOWLAnnotationAssertionAxiom(
+            df.getOWLAnnotationProperty(OWLRDFVocabulary.RDFS_LABEL.getIRI()),
+            predicateIRI, df.getOWLLiteral(label)));
         axioms.add(df.getOWLAnnotationAssertionAxiom(
             df.getOWLAnnotationProperty(RDF_VALUE_IRI),
             predicateIRI, df.getOWLLiteral(rdfValue)));
