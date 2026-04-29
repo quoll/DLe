@@ -21,6 +21,8 @@ import org.semanticweb.owlapi.model.OWLObjectHasValue;
 import org.semanticweb.owlapi.model.OWLObjectHasSelf;
 import org.semanticweb.owlapi.model.OWLNamedIndividual;
 import org.semanticweb.owlapi.model.OWLReflexiveObjectPropertyAxiom;
+import org.semanticweb.owlapi.model.OWLSubDataPropertyOfAxiom;
+import org.semanticweb.owlapi.model.OWLSubObjectPropertyOfAxiom;
 import org.semanticweb.owlapi.model.OWLSubPropertyChainOfAxiom;
 import org.semanticweb.owlapi.model.OWLTransitiveObjectPropertyAxiom;
 import org.semanticweb.owlapi.model.IRI;
@@ -599,6 +601,24 @@ public class DLESyntaxObjectRenderer extends DLSyntaxObjectRenderer {
         write(renderEntity(axiom.getProperty()));
         write(" range ");
         write(shortFormIRI(axiom.getRange()));
+    }
+
+    @Override
+    public void visit(OWLSubObjectPropertyOfAxiom axiom) {
+        axiom.getSubProperty().accept(this);
+        write(" ");
+        write(DLSyntax.SUBCLASS);
+        write(" ");
+        axiom.getSuperProperty().accept(this);
+    }
+
+    @Override
+    public void visit(OWLSubDataPropertyOfAxiom axiom) {
+        axiom.getSubProperty().accept(this);
+        write(" ");
+        write(DLSyntax.SUBCLASS);
+        write(" ");
+        axiom.getSuperProperty().accept(this);
     }
 
     @Override
