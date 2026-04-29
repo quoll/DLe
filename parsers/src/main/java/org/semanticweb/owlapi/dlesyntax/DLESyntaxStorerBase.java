@@ -117,6 +117,17 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
                 }
             });
 
+        // Emit dle:inlineComment annotations as # lines (same treatment as dle:comment).
+        currentOntology.annotationAssertionAxioms(entity.getIRI())
+            .filter(ax -> DLESyntaxAxiomVisitor.DLE_INLINE_COMMENT_IRI.equals(ax.getProperty().getIRI()))
+            .sorted()
+            .forEach(ax -> {
+                if (writtenAnnotations.add(ax) && ax.getValue() instanceof OWLLiteral) {
+                    writer.println("# " + ((OWLLiteral) ax.getValue()).getLiteral());
+                    entityHadContent = true;
+                }
+            });
+
         // Emit all other annotations for this entity inline, before its logical axioms.
         currentOntology.annotationAssertionAxioms(entity.getIRI()).sorted().forEach(ax -> {
             if (writtenAnnotations.add(ax)) {
@@ -152,7 +163,8 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
             ? writtenAnnotations : new HashSet<>();
         ontology.axioms(AxiomType.ANNOTATION_ASSERTION).sorted()
             .filter(ax -> !already.contains(ax))
-            .filter(ax -> !DLESyntaxAxiomVisitor.DLE_COMMENT_IRI.equals(ax.getProperty().getIRI()))
+            .filter(ax -> !DLESyntaxAxiomVisitor.DLE_COMMENT_IRI.equals(ax.getProperty().getIRI())
+                       && !DLESyntaxAxiomVisitor.DLE_INLINE_COMMENT_IRI.equals(ax.getProperty().getIRI()))
             .forEach(ax -> {
                 beginWritingAxiom(writer);
                 writeAxiom(null, ax, writer);
@@ -180,7 +192,8 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
 
         // Emit ontology/version/import declarations if present.
         OWLOntologyID id = ontology.getOntologyID();
-        if (id.getOntologyIRI().isPresent()) {
+        if (id.getOntologyIRI().isPresent()
+                && !DLESyntaxAxiomVisitor.DLE_DEFAULT_ONTOLOGY_IRI.equals(id.getOntologyIRI().get())) {
             writer.println("@ontology <" + id.getOntologyIRI().get() + ">");
             if (id.getVersionIRI().isPresent()) {
                 writer.println("@version <" + id.getVersionIRI().get() + ">");
@@ -243,10 +256,12 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
             lastRenderingEmpty = true;
             return "";
         }
-        // dle:comment annotations are emitted as # lines in beginWritingAxioms — suppress here.
+        // dle:comment and dle:inlineComment annotations are emitted as # lines
+        // in beginWritingAxioms — suppress here.
         if (axiom instanceof OWLAnnotationAssertionAxiom) {
             IRI propIRI = ((OWLAnnotationAssertionAxiom) axiom).getProperty().getIRI();
-            if (DLESyntaxAxiomVisitor.DLE_COMMENT_IRI.equals(propIRI)) {
+            if (DLESyntaxAxiomVisitor.DLE_COMMENT_IRI.equals(propIRI)
+                    || DLESyntaxAxiomVisitor.DLE_INLINE_COMMENT_IRI.equals(propIRI)) {
                 lastRenderingEmpty = true;
                 return "";
             }

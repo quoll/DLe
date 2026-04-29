@@ -84,15 +84,14 @@ public class DLEOntologyParser extends AbstractOWLParser {
             ontology.getOWLOntologyManager()
                 .addAxioms(ontology, new java.util.HashSet<>(visitor.getAxioms()));
 
-            // Apply ontology ID if declared
+            // Apply ontology ID; fall back to the default IRI when none is declared.
             IRI ontIRI = visitor.getOntologyIRI();
-            if (ontIRI != null) {
-                IRI verIRI = visitor.getVersionIRI();
-                OWLOntologyID id = new OWLOntologyID(
-                    java.util.Optional.of(ontIRI),
-                    java.util.Optional.ofNullable(verIRI));
-                ontology.getOWLOntologyManager().applyChange(new SetOntologyID(ontology, id));
-            }
+            if (ontIRI == null) ontIRI = DLESyntaxAxiomVisitor.DLE_DEFAULT_ONTOLOGY_IRI;
+            IRI verIRI = visitor.getVersionIRI();
+            OWLOntologyID id = new OWLOntologyID(
+                java.util.Optional.of(ontIRI),
+                java.util.Optional.ofNullable(verIRI));
+            ontology.getOWLOntologyManager().applyChange(new SetOntologyID(ontology, id));
 
             // Apply import declarations
             for (IRI importIRI : visitor.getImports()) {

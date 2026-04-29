@@ -24,8 +24,12 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
 
     /** IRI namespace for internally-generated predicate restriction classes. */
     static final String DLE_NS = "http://quoll.github.io/DLe/vocab#";
-    /** Annotation property IRI used to preserve DLE {@code #} comments through the OWL model. */
+    /** Default ontology IRI, used when no {@code @ontology} declaration is present. */
+    static final IRI DLE_DEFAULT_ONTOLOGY_IRI = IRI.create("http://quoll.github.io/DLe/ontology");
+    /** Annotation property IRI used to preserve DLE block {@code #} comments through the OWL model. */
     static final IRI DLE_COMMENT_IRI = IRI.create(DLE_NS + "comment");
+    /** Annotation property IRI used to preserve DLE trailing inline {@code #} comments. */
+    static final IRI DLE_INLINE_COMMENT_IRI = IRI.create(DLE_NS + "inlineComment");
     private static final IRI RDF_VALUE_IRI =
         IRI.create("http://www.w3.org/1999/02/22-rdf-syntax-ns#value");
 
@@ -739,48 +743,71 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
         OWLObject result = visitChildren(ctx);
         if (tokenStream == null) return result;
 
+        // Resolve the subject IRI once; used by both block and inline comment capture.
+        IRI subjectIRI = null;
+
+        // ── Block comments preceding the statement ────────────────────────────
         List<Token> hidden = tokenStream.getHiddenTokensToLeft(
             ctx.start.getTokenIndex(), Token.HIDDEN_CHANNEL);
-        if (hidden == null || hidden.isEmpty()) return result;
-
-        // Strip the file header: the initial contiguous block of comment lines that
-        // begins at line 1. The header is terminated by the first blank line (gap in
-        // line numbers) or by the first non-comment content. Because WS is skipped,
-        // blank lines appear as gaps between consecutive LINE_COMMENT line numbers.
-        int realStart = 0;
-        if (hidden.get(0).getLine() == 1) {
-            int prevLine = 0;
-            while (realStart < hidden.size()) {
-                int line = hidden.get(realStart).getLine();
-                if (realStart == 0 || line == prevLine + 1) {
-                    prevLine = line;
-                    realStart++;
-                } else {
-                    break; // blank line found — header ends before this token
+        if (hidden != null && !hidden.isEmpty()) {
+            // Strip the file header: the initial contiguous block of comment lines
+            // beginning at line 1. Blank lines appear as gaps in line numbers because
+            // WS is skipped and not represented in the token stream.
+            int realStart = 0;
+            if (hidden.get(0).getLine() == 1) {
+                int prevLine = 0;
+                while (realStart < hidden.size()) {
+                    int line = hidden.get(realStart).getLine();
+                    if (realStart == 0 || line == prevLine + 1) {
+                        prevLine = line;
+                        realStart++;
+                    } else {
+                        break; // blank line found — header ends before this token
+                    }
+                }
+            }
+            hidden = hidden.subList(realStart, hidden.size());
+            if (!hidden.isEmpty()) {
+                subjectIRI = findFirstNameIRI(ctx);
+                if (subjectIRI != null) {
+                    // Store the block as a single multi-line literal to preserve order.
+                    StringBuilder sb = new StringBuilder();
+                    for (Token tok : hidden) {
+                        String text = tok.getText();
+                        if (text.startsWith("#")) text = text.substring(1);
+                        if (!text.isEmpty() && text.charAt(0) == ' ') text = text.substring(1);
+                        if (sb.length() > 0) sb.append('\n');
+                        sb.append(text);
+                    }
+                    if (sb.length() > 0) {
+                        axioms.add(df.getOWLAnnotationAssertionAxiom(
+                            df.getOWLAnnotationProperty(DLE_COMMENT_IRI),
+                            subjectIRI, df.getOWLLiteral(sb.toString())));
+                    }
                 }
             }
         }
-        hidden = hidden.subList(realStart, hidden.size());
-        if (hidden.isEmpty()) return result;
 
-        IRI subjectIRI = findFirstNameIRI(ctx);
-        if (subjectIRI == null) return result;
+        // ── Trailing inline comment on the same line as the statement ─────────
+        if (ctx.stop != null) {
+            List<Token> right = tokenStream.getHiddenTokensToRight(
+                ctx.stop.getTokenIndex(), Token.HIDDEN_CHANNEL);
+            if (right != null && !right.isEmpty()) {
+                Token first = right.get(0);
+                if (first.getLine() == ctx.stop.getLine()) {
+                    if (subjectIRI == null) subjectIRI = findFirstNameIRI(ctx);
+                    if (subjectIRI != null) {
+                        String text = first.getText();
+                        if (text.startsWith("#")) text = text.substring(1);
+                        if (!text.isEmpty() && text.charAt(0) == ' ') text = text.substring(1);
+                        axioms.add(df.getOWLAnnotationAssertionAxiom(
+                            df.getOWLAnnotationProperty(DLE_INLINE_COMMENT_IRI),
+                            subjectIRI, df.getOWLLiteral(text)));
+                    }
+                }
+            }
+        }
 
-        // Store the entire comment block as a single multi-line literal so that
-        // within-block order is preserved even after OWL axiom sorting.
-        StringBuilder sb = new StringBuilder();
-        for (Token tok : hidden) {
-            String text = tok.getText();
-            if (text.startsWith("#")) text = text.substring(1);
-            if (!text.isEmpty() && text.charAt(0) == ' ') text = text.substring(1);
-            if (sb.length() > 0) sb.append('\n');
-            sb.append(text);
-        }
-        if (sb.length() > 0) {
-            OWLAnnotationProperty commentProp = df.getOWLAnnotationProperty(DLE_COMMENT_IRI);
-            axioms.add(df.getOWLAnnotationAssertionAxiom(
-                commentProp, subjectIRI, df.getOWLLiteral(sb.toString())));
-        }
         return result;
     }
 
