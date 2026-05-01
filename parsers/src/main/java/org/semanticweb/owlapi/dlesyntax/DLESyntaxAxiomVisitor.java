@@ -961,8 +961,10 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
     private OWLObject nameToPropertyOrClass(DLESyntaxParser.NameContext ctx) {
         String text = ctx.getText();
         IRI iri = expandName(ctx);
-        if (objectPropertyNames.contains(text)) return df.getOWLObjectProperty(iri);
+        // Data is checked first: classifyProp/propagatePropertyTypes enforce mutual exclusivity,
+        // but data classification is definitive when a name ends up in both sets.
         if (dataPropertyNames.contains(text))   return df.getOWLDataProperty(iri);
+        if (objectPropertyNames.contains(text)) return df.getOWLObjectProperty(iri);
         // Names in well-known datatype namespaces are data ranges, not classes
         if (text.startsWith("xsd:") || text.startsWith("rdf:") || text.startsWith("rdfs:")) {
             return df.getOWLDatatype(iri);

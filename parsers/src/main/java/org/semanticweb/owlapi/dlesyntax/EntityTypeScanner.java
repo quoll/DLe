@@ -231,11 +231,20 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
             changed = false;
             for (Map.Entry<String, String> e : subPropertyPairs.entrySet()) {
                 String sub = e.getKey(), sup = e.getValue();
-                // sub ⊑ sup: if either side is known, the other must be the same kind
-                if (objectPropertyNames.contains(sub)) changed |= objectPropertyNames.add(sup);
-                if (objectPropertyNames.contains(sup)) changed |= objectPropertyNames.add(sub);
-                if (dataPropertyNames.contains(sub))   changed |= dataPropertyNames.add(sup);
-                if (dataPropertyNames.contains(sup))   changed |= dataPropertyNames.add(sub);
+                // sub ⊑ sup: if either side is known, the other must be the same kind.
+                // Data classification is definitive — maintain mutual exclusivity.
+                if (dataPropertyNames.contains(sub)) {
+                    changed |= dataPropertyNames.add(sup);
+                    changed |= objectPropertyNames.remove(sup);
+                }
+                if (dataPropertyNames.contains(sup)) {
+                    changed |= dataPropertyNames.add(sub);
+                    changed |= objectPropertyNames.remove(sub);
+                }
+                if (objectPropertyNames.contains(sub) && !dataPropertyNames.contains(sup))
+                    changed |= objectPropertyNames.add(sup);
+                if (objectPropertyNames.contains(sup) && !dataPropertyNames.contains(sub))
+                    changed |= objectPropertyNames.add(sub);
             }
         }
     }
@@ -262,8 +271,11 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
         } else {
             String name = ((DLESyntaxParser.SimplePropertyExprContext) propCtx).name().getText();
             if (isData) {
+                // Data classification is definitive — remove any prior object classification.
                 dataPropertyNames.add(name);
-            } else {
+                objectPropertyNames.remove(name);
+            } else if (!dataPropertyNames.contains(name)) {
+                // Only classify as object if not already established as data.
                 objectPropertyNames.add(name);
             }
         }
