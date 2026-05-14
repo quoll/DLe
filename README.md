@@ -44,6 +44,38 @@ DL uses mathematical notation to provide a precise, declarative syntax for descr
 
 DL uses mathematical notation that is compact in Unicode and minimizes token count. Many LLMs have been exposed to DL-style expressions during training, making it a strong candidate for structured communication.
 
+## Example
+SNOMED-CT is a large ontology for clinical data, describing anatomy, drugs, diseases, and many other medical systems. The following is an extract from SNOMED-CT in OWL Functional Notation that describes: "Malignant neoplasm of lower inner quadrant of breast". Since SNOMED-CT uses numerical codes for identifiers, the labels have been included:
+```
+EquivalentClasses(sct:s373080008 ObjectIntersectionOf(sct:s64572001 ObjectSomeValuesFrom(sct:s609096000 ObjectIntersectionOf(ObjectSomeValuesFrom(sct:s116676008 sct:s1240414004) ObjectSomeValuesFrom(sct:s363698007 sct:s19100000)))))
+
+AnnotationAssertion(rdfs:label sct:s373080008 "Malignant neoplasm of lower inner quadrant of breast (disorder)"@en)
+AnnotationAssertion(rdfs:label sct:s64572001 "Disease (disorder)"@en)
+AnnotationAssertion(rdfs:label sct:s609096000 "Role group (attribute)"@en)
+AnnotationAssertion(rdfs:label sct:s116676008 "Associated morphology (attribute)"@en)
+AnnotationAssertion(rdfs:label sct:s363698007 "Finding site (attribute)"@en)
+AnnotationAssertion(rdfs:label sct:s1240414004 "Malignant neoplasm (morphologic abnormality)"@en)
+AnnotationAssertion(rdfs:label sct:s19100000 "Structure of lower inner quadrant of breast (body structure)"@en)
+```
+For those unfamiliar with SNOMED-CT, each of the labeled attributes and classes also have detailed descriptions in the ontology. However, only `sct:s373080008` has been included in this example.
+
+This states:
+> The class of "Malignant neoplasm of lower inner quadrant of breast" is a type of disease, characterized by being in a "role group" in which the finding site is at the "Structure of lower inner quadrant of breast", and the morphology is a Malignant neoplasm.
+
+This appears in DLe as:
+```
+sct:s373080008 ≡ sct:s64572001 ⊓ (∃sct:s609096000.((∃sct:s116676008.sct:s1240414004) ⊓ (∃sct:s363698007.sct:s19100000)))
+
+@label sct:s373080008 "Malignant neoplasm of lower inner quadrant of breast (disorder)"
+@label sct:s64572001 "Disease (disorder)"
+@label sct:s609096000 "Role group (attribute)"
+@label sct:s116676008 "Associated morphology (attribute)"
+@label sct:s363698007 "Finding site (attribute)"
+@label sct:s1240414004 "Malignant neoplasm (morphologic abnormality)"
+@label sct:s19100000 "Structure of lower inner quadrant of breast (body structure)"
+```
+The extensive labeling does consume a lot of tokens, but no more than the standard labeling form. However, the description logic on the first line contains significantly fewer tokens, and can be easier to read for those familiar with the mathematical syntax.
+
 ## Extensions to DL
 
 DLe introduces a small number of extensions:
@@ -53,7 +85,7 @@ DLe introduces a small number of extensions:
 
 These are designed to feel like natural continuations of DL, rather than a separate language.
 
-## Example
+## Extension Example
  - ● standard Description Logic
  - 🦉 supported in OWL
 ```
