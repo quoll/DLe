@@ -47,7 +47,15 @@ DL uses mathematical notation that is compact in Unicode and minimizes token cou
 ## Example
 SNOMED-CT is a large ontology for clinical data, describing anatomy, drugs, diseases, and many other medical systems. The following is an extract from SNOMED-CT in OWL Functional Notation that describes: "Malignant neoplasm of lower inner quadrant of breast". Since SNOMED-CT uses numerical codes for identifiers, the labels have been included:
 ```
-EquivalentClasses(sct:s373080008 ObjectIntersectionOf(sct:s64572001 ObjectSomeValuesFrom(sct:s609096000 ObjectIntersectionOf(ObjectSomeValuesFrom(sct:s116676008 sct:s1240414004) ObjectSomeValuesFrom(sct:s363698007 sct:s19100000)))))
+EquivalentClasses(
+    sct:s373080008
+    ObjectIntersectionOf(
+        sct:s64572001
+        ObjectSomeValuesFrom(
+            sct:s609096000
+            ObjectIntersectionOf(
+                ObjectSomeValuesFrom(sct:s116676008 sct:s1240414004)
+                ObjectSomeValuesFrom(sct:s363698007 sct:s19100000)))))
 
 AnnotationAssertion(rdfs:label sct:s373080008 "Malignant neoplasm of lower inner quadrant of breast (disorder)"@en)
 AnnotationAssertion(rdfs:label sct:s64572001 "Disease (disorder)"@en)
