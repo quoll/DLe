@@ -297,6 +297,21 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
                 (OWLDataPropertyExpression) lhs, (OWLDataPropertyExpression) rhs));
             return null;
         }
+        // Mixed: one side is a named object property and the other resolved as a class.
+        // This occurs at the boundary of dual-use hierarchies (e.g. SNOMED-CT attribute root).
+        // Coerce the property side to a class so the class node keeps its class identity.
+        if (lhs instanceof OWLObjectProperty && rhs instanceof OWLClass) {
+            axioms.add(df.getOWLSubClassOfAxiom(
+                df.getOWLClass(((OWLObjectProperty) lhs).getIRI()),
+                (OWLClass) rhs));
+            return null;
+        }
+        if (lhs instanceof OWLClass && rhs instanceof OWLObjectProperty) {
+            axioms.add(df.getOWLSubClassOfAxiom(
+                (OWLClass) lhs,
+                df.getOWLClass(((OWLObjectProperty) rhs).getIRI())));
+            return null;
+        }
 
         axioms.add(df.getOWLSubClassOfAxiom(asClass(lhs), asClass(rhs)));
         return null;

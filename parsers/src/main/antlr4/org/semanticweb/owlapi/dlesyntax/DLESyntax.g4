@@ -234,8 +234,9 @@ PNAME_NS : NameChar* ':' ;
 // Numeric literals (covers integers and floats; negative numbers allowed)
 NUMBER : '-'? [0-9]+ ('.' [0-9]+)? ;
 
-// Prefixed name (xsd:integer, owl:Thing, …) — longer than PNAME_NS so wins
-PREFIXED_NAME : NameStart NameChar* ':' NameStart NameChar* ;
+// Prefixed name (xsd:integer, owl:Thing, sct:116676008, …) — longer than PNAME_NS so wins.
+// The local part follows Turtle CURIE rules: may start with a digit (unlike XML NCName).
+PREFIXED_NAME : NameStart NameChar* ':' (NameStart | [0-9]) NameChar* ;
 
 // Bare local name
 NAME : NameStart NameChar* ;

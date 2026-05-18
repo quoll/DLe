@@ -26,7 +26,13 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
 
     // Sub-property pairs collected from simple A ⊑ B axioms (both bare names).
     // Used by propagatePropertyTypes() to spread type info transitively.
-    private final Map<String, String> subPropertyPairs = new HashMap<>();
+    // Multimap: each sub can have multiple supers (SNOMED-CT dual-hierarchy).
+    private final Map<String, Set<String>> subPropertyPairs = new HashMap<>();
+
+    // Names that are definitively known to be classes (from restriction filler positions
+    // or complex-expression subclass/equiv contexts).  Role propagation will not cross
+    // these nodes, preventing the attribute hierarchy from bleeding into the concept hierarchy.
+    private final Set<String> mustBeClass = new HashSet<>();
 
     Set<String> getObjectPropertyNames() { return objectPropertyNames; }
     Set<String> getDataPropertyNames()   { return dataPropertyNames; }
@@ -178,12 +184,20 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
         if (rhs != null && singleInverseAtom(ctx.classExpr(0)) != null) {
             objectPropertyNames.add(rhs);
         }
-        // p ≡ q (both bare names, lowercase) — treat as object properties
+        // p ≡ q (both bare unprefixed names, lowercase) — treat as object properties.
+        // Prefixed names are excluded: the prefix letter is not a signal about resource type.
         if (lhs != null && rhs != null
+                && !lhs.contains(":") && !rhs.contains(":")
                 && Character.isLowerCase(lhs.charAt(0)) && Character.isLowerCase(rhs.charAt(0))) {
             objectPropertyNames.add(lhs);
             objectPropertyNames.add(rhs);
         }
+        // A ≡ (complex) → A is a class; (complex) ≡ B → B is a class.
+        // Exclude inverse-atom RHS/LHS since those are property expressions, not complex classes.
+        if (lhs != null && rhs == null && singleInverseAtom(ctx.classExpr(1)) == null)
+            mustBeClass.add(lhs);
+        if (rhs != null && lhs == null && singleInverseAtom(ctx.classExpr(0)) == null)
+            mustBeClass.add(rhs);
         return visitChildren(ctx);
     }
 
@@ -201,11 +215,13 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
         String lhs = singleBareName(ctx.classExpr(0));
         String rhs = singleBareName(ctx.classExpr(1));
         if (lhs != null && rhs != null) {
-            subPropertyPairs.put(lhs, rhs);
-            // Heuristic: camelCase names (lowercase start) are almost certainly
-            // properties, not classes.  Apply when neither side is yet classified.
+            subPropertyPairs.computeIfAbsent(lhs, k -> new HashSet<>()).add(rhs);
+            // Heuristic: bare camelCase names (lowercase start, no prefix) are almost
+            // certainly properties.  Prefixed names are excluded because the prefix
+            // letter carries no information about the local resource type.
             if (!objectPropertyNames.contains(lhs) && !dataPropertyNames.contains(lhs)
                     && !objectPropertyNames.contains(rhs) && !dataPropertyNames.contains(rhs)
+                    && !lhs.contains(":") && !rhs.contains(":")
                     && Character.isLowerCase(lhs.charAt(0))
                     && Character.isLowerCase(rhs.charAt(0))) {
                 objectPropertyNames.add(lhs);
@@ -216,6 +232,12 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
         if (lhs != null && singleInverseAtom(ctx.classExpr(1)) != null) {
             objectPropertyNames.add(lhs);
         }
+        // A ⊑ (complex) → A is definitively a class; (complex) ⊑ B → B is a class.
+        // Exclude inverse-atom RHS/LHS since those are property expressions.
+        if (lhs != null && rhs == null && singleInverseAtom(ctx.classExpr(1)) == null)
+            mustBeClass.add(lhs);
+        if (lhs == null && rhs != null && singleInverseAtom(ctx.classExpr(0)) == null)
+            mustBeClass.add(rhs);
         return visitChildren(ctx);
     }
 
@@ -224,27 +246,54 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
     /**
      * Propagates property classifications through sub-property axioms until
      * no new names are added.  Must be called after visiting the full tree.
+     *
+     * <p>Two phases:
+     * <ol>
+     *   <li>Propagate {@code mustBeClass} upward (sub → sup): if A is definitively a class
+     *       and A ⊑ B, then B is also a class.  This marks the SNOMED-CT concept-hierarchy
+     *       root before role propagation reaches it.</li>
+     *   <li>Propagate role classifications, skipping any node in {@code mustBeClass}.
+     *       This stops attribute-hierarchy propagation from bleeding into the concept
+     *       hierarchy at the shared root.</li>
+     * </ol>
      */
     void propagatePropertyTypes() {
+        // Phase 1: propagate mustBeClass upward through sub-property chains.
         boolean changed = true;
         while (changed) {
             changed = false;
-            for (Map.Entry<String, String> e : subPropertyPairs.entrySet()) {
-                String sub = e.getKey(), sup = e.getValue();
-                // sub ⊑ sup: if either side is known, the other must be the same kind.
-                // Data classification is definitive — maintain mutual exclusivity.
-                if (dataPropertyNames.contains(sub)) {
-                    changed |= dataPropertyNames.add(sup);
-                    changed |= objectPropertyNames.remove(sup);
+            for (Map.Entry<String, Set<String>> e : subPropertyPairs.entrySet()) {
+                if (mustBeClass.contains(e.getKey())) {
+                    for (String sup : e.getValue()) {
+                        changed |= mustBeClass.add(sup);
+                    }
                 }
-                if (dataPropertyNames.contains(sup)) {
-                    changed |= dataPropertyNames.add(sub);
-                    changed |= objectPropertyNames.remove(sub);
+            }
+        }
+        // Phase 2: propagate role classifications, stopping at mustBeClass nodes.
+        changed = true;
+        while (changed) {
+            changed = false;
+            for (Map.Entry<String, Set<String>> e : subPropertyPairs.entrySet()) {
+                String sub = e.getKey();
+                for (String sup : e.getValue()) {
+                    // Data classification is definitive — maintain mutual exclusivity.
+                    if (dataPropertyNames.contains(sub)) {
+                        changed |= dataPropertyNames.add(sup);
+                        changed |= objectPropertyNames.remove(sup);
+                    }
+                    if (dataPropertyNames.contains(sup)) {
+                        changed |= dataPropertyNames.add(sub);
+                        changed |= objectPropertyNames.remove(sub);
+                    }
+                    // Object property propagation is blocked at mustBeClass nodes.
+                    if (objectPropertyNames.contains(sub) && !dataPropertyNames.contains(sup)
+                            && !mustBeClass.contains(sup))
+                        changed |= objectPropertyNames.add(sup);
+                    if (objectPropertyNames.contains(sup) && !dataPropertyNames.contains(sub)
+                            && !mustBeClass.contains(sub))
+                        changed |= objectPropertyNames.add(sub);
                 }
-                if (objectPropertyNames.contains(sub) && !dataPropertyNames.contains(sup))
-                    changed |= objectPropertyNames.add(sup);
-                if (objectPropertyNames.contains(sup) && !dataPropertyNames.contains(sub))
-                    changed |= objectPropertyNames.add(sub);
             }
         }
     }
@@ -255,12 +304,22 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
                                      DLESyntaxParser.PrimaryContext fillerCtx) {
         boolean data = isDataPrimary(fillerCtx);
         classifyProp(propCtx, data);
+        // Non-data fillers are class expressions; seed mustBeClass so phase-1 propagation
+        // can mark the full concept-hierarchy chain before role propagation runs.
+        if (!data) {
+            String fillerName = primaryBareName(fillerCtx);
+            if (fillerName != null) mustBeClass.add(fillerName);
+        }
     }
 
     private void classifyFromClassExpr(DLESyntaxParser.PropertyExprContext propCtx,
                                        DLESyntaxParser.ClassExprContext fillerCtx) {
         boolean data = isDataClassExpr(fillerCtx);
         classifyProp(propCtx, data);
+        if (!data) {
+            String fillerName = singleBareName(fillerCtx);
+            if (fillerName != null) mustBeClass.add(fillerName);
+        }
     }
 
     private void classifyProp(DLESyntaxParser.PropertyExprContext propCtx, boolean isData) {
