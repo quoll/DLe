@@ -1,9 +1,9 @@
 # DLe: Description Logic - Extended
-DLe is an extension of Description Logic (DL) designed for communicating structured systems to large language models (LLMs).
+The DLe module reads and writes Description Logic (DL) with Extensions. DL is a mathematical notation for describing data structures. It is ideal for communicating the structure and behavior of data for Large Language Models (LLMs).
 
-It provides a compact, formal, and declarative way to describe ontologies, data models, and relationships, while remaining readable to both humans and machines. The syntax is described in [the Wiki](https://github.com/quoll/DLe/wiki).
+DL provides a compact, formal, and declarative way to describe ontologies, data models, and relationships, while remaining readable to both humans and machines. The syntax is described in [the Wiki](https://github.com/quoll/DLe/wiki).
 
-DLe is implemented as a module for [OWLAPI](https://github.com/owlcs/owlapi).
+DLe is [OWL](https://www.w3.org/TR/owl2-overview/) compatible and is implemented as a module for [OWLAPI](https://github.com/owlcs/owlapi). The OWL constructs that are not in standard DL are provided via extensions. DLe also has extensions to describe rules through logic expressions.
 
 ## What is it?
 DLe is a "storer" and "parser" for the OWLAPI library.
