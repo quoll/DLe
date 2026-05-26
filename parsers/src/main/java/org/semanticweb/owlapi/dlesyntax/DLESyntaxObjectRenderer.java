@@ -2,6 +2,7 @@ package org.semanticweb.owlapi.dlesyntax;
 
 import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
 
 import javax.annotation.Nullable;
 
@@ -143,6 +144,7 @@ public class DLESyntaxObjectRenderer extends DLSyntaxObjectRenderer {
         if (pm != null) {
             setShortFormProvider(entity -> {
                 String curie = pm.getPrefixIRI(entity.getIRI());
+                if (curie == null) curie = computeCurie(pm, entity.getIRI().toString());
                 return curie != null ? stripDefaultPrefix(curie)
                     : entity.getIRI().getRemainder().orElse(entity.getIRI().toString());
             });
@@ -159,15 +161,35 @@ public class DLESyntaxObjectRenderer extends DLSyntaxObjectRenderer {
     }
 
     /**
+     * Computes a CURIE by longest-namespace-prefix matching against the registered
+     * prefix map, without any XML NCName constraints on the local part.
+     * Used as a fallback when {@link PrefixManager#getPrefixIRI} returns null because
+     * the local part is not a valid XML NCName (e.g. starts with a digit).
+     */
+    @Nullable
+    private static String computeCurie(PrefixManager pm, String iriStr) {
+        String bestPrefix = null;
+        String bestNs = null;
+        for (Map.Entry<String, String> e : pm.getPrefixName2PrefixMap().entrySet()) {
+            String ns = e.getValue();
+            if (iriStr.startsWith(ns) && (bestNs == null || ns.length() > bestNs.length())) {
+                bestPrefix = e.getKey();
+                bestNs = ns;
+            }
+        }
+        return bestNs != null ? bestPrefix + iriStr.substring(bestNs.length()) : null;
+    }
+
+    /**
      * Returns the short form of an IRI using the prefix manager if available,
-     * falling back to the IRI's local fragment. Throws if neither is possible.
+     * falling back to plain prefix matching (for local parts that are not valid
+     * XML NCNames, e.g. numeric SNOMED-CT codes), then to the IRI remainder.
      */
     private String shortFormIRI(IRI iri) {
         if (prefixManager != null) {
             String curie = prefixManager.getPrefixIRI(iri);
-            if (curie != null) {
-                return stripDefaultPrefix(curie);
-            }
+            if (curie == null) curie = computeCurie(prefixManager, iri.toString());
+            if (curie != null) return stripDefaultPrefix(curie);
         }
         return iri.getRemainder().orElseThrow(() ->
             new IllegalStateException("No prefix/namespace found for IRI: " + iri));
