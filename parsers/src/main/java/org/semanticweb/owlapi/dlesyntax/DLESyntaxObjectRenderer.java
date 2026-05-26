@@ -564,8 +564,11 @@ public class DLESyntaxObjectRenderer extends DLSyntaxObjectRenderer {
                 && value instanceof OWLLiteral) {
             write("@db ");
             write(subject);
-            write(" ");
-            write(renderValue(value));
+            String dbLiteral = ((OWLLiteral) value).getLiteral();
+            if (!dbLiteral.equals(subject)) {
+                write(" ");
+                write(renderValue(value));
+            }
         } else {
             write("@ann ");
             write(subject);

@@ -4,16 +4,21 @@
 # Annotations (lines beginning with @):
 # @label <IRI> "text"  — display name of the resource
 # @doc <IRI> "text"  — description of the resource
-# @db <IRI> "name"  — resource appears explicitly in the database and is queried using this label
+# @db <IRI>  — resource appears explicitly in the database using its own identifier
+# @db <IRI> "identifier"  — resource appears explicitly in the database and is queried using this identifier
 # @storage <IRI> "text"  — describes database storage details
 # @ann <IRI> <annotation-property> "text"  — annotation using the given property
 # @prefix <prefix>: <namespace>  — declares a prefix
 # @import <IRI>  — imports another ontology
 # @ontology <IRI>  — declares the ontology IRI
 #
-# IRIs:
-# - Prefixed names use declared prefixes (e.g., xsd:string) 
+# Naming conventions:
+# - Every entity has an implicit label equal to its identifier unless @label is declared
 # - Unprefixed names (e.g., Application) are in the default namespace (:Application)
+# - Prefixed names use declared prefixes (e.g., xsd:string) 
+#
+# Database convention:
+# - Resources only appear explicitly in the database if they have an @db annotation
 #
 # DLe extensions:
 # ≝  — defines a symbol or predicate; right-hand side is not DL

@@ -171,7 +171,9 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
     @Override
     public OWLObject visitDbAnnotation(DLESyntaxParser.DbAnnotationContext ctx) {
         IRI subject = expandName(ctx.name());
-        OWLLiteral value = stringLiteral(ctx.STRING().getText());
+        OWLLiteral value = ctx.STRING() != null
+            ? stringLiteral(ctx.STRING().getText())
+            : df.getOWLLiteral(ctx.name().getText());
         axioms.add(df.getOWLAnnotationAssertionAxiom(
             df.getOWLAnnotationProperty(OWLRDFVocabulary.RDFS_IS_DEFINED_BY.getIRI()),
             subject, value));

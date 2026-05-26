@@ -26,7 +26,7 @@ annotation
     : AT_LABEL     name STRING                # LabelAnnotation
     | AT_DOC       name STRING                # DocAnnotation
     | AT_STORAGE   name STRING                # StorageAnnotation
-    | AT_DB        name STRING                 # DbAnnotation
+    | AT_DB        name STRING?                # DbAnnotation
     | AT_ANN       name name annotationValue           # AnnAnnotation
     | name '(' name (',' name)* ')' DEFINED_AS_LINE   # PredicateDefinition
     | name DEFINED_AS_LINE                             # FolAnnotation
