@@ -16,6 +16,8 @@
 # - Every entity has an implicit label equal to its identifier unless @label is declared
 # - Unprefixed names (e.g., Application) are in the default namespace (:Application)
 # - Prefixed names use declared prefixes (e.g., xsd:string) 
+# - Concept/class identifiers conventionally begin with an upper-case letter
+# - Role/reference/field identifiers conventionally begin with a lower-case letter
 #
 # Database convention:
 # - Resources only appear explicitly in the database if they have an @db annotation

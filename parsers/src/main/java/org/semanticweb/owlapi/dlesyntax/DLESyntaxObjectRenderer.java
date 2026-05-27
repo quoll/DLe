@@ -559,13 +559,19 @@ public class DLESyntaxObjectRenderer extends DLSyntaxObjectRenderer {
                 write(literal);
             }
         } else if (OWLRDFVocabulary.RDFS_LABEL.getIRI().equals(propIRI)) {
-            // Suppress auto-generated predicate signature labels (e.g. "afterNow(x)"):
-            // if the label is exactly the predicate name followed by a parenthesised
-            // argument list, the predicate definition already encodes that information.
             if (value instanceof OWLLiteral) {
                 String labelText = ((OWLLiteral) value).getLiteral();
+                // Suppress predicate-signature labels (e.g. "afterNow(x)"): the predicate
+                // definition line already encodes that information.
                 if (labelText.startsWith(subject + "(") && labelText.endsWith(")")) {
                     return;
+                }
+                // Suppress default labels whose value is the entity's own IRI local name.
+                if (axiom.getSubject() instanceof IRI) {
+                    String localName = ((IRI) axiom.getSubject()).getRemainder().orElse(null);
+                    if (labelText.equals(localName)) {
+                        return;
+                    }
                 }
             }
             write("@label ");
