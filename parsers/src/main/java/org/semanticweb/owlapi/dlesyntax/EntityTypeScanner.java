@@ -375,7 +375,7 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
     private boolean isDataAtom(DLESyntaxParser.AtomContext atom) {
         if (atom instanceof DLESyntaxParser.NameAtomContext) {
             String name = ((DLESyntaxParser.NameAtomContext) atom).name().getText();
-            return name.startsWith("xsd:") || name.startsWith("rdf:") || name.startsWith("rdfs:");
+            return isDataTypeName(name);
         }
         if (atom instanceof DLESyntaxParser.OneOfAtomContext) {
             // DataOneOf if any element is a literal
@@ -393,6 +393,27 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
             return isDataClassExpr(((DLESyntaxParser.ParenAtomContext) atom).classExpr());
         }
         return false;
+    }
+
+    /**
+     * Returns true if {@code name} (a CURIE or bare name as written in the DLE source)
+     * denotes an OWL datatype.  All {@code xsd:} names are datatypes; from the RDF/RDFS
+     * namespaces only the specific RDF 1.2 datatype names qualify.
+     */
+    static boolean isDataTypeName(String name) {
+        if (name.startsWith("xsd:")) return true;
+        switch (name) {
+            case "rdf:PlainLiteral":
+            case "rdf:langString":
+            case "rdf:dirLangString":
+            case "rdf:HTML":
+            case "rdf:XMLLiteral":
+            case "rdf:JSON":
+            case "rdfs:Literal":
+                return true;
+            default:
+                return false;
+        }
     }
 
     /**

@@ -52,6 +52,7 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
     }};
 
     private final List<OWLAxiom> axioms = new ArrayList<>();
+    private int currentLine = -1;
 
     /** Ontology IRI from {@code @ontology}, null if not declared. */
     private IRI ontologyIRI = null;
@@ -757,6 +758,7 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
      */
     @Override
     public OWLObject visitStatement(DLESyntaxParser.StatementContext ctx) {
+        currentLine = ctx.start.getLine();
         OWLObject result = visitChildren(ctx);
         if (tokenStream == null) return result;
 
@@ -982,9 +984,20 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
         // but data classification is definitive when a name ends up in both sets.
         if (dataPropertyNames.contains(text))   return df.getOWLDataProperty(iri);
         if (objectPropertyNames.contains(text)) return df.getOWLObjectProperty(iri);
-        // Names in well-known datatype namespaces are data ranges, not classes
-        if (text.startsWith("xsd:") || text.startsWith("rdf:") || text.startsWith("rdfs:")) {
-            return df.getOWLDatatype(iri);
+        // xsd:* and the specific RDF 1.2 datatype CURIEs are data ranges.
+        if (EntityTypeScanner.isDataTypeName(text)) return df.getOWLDatatype(iri);
+        // For remaining rdf:/rdfs: names, use case convention:
+        //   lower-case local part → object property  (e.g. rdf:type, rdfs:subClassOf)
+        //   upper-case local part → class            (e.g. rdfs:Resource, rdfs:Class)
+        // rdf:nil is an instance, not a property — let it fall through to class.
+        if (text.startsWith("rdf:") || text.startsWith("rdfs:")) {
+            int colon = text.indexOf(':');
+            String local = text.substring(colon + 1);
+            if (!local.isEmpty() && Character.isLowerCase(local.charAt(0))
+                    && !text.equals("rdf:nil")) {
+                return df.getOWLObjectProperty(iri);
+            }
+            return df.getOWLClass(iri);
         }
         return df.getOWLClass(iri);
     }
@@ -1012,7 +1025,8 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
 
     private OWLClassExpression asClass(OWLObject obj) {
         if (obj instanceof OWLClassExpression) return (OWLClassExpression) obj;
-        throw new IllegalStateException("Expected class expression, got: " + obj);
+        String loc = currentLine > 0 ? " (line " + currentLine + ")" : "";
+        throw new IllegalStateException("Expected class expression, got: " + obj + loc);
     }
 
     private OWLDataRange asDataRange(OWLObject obj) {

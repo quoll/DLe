@@ -1,0 +1,542 @@
+# DLe — Description Logic (Extended)
+# Synthetic parser regression document.
+# This file intentionally avoids enterprise architecture terminology while exercising
+# the DLe syntax features used by the original foundation model.
+
+@prefix : <http://example.org/wildlife-test#>
+
+############################################################
+# Domain-level grouping and modeled concepts
+############################################################
+
+Domain ⊑ ⊤
+WildlifeConcept ⊑ ⊤
+
+AnimalDomain ⊑ Domain
+HabitatDomain ⊑ Domain
+ResearchDomain ⊑ Domain
+TaxonomyDomain ⊑ Domain
+
+Animal ⊑ WildlifeConcept
+Species ⊑ WildlifeConcept
+Taxon ⊑ WildlifeConcept
+Habitat ⊑ WildlifeConcept
+Region ⊑ WildlifeConcept
+Researcher ⊑ WildlifeConcept
+ResearchTeam ⊑ WildlifeConcept
+Observation ⊑ WildlifeConcept
+SurveyRoute ⊑ WildlifeConcept
+
+@db Animal
+@db Species
+@db Taxon
+@db Habitat
+@db Region
+@db Researcher
+@db ResearchTeam
+@db Observation
+@db SurveyRoute
+
+@doc WildlifeConcept "Root class for modeled wildlife reserve concepts."
+@doc Domain "Grouping class for broad wildlife reserve subject areas."
+@doc Animal "Individual animal tracked or observed in the reserve."
+@doc Species "Biological species represented in the reserve model."
+@doc Habitat "Ecological habitat or biome."
+@doc Region "Geographic region or named area in the reserve."
+@doc Observation "Recorded wildlife observation."
+
+############################################################
+# Generic relationship and attribute roots
+############################################################
+
+∃relationship.⊤ ⊑ WildlifeConcept ⨆ Domain
+⊤ ⊑ ∀relationship.(WildlifeConcept ⨆ Domain)
+@label relationship "Relationship"
+@doc relationship "Generic relationship between modeled wildlife concepts or domains; specialized by domain-specific relationship types."
+
+∃attribute.⊤ ⊑ WildlifeConcept ⊔ RelationshipStatement
+⊤ ⊑ ∀attribute.(xsd:boolean ⊔ xsd:integer ⊔ xsd:decimal ⊔ xsd:string ⊔ xsd:dateTime ⊔ xsd:date)
+@doc attribute "A scalar attribute belonging to a wildlife concept or to an asserted relationship."
+
+RelationshipStatement ⊑ rdfs:Proposition
+@doc RelationshipStatement "A proposition whose described triple is asserted in the model. The predicate is a relationship type. Used to attach attributes or metadata to a relationship."
+
+∃statementRelationship.⊤ ⊑ RelationshipStatement
+⊤ ⊑ ∀statementRelationship.rdf:Property
+@doc statementRelationship "The predicate resource in a triple."
+
+calculatedValue ⊑ attribute
+@label calculatedValue "Calculated"
+@doc calculatedValue "Subproperties of this are system-calculated values; this property is not intended for direct use."
+
+calculatedNumber ⊑ calculatedValue
+⊤ ⊑ ∀calculatedNumber.(xsd:integer ⊔ xsd:decimal)
+@label calculatedNumber "Calculated Number"
+@doc calculatedNumber "Subproperties of this are numeric calculated values; this property is not intended for direct use."
+
+calculatedList ⊑ calculatedValue
+⊤ ⊑ ∀calculatedList.xsd:string
+@label calculatedList "Calculated List"
+@doc calculatedList "Subproperties of this are calculated string values selected from a model-defined list of enumerated terms."
+
+############################################################
+# Domain assignment
+############################################################
+
+∃inDomain.⊤ ⊑ WildlifeConcept
+⊤ ⊑ ∀inDomain.Domain
+≤1 inDomain.⊤
+@db inDomain "domain_id"
+@label inDomain "In Domain"
+@doc inDomain "Primary subject grouping for a modeled wildlife concept."
+
+Animal ⊑ ∀inDomain.AnimalDomain
+Species ⊑ ∀inDomain.TaxonomyDomain
+Taxon ⊑ ∀inDomain.TaxonomyDomain
+Habitat ⊑ ∀inDomain.HabitatDomain
+Region ⊑ ∀inDomain.HabitatDomain
+Researcher ⊑ ∀inDomain.ResearchDomain
+ResearchTeam ⊑ ∀inDomain.ResearchDomain
+Observation ⊑ ∀inDomain.ResearchDomain
+SurveyRoute ⊑ ∀inDomain.ResearchDomain
+
+WildlifeConcept ≡ (∃inDomain.Domain) ⊓ (∃name.xsd:string) ⊓ (=1 id.xsd:string)
+
+############################################################
+# Hierarchy and transitive closure
+############################################################
+
+locatedIn ⊑ relationship
+∃locatedIn.⊤ ⊑ Habitat ⊔ Region ⊔ Observation
+⊤ ⊑ ∀locatedIn.(Habitat ⊔ Region)
+≤1 locatedIn.⊤
+@db locatedIn "located_in"
+@label locatedIn "Located In"
+@doc locatedIn "Immediate geographic containment. This is instance-level location containment, not rdfs:subClassOf semantics."
+
+locatedIn ⊑ containedIn
+Trans(containedIn)
+contains ≡ locatedIn⁻
+containsTransitively ≡ containedIn⁻
+
+partOfTaxon ⊑ relationship
+∃partOfTaxon.⊤ ⊑ Taxon
+⊤ ⊑ ∀partOfTaxon.Taxon
+≤1 partOfTaxon.⊤
+@db partOfTaxon "part_of_taxon"
+@label partOfTaxon "Part Of Taxon"
+@doc partOfTaxon "Immediate taxonomic containment, such as species within genus or genus within family."
+
+partOfTaxon ⊑ broaderTaxon
+Trans(broaderTaxon)
+hasTaxonPart ≡ partOfTaxon⁻
+narrowerTaxon ≡ broaderTaxon⁻
+
+############################################################
+# Relationships
+############################################################
+
+belongsToSpecies ⊑ relationship
+∃belongsToSpecies.⊤ ⊑ Animal
+⊤ ⊑ ∀belongsToSpecies.Species
+≤1 belongsToSpecies.⊤
+@db belongsToSpecies "belongs_to_species"
+@label belongsToSpecies "Belongs To Species"
+@doc belongsToSpecies "Species classification of an individual animal."
+
+inhabits ⊑ relationship
+∃inhabits.⊤ ⊑ Animal ⊔ Species
+⊤ ⊑ ∀inhabits.Habitat
+@db inhabits
+@label inhabits "Inhabits"
+@doc inhabits "Habitat normally used by an animal or species."
+
+studies ⊑ relationship
+∃studies.⊤ ⊑ Researcher
+⊤ ⊑ ∀studies.(Animal ⊔ Species ⊔ Habitat)
+@db studies
+@label studies "Studies"
+@doc studies "Research relationship from a researcher to an animal, species, or habitat."
+
+memberOf ⊑ relationship
+∃memberOf.⊤ ⊑ Researcher
+⊤ ⊑ ∀memberOf.ResearchTeam
+@db memberOf "member_of"
+@label memberOf "Member Of"
+@doc memberOf "Research team membership."
+
+recordsAnimal ⊑ relationship
+∃recordsAnimal.⊤ ⊑ Observation
+⊤ ⊑ ∀recordsAnimal.Animal
+@db recordsAnimal "records_animal"
+@label recordsAnimal "Records Animal"
+@doc recordsAnimal "Animal recorded by an observation."
+
+followsRoute ⊑ relationship
+∃followsRoute.⊤ ⊑ Observation
+⊤ ⊑ ∀followsRoute.SurveyRoute
+@db followsRoute "follows_route"
+@label followsRoute "Follows Route"
+@doc followsRoute "Survey route followed when making an observation."
+
+hasResponsibilityRelation ⊑ relationship
+∃hasResponsibilityRelation.⊤ ⊑ Researcher
+⊤ ⊑ ∀hasResponsibilityRelation.(Animal ⊔ Species ⊔ Habitat ⊔ SurveyRoute)
+@db hasResponsibilityRelation "Has Responsibility"
+@label hasResponsibilityRelation "Has Responsibility"
+@doc hasResponsibilityRelation "General responsibility relation; specialized by more precise responsibility types."
+
+monitors ⊑ hasResponsibilityRelation
+curates ⊑ hasResponsibilityRelation
+leadsSurveyFor ⊑ hasResponsibilityRelation
+monitors ⊓ curates ⊑ ⊥
+monitors ⊓ leadsSurveyFor ⊑ ⊥
+curates ⊓ leadsSurveyFor ⊑ ⊥
+@doc monitors "Researcher monitors an animal, species, habitat, or route."
+@doc curates "Researcher curates data for an animal, species, habitat, or route."
+@doc leadsSurveyFor "Researcher leads surveys for an animal, species, habitat, or route."
+
+############################################################
+# Role chains and inferred relationships
+############################################################
+
+belongsToSpecies ∘ inhabits ⊑ speciesHabitat
+@doc speciesHabitat "Habitat inferred for an animal through the habitat associated with its species."
+
+recordsAnimal ∘ belongsToSpecies ⊑ recordsSpecies
+@doc recordsSpecies "Species inferred for an observation through the animal it records."
+
+locatedIn ∘ containedIn ⊑ locatedInWiderRegion
+@doc locatedInWiderRegion "Wider geographic region inferred through location containment."
+
+containedIn ∘ monitors⁻ ⊑ monitoredRegionBy
+@doc monitoredRegionBy "Researcher inferred to monitor a wider region through responsibility for a contained location."
+
+############################################################
+# Inverses named for convenience
+############################################################
+
+studiedBy ≡ studies⁻
+hasMember ≡ memberOf⁻
+recordedBy ≡ recordsAnimal⁻
+responsibilityOf ≡ hasResponsibilityRelation⁻
+
+locatedIn ∘ locatedIn⁻ ⊑ neighboringPlace
+Irref(neighboringPlace)
+
+############################################################
+# Basic attributes and identifiers
+############################################################
+
+∃name.⊤ ⊑ WildlifeConcept
+⊤ ⊑ ∀name.xsd:string
+WildlifeConcept ⊑ ∃name.xsd:string
+≤1 name.⊤
+@db name
+@label name "Name"
+@doc name "Unique display name for a wildlife concept."
+
+# `matches` references the OWL xsd:pattern facet. `key()` references owl:hasKey.
+∃id.⊤ ⊑ WildlifeConcept
+⊤ ⊑ ∀id.[xsd:string ⊓ [matches "[A-Z]{3}-[0-9]{6}"]]
+WildlifeConcept ⊑ (=1 id.xsd:string)
+≤1 id.⊤
+WildlifeConcept ⊑ key(id)
+@db id
+@storage id "triplestore.subject"
+@doc id "Opaque unique identifier for a modeled wildlife concept."
+
+tagId ⊑ attribute
+∃tagId.⊤ ⊑ Animal
+⊤ ⊑ ∀tagId.xsd:string
+≤1 tagId.⊤
+Animal ⊑ key(tagId)
+@db tagId "tag_id"
+@label tagId "Tag ID"
+@storage tagId "tracking.tag"
+@doc tagId "Field tag or tracking device identifier."
+
+description ⊑ attribute
+∃description.⊤ ⊑ WildlifeConcept
+⊤ ⊑ ∀description.xsd:string
+≤1 description.⊤
+@db description
+@label description "Description"
+@doc description "Concise description of a wildlife concept."
+
+############################################################
+# Enumerated attributes
+############################################################
+
+lifeStage ⊑ attribute
+∃lifeStage.⊤ ⊑ Animal
+⊤ ⊑ ∀lifeStage.{"Juvenile","Subadult","Adult","Unknown"}
+≤1 lifeStage.⊤
+@db lifeStage "life_stage"
+@label lifeStage "Life Stage"
+@doc lifeStage "Observed maturity stage of an animal."
+
+healthScore ⊑ attribute
+∃healthScore.⊤ ⊑ Animal
+⊤ ⊑ ∀healthScore.{"1", "2", "3", "4", "5"}
+≤1 healthScore.⊤
+@db healthScore "health_score"
+@label healthScore "Health Score"
+@doc healthScore "Ordinal health score, 1..5."
+
+conservationStatus ⊑ calculatedList
+∃conservationStatus.⊤ ⊑ Species
+⊤ ⊑ ∀conservationStatus.{"Least Concern","Vulnerable","Endangered","Critical"}
+≤1 conservationStatus.⊤
+@db conservationStatus "conservation_status"
+@label conservationStatus "Conservation Status"
+@doc conservationStatus "Calculated conservation category selected from a model-defined list of terms."
+
+surveyPriority ⊑ calculatedList
+∃surveyPriority.⊤ ⊑ Habitat ⊔ Species
+⊤ ⊑ ∀surveyPriority.{"Low","Medium","High","Urgent"}
+≤1 surveyPriority.⊤
+@db surveyPriority "survey_priority"
+@label surveyPriority "Survey Priority"
+@doc surveyPriority "Calculated priority for future survey attention."
+
+############################################################
+# Numeric and date attributes
+############################################################
+
+populationEstimate ⊑ attribute
+∃populationEstimate.⊤ ⊑ Species
+⊤ ⊑ ∀populationEstimate.xsd:integer[≥0]
+≤1 populationEstimate.⊤
+@db populationEstimate "population_estimate"
+@label populationEstimate "Population Estimate"
+@doc populationEstimate "Estimated population count for a species."
+
+previousPopulationEstimate ⊑ attribute
+∃previousPopulationEstimate.⊤ ⊑ Species
+⊤ ⊑ ∀previousPopulationEstimate.xsd:integer[≥0]
+≤1 previousPopulationEstimate.⊤
+@db previousPopulationEstimate "previous_population_estimate"
+@label previousPopulationEstimate "Previous Population Estimate"
+@doc previousPopulationEstimate "Earlier estimated population count for a species."
+
+habitatQuality ⊑ attribute
+∃habitatQuality.⊤ ⊑ Habitat
+⊤ ⊑ ∀habitatQuality.xsd:decimal[≥1 ⊓ ≤5]
+≤1 habitatQuality.⊤
+@db habitatQuality "habitat_quality"
+@label habitatQuality "Habitat Quality"
+@doc habitatQuality "Ordinal habitat quality score from 1 to 5."
+
+lastObservedAt ⊑ attribute
+∃lastObservedAt.⊤ ⊑ Animal
+⊤ ⊑ ∀lastObservedAt.xsd:dateTime
+≤1 lastObservedAt.⊤
+@db lastObservedAt "last_observed_at"
+@label lastObservedAt "Last Observed At"
+@doc lastObservedAt "Date and time when an animal was last observed."
+
+migrationDate ⊑ attribute
+∃migrationDate.⊤ ⊑ Animal
+⊤ ⊑ ∀migrationDate.xsd:date
+≤1 migrationDate.⊤
+@db migrationDate "migration_date"
+@label migrationDate "Migration Date"
+@doc migrationDate "Expected or observed migration date."
+
+reviewDate ⊑ attribute
+∃reviewDate.⊤ ⊑ WildlifeConcept
+⊤ ⊑ ∀reviewDate.xsd:dateTime
+≤1 reviewDate.⊤
+@db reviewDate "review_date"
+@label reviewDate "Review Date"
+@doc reviewDate "Date at which a modeled concept was last reviewed."
+
+verified ⊑ attribute
+∃verified.⊤ ⊑ Observation
+⊤ ⊑ ∀verified.xsd:boolean
+≤1 verified.⊤
+@db verified
+@label verified "Verified"
+@doc verified "Whether an observation has been reviewed and accepted."
+
+############################################################
+# Numeric equivalents of enumerated scores
+############################################################
+
+∃healthScoreValue.⊤ ⊑ Animal
+⊤ ⊑ ∀healthScoreValue.xsd:decimal
+≤1 healthScoreValue.⊤
+@doc healthScoreValue "Numeric equivalent to the healthScore attribute."
+∃healthScoreValue.{1} ≡ ∃healthScore.{"1"}
+∃healthScoreValue.{2} ≡ ∃healthScore.{"2"}
+∃healthScoreValue.{3} ≡ ∃healthScore.{"3"}
+∃healthScoreValue.{4} ≡ ∃healthScore.{"4"}
+∃healthScoreValue.{5} ≡ ∃healthScore.{"5"}
+
+############################################################
+# Calculated numeric values
+############################################################
+
+populationRisk ⊑ calculatedNumber
+∃populationRisk.⊤ ⊑ Species
+⊤ ⊑ ∀populationRisk.xsd:decimal
+≤1 populationRisk.⊤
+@db populationRisk "population_risk"
+@label populationRisk "Population Risk"
+@doc populationRisk "Calculated population risk score derived from population estimate and trend."
+
+habitatRisk ⊑ calculatedNumber
+∃habitatRisk.⊤ ⊑ Habitat
+⊤ ⊑ ∀habitatRisk.xsd:decimal
+≤1 habitatRisk.⊤
+@db habitatRisk "habitat_risk"
+@label habitatRisk "Habitat Risk"
+@doc habitatRisk "Calculated risk score derived from habitat quality and monitoring status."
+
+############################################################
+# Relationship statement attributes
+############################################################
+
+studiesStatement ⊑ RelationshipStatement
+studiesStatement ⊑ ∃statementRelationship.{studies}
+
+confidenceLevel ⊑ attribute
+∃confidenceLevel.⊤ ⊑ studiesStatement
+⊤ ⊑ ∀confidenceLevel.{"Low","Medium","High"}
+≤1 confidenceLevel.⊤
+@db confidenceLevel "confidence_level"
+@label confidenceLevel "Confidence Level"
+@doc confidenceLevel "Attribute on a Studies relationship indicating confidence in the relationship."
+
+observationMethod ⊑ attribute
+∃observationMethod.⊤ ⊑ recordsAnimalStatement
+⊤ ⊑ ∀observationMethod.{"Camera Trap","Direct Sight","Track","Audio"}
+≤1 observationMethod.⊤
+@db observationMethod "observation_method"
+@label observationMethod "Observation Method"
+@doc observationMethod "Attribute on a Records Animal relationship indicating how the observation was made."
+
+recordsAnimalStatement ⊑ RelationshipStatement
+recordsAnimalStatement ⊑ ∃statementRelationship.{recordsAnimal}
+
+############################################################
+# Ownership-like lifecycle states, rewritten for wildlife data
+############################################################
+
+recordCurationState ⊑ calculatedList
+∃recordCurationState.⊤ ⊑ Animal
+⊤ ⊑ ∀recordCurationState.{"Unassigned","Nominated","Curated","Maintained"}
+≤1 recordCurationState.⊤
+@db recordCurationState "record_curation_state"
+@label recordCurationState "Record Curation State"
+@doc recordCurationState "Calculated curation state for an animal record based on responsible researcher assignment, acceptance, health score, and review freshness."
+
+curationAccepted ⊑ attribute
+∃curationAccepted.⊤ ⊑ Animal
+⊤ ⊑ ∀curationAccepted.{"No","Yes"}
+≤1 curationAccepted.⊤
+@db curationAccepted "curation_accepted"
+@label curationAccepted "Curation Accepted"
+@doc curationAccepted "Whether a nominated curator has accepted responsibility for the animal record."
+
+hasCurator ⊑ relationship
+∃hasCurator.⊤ ⊑ Researcher
+⊤ ⊑ ∀hasCurator.Animal
+@db hasCurator "Has Curator"
+@label hasCurator "Has Curator"
+@doc hasCurator "Researcher responsible for curating an animal record."
+
+UnassignedRecord ≡ Animal ⊓ ¬∃hasCurator⁻.Researcher
+UnassignedRecord ≡ ∃recordCurationState.{"Unassigned"}
+NominatedRecord ≡ Animal ⊓ ∃hasCurator⁻.Researcher ⊓ ∃curationAccepted.{"No"}
+NominatedRecord ≡ ∃recordCurationState.{"Nominated"}
+CuratedRecord ≡ Animal ⊓ ∃hasCurator⁻.Researcher ⊓ ∃curationAccepted.{"Yes"} ⊓ ¬∃healthScore.⊤
+CuratedRecord ≡ ∃recordCurationState.{"Curated"}
+MaintainedRecord ≡ Animal ⊓ ∃hasCurator⁻.Researcher ⊓ ∃curationAccepted.{"Yes"} ⊓ ∃healthScore.⊤
+MaintainedRecord ≡ ∃recordCurationState.{"Maintained"}
+
+############################################################
+# Derived classes
+############################################################
+
+HighHealth ≡ ∃healthScore.{"4", "5"}
+LowHealth ≡ ∃healthScore.{"1", "2"}
+HighSurveyPriority ≡ ∃surveyPriority.{"High","Urgent"}
+LowSurveyPriority ≡ ∃surveyPriority.{"Low","Medium"}
+PriorityAnimal ≡ Animal ⨅ (LowHealth ⨆ ∃belongsToSpecies.(Species ⊓ HighSurveyPriority))
+
+JuvenileAnimal ≡ Animal ⊓ ∃lifeStage.{"Juvenile"}
+AdultAnimal ≡ Animal ⊓ ∃lifeStage.{"Adult"}
+VerifiedObservation ≡ Observation ⊓ ∃verified.{true}
+UnverifiedObservation ≡ Observation ⊓ ∃verified.{false}
+
+HasMigrationDate ≡ ∃migrationDate.⊤
+HasLastObservation ≡ ∃lastObservedAt.⊤
+HasReviewDate ≡ ∃reviewDate.⊤
+
+EndangeredSpecies ≡ Species ⊓ ∃populationEstimate.xsd:integer[<1000]
+CommonSpecies ≡ Species ⊓ ∃populationEstimate.xsd:integer[≥10000]
+HighQualityHabitat ≡ Habitat ⊓ ∃habitatQuality.xsd:decimal[≥4 ⊓ ≤5]
+LowQualityHabitat ≡ Habitat ⊓ ∃habitatQuality.xsd:decimal[≥1 ⊓ <3]
+
+############################################################
+# Calculated category definitions
+############################################################
+
+∃conservationStatus.{"Critical"} ≡ ∃populationEstimate.xsd:integer[<250]
+∃conservationStatus.{"Endangered"} ≡ ∃populationEstimate.xsd:integer[≥250 ⊓ <1000]
+∃conservationStatus.{"Vulnerable"} ≡ ∃populationEstimate.xsd:integer[≥1000 ⊓ <10000]
+∃conservationStatus.{"Least Concern"} ≡ ∃populationEstimate.xsd:integer[≥10000]
+
+∃surveyPriority.{"Urgent"} ≡ ∃populationRisk.xsd:decimal[≥4]
+∃surveyPriority.{"High"} ≡ ∃populationRisk.xsd:decimal[≥3 ⊓ <4]
+∃surveyPriority.{"Medium"} ≡ ∃populationRisk.xsd:decimal[≥2 ⊓ <3]
+∃surveyPriority.{"Low"} ≡ ∃populationRisk.xsd:decimal[<2]
+
+############################################################
+# Predicate extensions and predicate restrictions
+############################################################
+
+greaterThan(x,y) ≝ x > y
+lessThan(x,y) ≝ x < y
+afterNow(x) ≝ x > now()
+beforeNow(x) ≝ x < now()
+onOrBeforeNow(x) ≝ x ≤ now()
+enclosesNow(x,y) ≝ x ≤ now() ∧ now() ≤ y
+withinNextYear(x) ≝ now() < x ∧ x < addDuration(now(), P1Y)
+
+PopulationIncreasing ≡ ∃populationEstimate,previousPopulationEstimate.greaterThan
+PopulationDeclining ≡ ∃populationEstimate,previousPopulationEstimate.lessThan
+MigrationInFuture ≡ ∃migrationDate.afterNow
+ObservationStale ≡ ∃lastObservedAt.beforeNow
+ReviewDueNow ≡ ∃reviewDate.onOrBeforeNow
+ActiveSurveyWindow ≡ ∃surveyStart,surveyEnd.enclosesNow
+MigrationSoon ≡ ∃migrationDate.withinNextYear
+
+############################################################
+# Attributes used only by predicate-restriction examples
+############################################################
+
+surveyStart ⊑ attribute
+∃surveyStart.⊤ ⊑ SurveyRoute
+⊤ ⊑ ∀surveyStart.xsd:dateTime
+≤1 surveyStart.⊤
+@db surveyStart "survey_start"
+@label surveyStart "Survey Start"
+
+surveyEnd ⊑ attribute
+∃surveyEnd.⊤ ⊑ SurveyRoute
+⊤ ⊑ ∀surveyEnd.xsd:dateTime
+≤1 surveyEnd.⊤
+@db surveyEnd "survey_end"
+@label surveyEnd "Survey End"
+
+############################################################
+# Additional annotations
+############################################################
+
+@ann Species example "Species may be connected to many habitats through the inhabits relationship."
+@ann Habitat note "Habitats may overlap geographically; locatedIn only describes containment."
+@ann Observation warning "Observation records may be unverified until reviewed."
+
