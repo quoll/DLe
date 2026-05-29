@@ -23,6 +23,6 @@
 # - Resources only appear explicitly in the database if they have an @db annotation
 #
 # DLe extensions:
-# ≝  — defines a symbol or predicate; right-hand side is not DL
+# ≝  — defines a symbol or predicate; right-hand side is not DL and is not required to be valid OWL
 # ∃r₁,…,rₙ.P  — predicate restriction: P(r₁,…,rₙ) holds over the role values
 
