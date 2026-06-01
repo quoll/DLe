@@ -120,14 +120,23 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
     // ── Textbook role axiom syntax ───────────────────────────────────────────
 
     @Override public Void visitTransitiveRoleAxiom(DLESyntaxParser.TransitiveRoleAxiomContext ctx)   { objectPropertyNames.add(ctx.name().getText()); return visitChildren(ctx); }
-    @Override public Void visitFunctionalRoleAxiom(DLESyntaxParser.FunctionalRoleAxiomContext ctx)   { objectPropertyNames.add(ctx.name().getText()); return visitChildren(ctx); }
+    @Override public Void visitFunctionalRoleAxiom(DLESyntaxParser.FunctionalRoleAxiomContext ctx)   { classifyUnknownRole(ctx.name().getText()); return visitChildren(ctx); }
     @Override public Void visitReflexiveRoleAxiom(DLESyntaxParser.ReflexiveRoleAxiomContext ctx)     { objectPropertyNames.add(ctx.name().getText()); return visitChildren(ctx); }
     @Override public Void visitIrreflexiveRoleAxiom(DLESyntaxParser.IrreflexiveRoleAxiomContext ctx) { objectPropertyNames.add(ctx.name().getText()); return visitChildren(ctx); }
     @Override public Void visitSymmetricRoleAxiom(DLESyntaxParser.SymmetricRoleAxiomContext ctx)     { objectPropertyNames.add(ctx.name().getText()); return visitChildren(ctx); }
     @Override public Void visitAsymmetricRoleAxiom(DLESyntaxParser.AsymmetricRoleAxiomContext ctx)   { objectPropertyNames.add(ctx.name().getText()); return visitChildren(ctx); }
     @Override public Void visitDisjointRoleAxiom(DLESyntaxParser.DisjointRoleAxiomContext ctx) {
-        ctx.name().forEach(n -> objectPropertyNames.add(n.getText()));
+        ctx.name().forEach(n -> classifyUnknownRole(n.getText()));
         return visitChildren(ctx);
+    }
+
+    // Classifies a role as object property only if not already established as data.
+    // Func(p) and Disj(p,q) are syntactically ambiguous — they apply to both data
+    // and object properties.  This avoids overwriting a definitive data classification.
+    private void classifyUnknownRole(String name) {
+        if (!dataPropertyNames.contains(name)) {
+            objectPropertyNames.add(name);
+        }
     }
 
     // ── Property chain axioms ────────────────────────────────────────────────

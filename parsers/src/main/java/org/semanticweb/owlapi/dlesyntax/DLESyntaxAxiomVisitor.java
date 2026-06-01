@@ -412,8 +412,13 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
 
     @Override
     public OWLObject visitFunctionalRoleAxiom(DLESyntaxParser.FunctionalRoleAxiomContext ctx) {
-        OWLObjectProperty prop = objectProp(ctx.name());
-        axioms.add(df.getOWLFunctionalObjectPropertyAxiom(prop));
+        String name = ctx.name().getText();
+        if (dataPropertyNames.contains(name)) {
+            axioms.add(df.getOWLFunctionalDataPropertyAxiom(
+                df.getOWLDataProperty(expandName(ctx.name()))));
+        } else {
+            axioms.add(df.getOWLFunctionalObjectPropertyAxiom(objectProp(ctx.name())));
+        }
         return null;
     }
 
@@ -1076,9 +1081,16 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
                               : f.GT()  != null ? OWLFacet.MIN_EXCLUSIVE
                               :                   OWLFacet.MAX_EXCLUSIVE;
                 String numText = f.NUMBER().getText();
+                // Use string+datatype form to match OWLAPI's OFN parser representation.
+                // df.getOWLLiteral(int/double) creates type-specific impls that do not
+                // equal OWLLiteralImpl from OFN parsing in OWLAPI 4.  Always use xsd:integer
+                // for integer-looking values regardless of the base datatype, matching OWL
+                // convention where numeric facet values retain their natural type.
                 OWLLiteral value = numText.contains(".")
-                    ? df.getOWLLiteral(Double.parseDouble(numText))
-                    : df.getOWLLiteral(Integer.parseInt(numText));
+                    ? df.getOWLLiteral(numText, df.getOWLDatatype(
+                          IRI.create("http://www.w3.org/2001/XMLSchema#double")))
+                    : df.getOWLLiteral(numText, df.getOWLDatatype(
+                          IRI.create("http://www.w3.org/2001/XMLSchema#integer")));
                 return df.getOWLFacetRestriction(facet, value);
             })
             .collect(Collectors.toList());

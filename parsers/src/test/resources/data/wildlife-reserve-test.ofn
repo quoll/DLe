@@ -1,0 +1,1075 @@
+Prefix(:=<http://example.org/wildlife-test#>)
+Prefix(dle:=<http://quoll.github.io/DLe/vocab#>)
+Prefix(owl:=<http://www.w3.org/2002/07/owl#>)
+Prefix(rdf:=<http://www.w3.org/1999/02/22-rdf-syntax-ns#>)
+Prefix(xml:=<http://www.w3.org/XML/1998/namespace>)
+Prefix(xsd:=<http://www.w3.org/2001/XMLSchema#>)
+Prefix(rdfs:=<http://www.w3.org/2000/01/rdf-schema#>)
+
+
+Ontology(<http://quoll.github.io/DLe/ontology>
+
+Declaration(Class(:ActiveSurveyWindow))
+Declaration(Class(:AdultAnimal))
+Declaration(Class(:Animal))
+Declaration(Class(:AnimalDomain))
+Declaration(Class(:CommonSpecies))
+Declaration(Class(:CuratedRecord))
+Declaration(Class(:Domain))
+Declaration(Class(:EndangeredSpecies))
+Declaration(Class(:Habitat))
+Declaration(Class(:HabitatDomain))
+Declaration(Class(:HasLastObservation))
+Declaration(Class(:HasMigrationDate))
+Declaration(Class(:HasReviewDate))
+Declaration(Class(:HighHealth))
+Declaration(Class(:HighQualityHabitat))
+Declaration(Class(:HighSurveyPriority))
+Declaration(Class(:JuvenileAnimal))
+Declaration(Class(:LowHealth))
+Declaration(Class(:LowQualityHabitat))
+Declaration(Class(:LowSurveyPriority))
+Declaration(Class(:MaintainedRecord))
+Declaration(Class(:MigrationInFuture))
+Declaration(Class(:MigrationSoon))
+Declaration(Class(:NominatedRecord))
+Declaration(Class(:Observation))
+Declaration(Class(:ObservationStale))
+Declaration(Class(:PopulationDeclining))
+Declaration(Class(:PopulationIncreasing))
+Declaration(Class(:PriorityAnimal))
+Declaration(Class(:Region))
+Declaration(Class(:RelationshipStatement))
+Declaration(Class(:ResearchDomain))
+Declaration(Class(:ResearchTeam))
+Declaration(Class(:Researcher))
+Declaration(Class(:ReviewDueNow))
+Declaration(Class(:Species))
+Declaration(Class(:SurveyRoute))
+Declaration(Class(:Taxon))
+Declaration(Class(:TaxonomyDomain))
+Declaration(Class(:UnassignedRecord))
+Declaration(Class(:UnverifiedObservation))
+Declaration(Class(:VerifiedObservation))
+Declaration(Class(:WildlifeConcept))
+Declaration(Class(:recordsAnimalStatement))
+Declaration(Class(:studiesStatement))
+Declaration(Class(dle:E_afterNow_3ce45e2f))
+Declaration(Class(dle:E_beforeNow_eab1ae7d))
+Declaration(Class(dle:E_enclosesNow_7f8b225e))
+Declaration(Class(dle:E_greaterThan_5d36d20d))
+Declaration(Class(dle:E_lessThan_b38f8ec8))
+Declaration(Class(dle:E_onOrBeforeNow_269f9110))
+Declaration(Class(dle:E_withinNextYear_de455e70))
+Declaration(Class(rdf:Property))
+Declaration(Class(rdfs:Proposition))
+Declaration(ObjectProperty(:belongsToSpecies))
+Declaration(ObjectProperty(:broaderTaxon))
+Declaration(ObjectProperty(:containedIn))
+Declaration(ObjectProperty(:contains))
+Declaration(ObjectProperty(:containsTransitively))
+Declaration(ObjectProperty(:curates))
+Declaration(ObjectProperty(:followsRoute))
+Declaration(ObjectProperty(:hasCurator))
+Declaration(ObjectProperty(:hasMember))
+Declaration(ObjectProperty(:hasResponsibilityRelation))
+Declaration(ObjectProperty(:hasTaxonPart))
+Declaration(ObjectProperty(:inDomain))
+Declaration(ObjectProperty(:inhabits))
+Declaration(ObjectProperty(:leadsSurveyFor))
+Declaration(ObjectProperty(:locatedIn))
+Declaration(ObjectProperty(:locatedInWiderRegion))
+Declaration(ObjectProperty(:memberOf))
+Declaration(ObjectProperty(:monitoredRegionBy))
+Declaration(ObjectProperty(:monitors))
+Declaration(ObjectProperty(:narrowerTaxon))
+Declaration(ObjectProperty(:neighboringPlace))
+Declaration(ObjectProperty(:partOfTaxon))
+Declaration(ObjectProperty(:recordedBy))
+Declaration(ObjectProperty(:recordsAnimal))
+Declaration(ObjectProperty(:recordsSpecies))
+Declaration(ObjectProperty(:relationship))
+Declaration(ObjectProperty(:responsibilityOf))
+Declaration(ObjectProperty(:speciesHabitat))
+Declaration(ObjectProperty(:statementRelationship))
+Declaration(ObjectProperty(:studiedBy))
+Declaration(ObjectProperty(:studies))
+Declaration(DataProperty(:attribute))
+Declaration(DataProperty(:calculatedList))
+Declaration(DataProperty(:calculatedNumber))
+Declaration(DataProperty(:calculatedValue))
+Declaration(DataProperty(:confidenceLevel))
+Declaration(DataProperty(:conservationStatus))
+Declaration(DataProperty(:curationAccepted))
+Declaration(DataProperty(:description))
+Declaration(DataProperty(:habitatQuality))
+Declaration(DataProperty(:habitatRisk))
+Declaration(DataProperty(:healthScore))
+Declaration(DataProperty(:healthScoreValue))
+Declaration(DataProperty(:id))
+Declaration(DataProperty(:lastObservedAt))
+Declaration(DataProperty(:lifeStage))
+Declaration(DataProperty(:migrationDate))
+Declaration(DataProperty(:name))
+Declaration(DataProperty(:observationMethod))
+Declaration(DataProperty(:populationEstimate))
+Declaration(DataProperty(:populationRisk))
+Declaration(DataProperty(:previousPopulationEstimate))
+Declaration(DataProperty(:recordCurationState))
+Declaration(DataProperty(:reviewDate))
+Declaration(DataProperty(:surveyEnd))
+Declaration(DataProperty(:surveyPriority))
+Declaration(DataProperty(:surveyStart))
+Declaration(DataProperty(:tagId))
+Declaration(DataProperty(:verified))
+Declaration(NamedIndividual(:recordsAnimal))
+Declaration(NamedIndividual(:studies))
+Declaration(AnnotationProperty(:afterNow))
+Declaration(AnnotationProperty(:beforeNow))
+Declaration(AnnotationProperty(:enclosesNow))
+Declaration(AnnotationProperty(:example))
+Declaration(AnnotationProperty(:greaterThan))
+Declaration(AnnotationProperty(:lessThan))
+Declaration(AnnotationProperty(:note))
+Declaration(AnnotationProperty(:onOrBeforeNow))
+Declaration(AnnotationProperty(:warning))
+Declaration(AnnotationProperty(:withinNextYear))
+Declaration(AnnotationProperty(dle:comment))
+Declaration(AnnotationProperty(rdf:value))
+Declaration(Datatype(xsd:date))
+############################
+#   Annotation Properties
+############################
+
+# Annotation Property: <http://example.org/wildlife-test#afterNow> (afterNow(x))
+
+AnnotationAssertion(rdf:value :afterNow "x → x > now()")
+AnnotationAssertion(rdfs:label :afterNow "afterNow(x)")
+
+# Annotation Property: <http://example.org/wildlife-test#beforeNow> (beforeNow(x))
+
+AnnotationAssertion(rdf:value :beforeNow "x → x < now()")
+AnnotationAssertion(rdfs:label :beforeNow "beforeNow(x)")
+
+# Annotation Property: <http://example.org/wildlife-test#enclosesNow> (enclosesNow(x,y))
+
+AnnotationAssertion(rdf:value :enclosesNow "x,y → x ≤ now() ∧ now() ≤ y")
+AnnotationAssertion(rdfs:label :enclosesNow "enclosesNow(x,y)")
+
+# Annotation Property: <http://example.org/wildlife-test#example> (example)
+
+AnnotationAssertion(rdfs:label :example "example")
+
+# Annotation Property: <http://example.org/wildlife-test#greaterThan> (greaterThan(x,y))
+
+AnnotationAssertion(dle:comment :greaterThan "###########################################################
+Predicate extensions and predicate restrictions
+###########################################################")
+AnnotationAssertion(rdf:value :greaterThan "x,y → x > y")
+AnnotationAssertion(rdfs:label :greaterThan "greaterThan(x,y)")
+
+# Annotation Property: <http://example.org/wildlife-test#lessThan> (lessThan(x,y))
+
+AnnotationAssertion(rdf:value :lessThan "x,y → x < y")
+AnnotationAssertion(rdfs:label :lessThan "lessThan(x,y)")
+
+# Annotation Property: <http://example.org/wildlife-test#note> (note)
+
+AnnotationAssertion(rdfs:label :note "note")
+
+# Annotation Property: <http://example.org/wildlife-test#onOrBeforeNow> (onOrBeforeNow(x))
+
+AnnotationAssertion(rdf:value :onOrBeforeNow "x → x ≤ now()")
+AnnotationAssertion(rdfs:label :onOrBeforeNow "onOrBeforeNow(x)")
+
+# Annotation Property: <http://example.org/wildlife-test#warning> (warning)
+
+AnnotationAssertion(rdfs:label :warning "warning")
+
+# Annotation Property: <http://example.org/wildlife-test#withinNextYear> (withinNextYear(x))
+
+AnnotationAssertion(rdf:value :withinNextYear "x → now() < x ∧ x < addDuration(now(), P1Y)")
+AnnotationAssertion(rdfs:label :withinNextYear "withinNextYear(x)")
+
+# Annotation Property: rdf:value (value)
+
+AnnotationAssertion(rdfs:label rdf:value "value")
+
+
+############################
+#   Object Properties
+############################
+
+# Object Property: <http://example.org/wildlife-test#belongsToSpecies> (Belongs To Species)
+
+AnnotationAssertion(dle:comment :belongsToSpecies "###########################################################
+Relationships
+###########################################################")
+AnnotationAssertion(dle:comment :belongsToSpecies "###########################################################
+Role chains and inferred relationships
+###########################################################")
+AnnotationAssertion(rdfs:comment :belongsToSpecies "Species classification of an individual animal.")
+AnnotationAssertion(rdfs:isDefinedBy :belongsToSpecies "belongs_to_species")
+AnnotationAssertion(rdfs:label :belongsToSpecies "Belongs To Species")
+SubObjectPropertyOf(:belongsToSpecies :relationship)
+FunctionalObjectProperty(:belongsToSpecies)
+ObjectPropertyDomain(:belongsToSpecies :Animal)
+ObjectPropertyRange(:belongsToSpecies :Species)
+
+# Object Property: <http://example.org/wildlife-test#broaderTaxon> (broaderTaxon)
+
+AnnotationAssertion(rdfs:label :broaderTaxon "broaderTaxon")
+TransitiveObjectProperty(:broaderTaxon)
+
+# Object Property: <http://example.org/wildlife-test#containedIn> (containedIn)
+
+AnnotationAssertion(rdfs:label :containedIn "containedIn")
+TransitiveObjectProperty(:containedIn)
+
+# Object Property: <http://example.org/wildlife-test#contains> (contains)
+
+AnnotationAssertion(rdfs:label :contains "contains")
+EquivalentObjectProperties(:contains ObjectInverseOf(:locatedIn))
+
+# Object Property: <http://example.org/wildlife-test#containsTransitively> (containsTransitively)
+
+AnnotationAssertion(rdfs:label :containsTransitively "containsTransitively")
+EquivalentObjectProperties(:containsTransitively ObjectInverseOf(:containedIn))
+
+# Object Property: <http://example.org/wildlife-test#curates> (curates)
+
+AnnotationAssertion(rdfs:comment :curates "Researcher curates data for an animal, species, habitat, or route.")
+AnnotationAssertion(rdfs:label :curates "curates")
+SubObjectPropertyOf(:curates :hasResponsibilityRelation)
+DisjointObjectProperties(:curates :leadsSurveyFor)
+DisjointObjectProperties(:curates :monitors)
+
+# Object Property: <http://example.org/wildlife-test#followsRoute> (Follows Route)
+
+AnnotationAssertion(rdfs:comment :followsRoute "Survey route followed when making an observation.")
+AnnotationAssertion(rdfs:isDefinedBy :followsRoute "follows_route")
+AnnotationAssertion(rdfs:label :followsRoute "Follows Route")
+SubObjectPropertyOf(:followsRoute :relationship)
+ObjectPropertyDomain(:followsRoute :Observation)
+ObjectPropertyRange(:followsRoute :SurveyRoute)
+
+# Object Property: <http://example.org/wildlife-test#hasCurator> (Has Curator)
+
+AnnotationAssertion(rdfs:comment :hasCurator "Researcher responsible for curating an animal record.")
+AnnotationAssertion(rdfs:isDefinedBy :hasCurator "Has Curator")
+AnnotationAssertion(rdfs:label :hasCurator "Has Curator")
+SubObjectPropertyOf(:hasCurator :relationship)
+ObjectPropertyDomain(:hasCurator :Researcher)
+ObjectPropertyRange(:hasCurator :Animal)
+
+# Object Property: <http://example.org/wildlife-test#hasMember> (hasMember)
+
+AnnotationAssertion(rdfs:label :hasMember "hasMember")
+EquivalentObjectProperties(:hasMember ObjectInverseOf(:memberOf))
+
+# Object Property: <http://example.org/wildlife-test#hasResponsibilityRelation> (Has Responsibility)
+
+AnnotationAssertion(rdfs:comment :hasResponsibilityRelation "General responsibility relation; specialized by more precise responsibility types.")
+AnnotationAssertion(rdfs:isDefinedBy :hasResponsibilityRelation "Has Responsibility")
+AnnotationAssertion(rdfs:label :hasResponsibilityRelation "Has Responsibility")
+SubObjectPropertyOf(:hasResponsibilityRelation :relationship)
+ObjectPropertyDomain(:hasResponsibilityRelation :Researcher)
+ObjectPropertyRange(:hasResponsibilityRelation ObjectUnionOf(:Animal :Habitat :Species :SurveyRoute))
+
+# Object Property: <http://example.org/wildlife-test#hasTaxonPart> (hasTaxonPart)
+
+AnnotationAssertion(rdfs:label :hasTaxonPart "hasTaxonPart")
+EquivalentObjectProperties(:hasTaxonPart ObjectInverseOf(:partOfTaxon))
+
+# Object Property: <http://example.org/wildlife-test#inDomain> (In Domain)
+
+AnnotationAssertion(dle:comment :inDomain "###########################################################
+Domain assignment
+###########################################################")
+AnnotationAssertion(rdfs:comment :inDomain "Primary subject grouping for a modeled wildlife concept.")
+AnnotationAssertion(rdfs:isDefinedBy :inDomain "domain_id")
+AnnotationAssertion(rdfs:label :inDomain "In Domain")
+FunctionalObjectProperty(:inDomain)
+ObjectPropertyDomain(:inDomain :WildlifeConcept)
+ObjectPropertyRange(:inDomain :Domain)
+
+# Object Property: <http://example.org/wildlife-test#inhabits> (Inhabits)
+
+AnnotationAssertion(rdfs:comment :inhabits "Habitat normally used by an animal or species.")
+AnnotationAssertion(rdfs:isDefinedBy :inhabits "inhabits")
+AnnotationAssertion(rdfs:label :inhabits "Inhabits")
+SubObjectPropertyOf(:inhabits :relationship)
+ObjectPropertyDomain(:inhabits ObjectUnionOf(:Animal :Species))
+ObjectPropertyRange(:inhabits :Habitat)
+
+# Object Property: <http://example.org/wildlife-test#leadsSurveyFor> (leadsSurveyFor)
+
+AnnotationAssertion(rdfs:comment :leadsSurveyFor "Researcher leads surveys for an animal, species, habitat, or route.")
+AnnotationAssertion(rdfs:label :leadsSurveyFor "leadsSurveyFor")
+SubObjectPropertyOf(:leadsSurveyFor :hasResponsibilityRelation)
+DisjointObjectProperties(:leadsSurveyFor :monitors)
+
+# Object Property: <http://example.org/wildlife-test#locatedIn> (Located In)
+
+AnnotationAssertion(dle:comment :locatedIn "###########################################################
+Hierarchy and transitive closure
+###########################################################")
+AnnotationAssertion(rdfs:comment :locatedIn "Immediate geographic containment. This is instance-level location containment, not rdfs:subClassOf semantics.")
+AnnotationAssertion(rdfs:isDefinedBy :locatedIn "located_in")
+AnnotationAssertion(rdfs:label :locatedIn "Located In")
+SubObjectPropertyOf(:locatedIn :containedIn)
+SubObjectPropertyOf(:locatedIn :relationship)
+FunctionalObjectProperty(:locatedIn)
+ObjectPropertyDomain(:locatedIn ObjectUnionOf(:Habitat :Observation :Region))
+ObjectPropertyRange(:locatedIn ObjectUnionOf(:Habitat :Region))
+
+# Object Property: <http://example.org/wildlife-test#locatedInWiderRegion> (locatedInWiderRegion)
+
+AnnotationAssertion(rdfs:comment :locatedInWiderRegion "Wider geographic region inferred through location containment.")
+AnnotationAssertion(rdfs:label :locatedInWiderRegion "locatedInWiderRegion")
+
+# Object Property: <http://example.org/wildlife-test#memberOf> (Member Of)
+
+AnnotationAssertion(rdfs:comment :memberOf "Research team membership.")
+AnnotationAssertion(rdfs:isDefinedBy :memberOf "member_of")
+AnnotationAssertion(rdfs:label :memberOf "Member Of")
+SubObjectPropertyOf(:memberOf :relationship)
+ObjectPropertyDomain(:memberOf :Researcher)
+ObjectPropertyRange(:memberOf :ResearchTeam)
+
+# Object Property: <http://example.org/wildlife-test#monitoredRegionBy> (monitoredRegionBy)
+
+AnnotationAssertion(rdfs:comment :monitoredRegionBy "Researcher inferred to monitor a wider region through responsibility for a contained location.")
+AnnotationAssertion(rdfs:label :monitoredRegionBy "monitoredRegionBy")
+
+# Object Property: <http://example.org/wildlife-test#monitors> (monitors)
+
+AnnotationAssertion(rdfs:comment :monitors "Researcher monitors an animal, species, habitat, or route.")
+AnnotationAssertion(rdfs:label :monitors "monitors")
+SubObjectPropertyOf(:monitors :hasResponsibilityRelation)
+
+# Object Property: <http://example.org/wildlife-test#narrowerTaxon> (narrowerTaxon)
+
+AnnotationAssertion(rdfs:label :narrowerTaxon "narrowerTaxon")
+EquivalentObjectProperties(:narrowerTaxon ObjectInverseOf(:broaderTaxon))
+
+# Object Property: <http://example.org/wildlife-test#neighboringPlace> (neighboringPlace)
+
+AnnotationAssertion(rdfs:label :neighboringPlace "neighboringPlace")
+IrreflexiveObjectProperty(:neighboringPlace)
+
+# Object Property: <http://example.org/wildlife-test#partOfTaxon> (Part Of Taxon)
+
+AnnotationAssertion(rdfs:comment :partOfTaxon "Immediate taxonomic containment, such as species within genus or genus within family.")
+AnnotationAssertion(rdfs:isDefinedBy :partOfTaxon "part_of_taxon")
+AnnotationAssertion(rdfs:label :partOfTaxon "Part Of Taxon")
+SubObjectPropertyOf(:partOfTaxon :broaderTaxon)
+SubObjectPropertyOf(:partOfTaxon :relationship)
+FunctionalObjectProperty(:partOfTaxon)
+ObjectPropertyDomain(:partOfTaxon :Taxon)
+ObjectPropertyRange(:partOfTaxon :Taxon)
+
+# Object Property: <http://example.org/wildlife-test#recordedBy> (recordedBy)
+
+AnnotationAssertion(rdfs:label :recordedBy "recordedBy")
+EquivalentObjectProperties(:recordedBy ObjectInverseOf(:recordsAnimal))
+
+# Object Property: <http://example.org/wildlife-test#recordsAnimal> (Records Animal)
+
+AnnotationAssertion(rdfs:comment :recordsAnimal "Animal recorded by an observation.")
+AnnotationAssertion(rdfs:isDefinedBy :recordsAnimal "records_animal")
+AnnotationAssertion(rdfs:label :recordsAnimal "Records Animal")
+SubObjectPropertyOf(:recordsAnimal :relationship)
+ObjectPropertyDomain(:recordsAnimal :Observation)
+ObjectPropertyRange(:recordsAnimal :Animal)
+
+# Object Property: <http://example.org/wildlife-test#recordsSpecies> (recordsSpecies)
+
+AnnotationAssertion(rdfs:comment :recordsSpecies "Species inferred for an observation through the animal it records.")
+AnnotationAssertion(rdfs:label :recordsSpecies "recordsSpecies")
+
+# Object Property: <http://example.org/wildlife-test#relationship> (Relationship)
+
+AnnotationAssertion(dle:comment :relationship "###########################################################
+Generic relationship and attribute roots
+###########################################################")
+AnnotationAssertion(rdfs:comment :relationship "Generic relationship between modeled wildlife concepts or domains; specialized by domain-specific relationship types.")
+AnnotationAssertion(rdfs:label :relationship "Relationship")
+ObjectPropertyDomain(:relationship ObjectUnionOf(:Domain :WildlifeConcept))
+ObjectPropertyRange(:relationship ObjectUnionOf(:Domain :WildlifeConcept))
+
+# Object Property: <http://example.org/wildlife-test#responsibilityOf> (responsibilityOf)
+
+AnnotationAssertion(rdfs:label :responsibilityOf "responsibilityOf")
+EquivalentObjectProperties(:responsibilityOf ObjectInverseOf(:hasResponsibilityRelation))
+
+# Object Property: <http://example.org/wildlife-test#speciesHabitat> (speciesHabitat)
+
+AnnotationAssertion(rdfs:comment :speciesHabitat "Habitat inferred for an animal through the habitat associated with its species.")
+AnnotationAssertion(rdfs:label :speciesHabitat "speciesHabitat")
+
+# Object Property: <http://example.org/wildlife-test#statementRelationship> (statementRelationship)
+
+AnnotationAssertion(rdfs:comment :statementRelationship "The predicate resource in a triple.")
+AnnotationAssertion(rdfs:label :statementRelationship "statementRelationship")
+ObjectPropertyDomain(:statementRelationship :RelationshipStatement)
+ObjectPropertyRange(:statementRelationship rdf:Property)
+
+# Object Property: <http://example.org/wildlife-test#studiedBy> (studiedBy)
+
+AnnotationAssertion(dle:comment :studiedBy "###########################################################
+Inverses named for convenience
+###########################################################")
+AnnotationAssertion(rdfs:label :studiedBy "studiedBy")
+EquivalentObjectProperties(:studiedBy ObjectInverseOf(:studies))
+
+# Object Property: <http://example.org/wildlife-test#studies> (Studies)
+
+AnnotationAssertion(rdfs:comment :studies "Research relationship from a researcher to an animal, species, or habitat.")
+AnnotationAssertion(rdfs:isDefinedBy :studies "studies")
+AnnotationAssertion(rdfs:label :studies "Studies")
+SubObjectPropertyOf(:studies :relationship)
+ObjectPropertyDomain(:studies :Researcher)
+ObjectPropertyRange(:studies ObjectUnionOf(:Animal :Habitat :Species))
+
+
+############################
+#   Data Properties
+############################
+
+# Data Property: <http://example.org/wildlife-test#attribute> (attribute)
+
+AnnotationAssertion(rdfs:comment :attribute "A scalar attribute belonging to a wildlife concept or to an asserted relationship.")
+AnnotationAssertion(rdfs:label :attribute "attribute")
+DataPropertyDomain(:attribute ObjectUnionOf(:RelationshipStatement :WildlifeConcept))
+DataPropertyRange(:attribute DataUnionOf(xsd:boolean xsd:date xsd:dateTime xsd:decimal xsd:integer xsd:string))
+
+# Data Property: <http://example.org/wildlife-test#calculatedList> (Calculated List)
+
+AnnotationAssertion(rdfs:comment :calculatedList "Subproperties of this are calculated string values selected from a model-defined list of enumerated terms.")
+AnnotationAssertion(rdfs:label :calculatedList "Calculated List")
+SubDataPropertyOf(:calculatedList :calculatedValue)
+DataPropertyRange(:calculatedList xsd:string)
+
+# Data Property: <http://example.org/wildlife-test#calculatedNumber> (Calculated Number)
+
+AnnotationAssertion(rdfs:comment :calculatedNumber "Subproperties of this are numeric calculated values; this property is not intended for direct use.")
+AnnotationAssertion(rdfs:label :calculatedNumber "Calculated Number")
+SubDataPropertyOf(:calculatedNumber :calculatedValue)
+DataPropertyRange(:calculatedNumber DataUnionOf(xsd:decimal xsd:integer))
+
+# Data Property: <http://example.org/wildlife-test#calculatedValue> (Calculated)
+
+AnnotationAssertion(rdfs:comment :calculatedValue "Subproperties of this are system-calculated values; this property is not intended for direct use.")
+AnnotationAssertion(rdfs:label :calculatedValue "Calculated")
+SubDataPropertyOf(:calculatedValue :attribute)
+
+# Data Property: <http://example.org/wildlife-test#confidenceLevel> (Confidence Level)
+
+AnnotationAssertion(rdfs:comment :confidenceLevel "Attribute on a Studies relationship indicating confidence in the relationship.")
+AnnotationAssertion(rdfs:isDefinedBy :confidenceLevel "confidence_level")
+AnnotationAssertion(rdfs:label :confidenceLevel "Confidence Level")
+SubDataPropertyOf(:confidenceLevel :attribute)
+FunctionalDataProperty(:confidenceLevel)
+DataPropertyDomain(:confidenceLevel :studiesStatement)
+DataPropertyRange(:confidenceLevel DataOneOf("High" "Low" "Medium"))
+
+# Data Property: <http://example.org/wildlife-test#conservationStatus> (Conservation Status)
+
+AnnotationAssertion(dle:comment :conservationStatus "###########################################################
+Calculated category definitions
+###########################################################")
+AnnotationAssertion(rdfs:comment :conservationStatus "Calculated conservation category selected from a model-defined list of terms.")
+AnnotationAssertion(rdfs:isDefinedBy :conservationStatus "conservation_status")
+AnnotationAssertion(rdfs:label :conservationStatus "Conservation Status")
+SubDataPropertyOf(:conservationStatus :calculatedList)
+FunctionalDataProperty(:conservationStatus)
+DataPropertyDomain(:conservationStatus :Species)
+DataPropertyRange(:conservationStatus DataOneOf("Critical" "Endangered" "Least Concern" "Vulnerable"))
+
+# Data Property: <http://example.org/wildlife-test#curationAccepted> (Curation Accepted)
+
+AnnotationAssertion(rdfs:comment :curationAccepted "Whether a nominated curator has accepted responsibility for the animal record.")
+AnnotationAssertion(rdfs:isDefinedBy :curationAccepted "curation_accepted")
+AnnotationAssertion(rdfs:label :curationAccepted "Curation Accepted")
+SubDataPropertyOf(:curationAccepted :attribute)
+FunctionalDataProperty(:curationAccepted)
+DataPropertyDomain(:curationAccepted :Animal)
+DataPropertyRange(:curationAccepted DataOneOf("No" "Yes"))
+
+# Data Property: <http://example.org/wildlife-test#description> (Description)
+
+AnnotationAssertion(rdfs:comment :description "Concise description of a wildlife concept.")
+AnnotationAssertion(rdfs:isDefinedBy :description "description")
+AnnotationAssertion(rdfs:label :description "Description")
+SubDataPropertyOf(:description :attribute)
+FunctionalDataProperty(:description)
+DataPropertyDomain(:description :WildlifeConcept)
+DataPropertyRange(:description xsd:string)
+
+# Data Property: <http://example.org/wildlife-test#habitatQuality> (Habitat Quality)
+
+AnnotationAssertion(rdfs:comment :habitatQuality "Ordinal habitat quality score from 1 to 5.")
+AnnotationAssertion(rdfs:isDefinedBy :habitatQuality "habitat_quality")
+AnnotationAssertion(rdfs:label :habitatQuality "Habitat Quality")
+SubDataPropertyOf(:habitatQuality :attribute)
+FunctionalDataProperty(:habitatQuality)
+DataPropertyDomain(:habitatQuality :Habitat)
+DataPropertyRange(:habitatQuality DatatypeRestriction(xsd:decimal xsd:minInclusive "1"^^xsd:integer xsd:maxInclusive "5"^^xsd:integer))
+
+# Data Property: <http://example.org/wildlife-test#habitatRisk> (Habitat Risk)
+
+AnnotationAssertion(rdfs:comment :habitatRisk "Calculated risk score derived from habitat quality and monitoring status.")
+AnnotationAssertion(rdfs:isDefinedBy :habitatRisk "habitat_risk")
+AnnotationAssertion(rdfs:label :habitatRisk "Habitat Risk")
+SubDataPropertyOf(:habitatRisk :calculatedNumber)
+FunctionalDataProperty(:habitatRisk)
+DataPropertyDomain(:habitatRisk :Habitat)
+DataPropertyRange(:habitatRisk xsd:decimal)
+
+# Data Property: <http://example.org/wildlife-test#healthScore> (Health Score)
+
+AnnotationAssertion(rdfs:comment :healthScore "Ordinal health score, 1..5.")
+AnnotationAssertion(rdfs:isDefinedBy :healthScore "health_score")
+AnnotationAssertion(rdfs:label :healthScore "Health Score")
+SubDataPropertyOf(:healthScore :attribute)
+FunctionalDataProperty(:healthScore)
+DataPropertyDomain(:healthScore :Animal)
+DataPropertyRange(:healthScore DataOneOf("1" "2" "3" "4" "5"))
+
+# Data Property: <http://example.org/wildlife-test#healthScoreValue> (healthScoreValue)
+
+AnnotationAssertion(dle:comment :healthScoreValue "###########################################################
+Numeric equivalents of enumerated scores
+###########################################################")
+AnnotationAssertion(rdfs:comment :healthScoreValue "Numeric equivalent to the healthScore attribute.")
+AnnotationAssertion(rdfs:label :healthScoreValue "healthScoreValue")
+FunctionalDataProperty(:healthScoreValue)
+DataPropertyDomain(:healthScoreValue :Animal)
+DataPropertyRange(:healthScoreValue xsd:decimal)
+
+# Data Property: <http://example.org/wildlife-test#id> (id)
+
+AnnotationAssertion(dle:comment :id "`matches` references the OWL xsd:pattern facet. `key()` references owl:hasKey.")
+AnnotationAssertion(rdfs:comment :id "Opaque unique identifier for a modeled wildlife concept.")
+AnnotationAssertion(rdfs:isDefinedBy :id "id")
+AnnotationAssertion(rdfs:label :id "id")
+AnnotationAssertion(rdfs:seeAlso :id "triplestore.subject")
+FunctionalDataProperty(:id)
+DataPropertyDomain(:id :WildlifeConcept)
+DataPropertyRange(:id DatatypeRestriction(xsd:string xsd:pattern "[A-Z]{3}-[0-9]{6}"))
+
+# Data Property: <http://example.org/wildlife-test#lastObservedAt> (Last Observed At)
+
+AnnotationAssertion(rdfs:comment :lastObservedAt "Date and time when an animal was last observed.")
+AnnotationAssertion(rdfs:isDefinedBy :lastObservedAt "last_observed_at")
+AnnotationAssertion(rdfs:label :lastObservedAt "Last Observed At")
+SubDataPropertyOf(:lastObservedAt :attribute)
+FunctionalDataProperty(:lastObservedAt)
+DataPropertyDomain(:lastObservedAt :Animal)
+DataPropertyRange(:lastObservedAt xsd:dateTime)
+
+# Data Property: <http://example.org/wildlife-test#lifeStage> (Life Stage)
+
+AnnotationAssertion(dle:comment :lifeStage "###########################################################
+Enumerated attributes
+###########################################################")
+AnnotationAssertion(rdfs:comment :lifeStage "Observed maturity stage of an animal.")
+AnnotationAssertion(rdfs:isDefinedBy :lifeStage "life_stage")
+AnnotationAssertion(rdfs:label :lifeStage "Life Stage")
+SubDataPropertyOf(:lifeStage :attribute)
+FunctionalDataProperty(:lifeStage)
+DataPropertyDomain(:lifeStage :Animal)
+DataPropertyRange(:lifeStage DataOneOf("Adult" "Juvenile" "Subadult" "Unknown"))
+
+# Data Property: <http://example.org/wildlife-test#migrationDate> (Migration Date)
+
+AnnotationAssertion(rdfs:comment :migrationDate "Expected or observed migration date.")
+AnnotationAssertion(rdfs:isDefinedBy :migrationDate "migration_date")
+AnnotationAssertion(rdfs:label :migrationDate "Migration Date")
+SubDataPropertyOf(:migrationDate :attribute)
+FunctionalDataProperty(:migrationDate)
+DataPropertyDomain(:migrationDate :Animal)
+DataPropertyRange(:migrationDate xsd:date)
+
+# Data Property: <http://example.org/wildlife-test#name> (Name)
+
+AnnotationAssertion(dle:comment :name "###########################################################
+Basic attributes and identifiers
+###########################################################")
+AnnotationAssertion(rdfs:comment :name "Unique display name for a wildlife concept.")
+AnnotationAssertion(rdfs:isDefinedBy :name "name")
+AnnotationAssertion(rdfs:label :name "Name")
+FunctionalDataProperty(:name)
+DataPropertyDomain(:name :WildlifeConcept)
+DataPropertyRange(:name xsd:string)
+
+# Data Property: <http://example.org/wildlife-test#observationMethod> (Observation Method)
+
+AnnotationAssertion(rdfs:comment :observationMethod "Attribute on a Records Animal relationship indicating how the observation was made.")
+AnnotationAssertion(rdfs:isDefinedBy :observationMethod "observation_method")
+AnnotationAssertion(rdfs:label :observationMethod "Observation Method")
+SubDataPropertyOf(:observationMethod :attribute)
+FunctionalDataProperty(:observationMethod)
+DataPropertyDomain(:observationMethod :recordsAnimalStatement)
+DataPropertyRange(:observationMethod DataOneOf("Audio" "Camera Trap" "Direct Sight" "Track"))
+
+# Data Property: <http://example.org/wildlife-test#populationEstimate> (Population Estimate)
+
+AnnotationAssertion(dle:comment :populationEstimate "###########################################################
+Numeric and date attributes
+###########################################################")
+AnnotationAssertion(rdfs:comment :populationEstimate "Estimated population count for a species.")
+AnnotationAssertion(rdfs:isDefinedBy :populationEstimate "population_estimate")
+AnnotationAssertion(rdfs:label :populationEstimate "Population Estimate")
+SubDataPropertyOf(:populationEstimate :attribute)
+FunctionalDataProperty(:populationEstimate)
+DataPropertyDomain(:populationEstimate :Species)
+DataPropertyRange(:populationEstimate DatatypeRestriction(xsd:integer xsd:minInclusive "0"^^xsd:integer))
+
+# Data Property: <http://example.org/wildlife-test#populationRisk> (Population Risk)
+
+AnnotationAssertion(dle:comment :populationRisk "###########################################################
+Calculated numeric values
+###########################################################")
+AnnotationAssertion(rdfs:comment :populationRisk "Calculated population risk score derived from population estimate and trend.")
+AnnotationAssertion(rdfs:isDefinedBy :populationRisk "population_risk")
+AnnotationAssertion(rdfs:label :populationRisk "Population Risk")
+SubDataPropertyOf(:populationRisk :calculatedNumber)
+FunctionalDataProperty(:populationRisk)
+DataPropertyDomain(:populationRisk :Species)
+DataPropertyRange(:populationRisk xsd:decimal)
+
+# Data Property: <http://example.org/wildlife-test#previousPopulationEstimate> (Previous Population Estimate)
+
+AnnotationAssertion(rdfs:comment :previousPopulationEstimate "Earlier estimated population count for a species.")
+AnnotationAssertion(rdfs:isDefinedBy :previousPopulationEstimate "previous_population_estimate")
+AnnotationAssertion(rdfs:label :previousPopulationEstimate "Previous Population Estimate")
+SubDataPropertyOf(:previousPopulationEstimate :attribute)
+FunctionalDataProperty(:previousPopulationEstimate)
+DataPropertyDomain(:previousPopulationEstimate :Species)
+DataPropertyRange(:previousPopulationEstimate DatatypeRestriction(xsd:integer xsd:minInclusive "0"^^xsd:integer))
+
+# Data Property: <http://example.org/wildlife-test#recordCurationState> (Record Curation State)
+
+AnnotationAssertion(dle:comment :recordCurationState "###########################################################
+Ownership-like lifecycle states, rewritten for wildlife data
+###########################################################")
+AnnotationAssertion(rdfs:comment :recordCurationState "Calculated curation state for an animal record based on responsible researcher assignment, acceptance, health score, and review freshness.")
+AnnotationAssertion(rdfs:isDefinedBy :recordCurationState "record_curation_state")
+AnnotationAssertion(rdfs:label :recordCurationState "Record Curation State")
+SubDataPropertyOf(:recordCurationState :calculatedList)
+FunctionalDataProperty(:recordCurationState)
+DataPropertyDomain(:recordCurationState :Animal)
+DataPropertyRange(:recordCurationState DataOneOf("Curated" "Maintained" "Nominated" "Unassigned"))
+
+# Data Property: <http://example.org/wildlife-test#reviewDate> (Review Date)
+
+AnnotationAssertion(rdfs:comment :reviewDate "Date at which a modeled concept was last reviewed.")
+AnnotationAssertion(rdfs:isDefinedBy :reviewDate "review_date")
+AnnotationAssertion(rdfs:label :reviewDate "Review Date")
+SubDataPropertyOf(:reviewDate :attribute)
+FunctionalDataProperty(:reviewDate)
+DataPropertyDomain(:reviewDate :WildlifeConcept)
+DataPropertyRange(:reviewDate xsd:dateTime)
+
+# Data Property: <http://example.org/wildlife-test#surveyEnd> (Survey End)
+
+AnnotationAssertion(rdfs:isDefinedBy :surveyEnd "survey_end")
+AnnotationAssertion(rdfs:label :surveyEnd "Survey End")
+SubDataPropertyOf(:surveyEnd :attribute)
+FunctionalDataProperty(:surveyEnd)
+DataPropertyDomain(:surveyEnd :SurveyRoute)
+DataPropertyRange(:surveyEnd xsd:dateTime)
+
+# Data Property: <http://example.org/wildlife-test#surveyPriority> (Survey Priority)
+
+AnnotationAssertion(rdfs:comment :surveyPriority "Calculated priority for future survey attention.")
+AnnotationAssertion(rdfs:isDefinedBy :surveyPriority "survey_priority")
+AnnotationAssertion(rdfs:label :surveyPriority "Survey Priority")
+SubDataPropertyOf(:surveyPriority :calculatedList)
+FunctionalDataProperty(:surveyPriority)
+DataPropertyDomain(:surveyPriority ObjectUnionOf(:Habitat :Species))
+DataPropertyRange(:surveyPriority DataOneOf("High" "Low" "Medium" "Urgent"))
+
+# Data Property: <http://example.org/wildlife-test#surveyStart> (Survey Start)
+
+AnnotationAssertion(dle:comment :surveyStart "###########################################################
+Attributes used only by predicate-restriction examples
+###########################################################")
+AnnotationAssertion(rdfs:isDefinedBy :surveyStart "survey_start")
+AnnotationAssertion(rdfs:label :surveyStart "Survey Start")
+SubDataPropertyOf(:surveyStart :attribute)
+FunctionalDataProperty(:surveyStart)
+DataPropertyDomain(:surveyStart :SurveyRoute)
+DataPropertyRange(:surveyStart xsd:dateTime)
+
+# Data Property: <http://example.org/wildlife-test#tagId> (Tag ID)
+
+AnnotationAssertion(rdfs:comment :tagId "Field tag or tracking device identifier.")
+AnnotationAssertion(rdfs:isDefinedBy :tagId "tag_id")
+AnnotationAssertion(rdfs:label :tagId "Tag ID")
+AnnotationAssertion(rdfs:seeAlso :tagId "tracking.tag")
+SubDataPropertyOf(:tagId :attribute)
+FunctionalDataProperty(:tagId)
+DataPropertyDomain(:tagId :Animal)
+DataPropertyRange(:tagId xsd:string)
+
+# Data Property: <http://example.org/wildlife-test#verified> (Verified)
+
+AnnotationAssertion(rdfs:comment :verified "Whether an observation has been reviewed and accepted.")
+AnnotationAssertion(rdfs:isDefinedBy :verified "verified")
+AnnotationAssertion(rdfs:label :verified "Verified")
+SubDataPropertyOf(:verified :attribute)
+FunctionalDataProperty(:verified)
+DataPropertyDomain(:verified :Observation)
+DataPropertyRange(:verified xsd:boolean)
+
+
+############################
+#   Datatypes
+############################
+
+# Datatype: xsd:date (date)
+
+AnnotationAssertion(rdfs:label xsd:date "date")
+
+
+############################
+#   Classes
+############################
+
+# Class: <http://example.org/wildlife-test#ActiveSurveyWindow> (ActiveSurveyWindow)
+
+AnnotationAssertion(rdfs:label :ActiveSurveyWindow "ActiveSurveyWindow")
+EquivalentClasses(:ActiveSurveyWindow dle:E_enclosesNow_7f8b225e)
+
+# Class: <http://example.org/wildlife-test#AdultAnimal> (AdultAnimal)
+
+AnnotationAssertion(rdfs:label :AdultAnimal "AdultAnimal")
+EquivalentClasses(:AdultAnimal ObjectIntersectionOf(:Animal DataHasValue(:lifeStage "Adult")))
+
+# Class: <http://example.org/wildlife-test#Animal> (Animal)
+
+AnnotationAssertion(rdfs:comment :Animal "Individual animal tracked or observed in the reserve.")
+AnnotationAssertion(rdfs:isDefinedBy :Animal "Animal")
+AnnotationAssertion(rdfs:label :Animal "Animal")
+SubClassOf(:Animal :WildlifeConcept)
+SubClassOf(:Animal ObjectAllValuesFrom(:inDomain :AnimalDomain))
+
+# Class: <http://example.org/wildlife-test#AnimalDomain> (AnimalDomain)
+
+AnnotationAssertion(rdfs:label :AnimalDomain "AnimalDomain")
+SubClassOf(:AnimalDomain :Domain)
+
+# Class: <http://example.org/wildlife-test#CommonSpecies> (CommonSpecies)
+
+AnnotationAssertion(rdfs:label :CommonSpecies "CommonSpecies")
+EquivalentClasses(:CommonSpecies ObjectIntersectionOf(:Species DataSomeValuesFrom(:populationEstimate DatatypeRestriction(xsd:integer xsd:minInclusive "10000"^^xsd:integer))))
+
+# Class: <http://example.org/wildlife-test#CuratedRecord> (CuratedRecord)
+
+AnnotationAssertion(rdfs:label :CuratedRecord "CuratedRecord")
+EquivalentClasses(:CuratedRecord ObjectIntersectionOf(:Animal ObjectComplementOf(DataSomeValuesFrom(:healthScore rdfs:Literal)) ObjectSomeValuesFrom(ObjectInverseOf(:hasCurator) :Researcher) DataHasValue(:curationAccepted "Yes")))
+EquivalentClasses(:CuratedRecord DataHasValue(:recordCurationState "Curated"))
+
+# Class: <http://example.org/wildlife-test#Domain> (Domain)
+
+AnnotationAssertion(dle:comment :Domain "###########################################################
+Domain-level grouping and modeled concepts
+###########################################################")
+AnnotationAssertion(rdfs:comment :Domain "Grouping class for broad wildlife reserve subject areas.")
+AnnotationAssertion(rdfs:label :Domain "Domain")
+SubClassOf(:Domain owl:Thing)
+
+# Class: <http://example.org/wildlife-test#EndangeredSpecies> (EndangeredSpecies)
+
+AnnotationAssertion(rdfs:label :EndangeredSpecies "EndangeredSpecies")
+EquivalentClasses(:EndangeredSpecies ObjectIntersectionOf(:Species DataSomeValuesFrom(:populationEstimate DatatypeRestriction(xsd:integer xsd:maxExclusive "1000"^^xsd:integer))))
+
+# Class: <http://example.org/wildlife-test#Habitat> (Habitat)
+
+AnnotationAssertion(:note :Habitat "Habitats may overlap geographically; locatedIn only describes containment.")
+AnnotationAssertion(rdfs:comment :Habitat "Ecological habitat or biome.")
+AnnotationAssertion(rdfs:isDefinedBy :Habitat "Habitat")
+AnnotationAssertion(rdfs:label :Habitat "Habitat")
+SubClassOf(:Habitat :WildlifeConcept)
+SubClassOf(:Habitat ObjectAllValuesFrom(:inDomain :HabitatDomain))
+
+# Class: <http://example.org/wildlife-test#HabitatDomain> (HabitatDomain)
+
+AnnotationAssertion(rdfs:label :HabitatDomain "HabitatDomain")
+SubClassOf(:HabitatDomain :Domain)
+
+# Class: <http://example.org/wildlife-test#HasLastObservation> (HasLastObservation)
+
+AnnotationAssertion(rdfs:label :HasLastObservation "HasLastObservation")
+EquivalentClasses(:HasLastObservation DataSomeValuesFrom(:lastObservedAt rdfs:Literal))
+
+# Class: <http://example.org/wildlife-test#HasMigrationDate> (HasMigrationDate)
+
+AnnotationAssertion(rdfs:label :HasMigrationDate "HasMigrationDate")
+EquivalentClasses(:HasMigrationDate DataSomeValuesFrom(:migrationDate rdfs:Literal))
+
+# Class: <http://example.org/wildlife-test#HasReviewDate> (HasReviewDate)
+
+AnnotationAssertion(rdfs:label :HasReviewDate "HasReviewDate")
+EquivalentClasses(:HasReviewDate DataSomeValuesFrom(:reviewDate rdfs:Literal))
+
+# Class: <http://example.org/wildlife-test#HighHealth> (HighHealth)
+
+AnnotationAssertion(dle:comment :HighHealth "###########################################################
+Derived classes
+###########################################################")
+AnnotationAssertion(rdfs:label :HighHealth "HighHealth")
+EquivalentClasses(:HighHealth DataSomeValuesFrom(:healthScore DataOneOf("4" "5")))
+
+# Class: <http://example.org/wildlife-test#HighQualityHabitat> (HighQualityHabitat)
+
+AnnotationAssertion(rdfs:label :HighQualityHabitat "HighQualityHabitat")
+EquivalentClasses(:HighQualityHabitat ObjectIntersectionOf(:Habitat DataSomeValuesFrom(:habitatQuality DatatypeRestriction(xsd:decimal xsd:minInclusive "4"^^xsd:integer xsd:maxInclusive "5"^^xsd:integer))))
+
+# Class: <http://example.org/wildlife-test#HighSurveyPriority> (HighSurveyPriority)
+
+AnnotationAssertion(rdfs:label :HighSurveyPriority "HighSurveyPriority")
+EquivalentClasses(:HighSurveyPriority DataSomeValuesFrom(:surveyPriority DataOneOf("High" "Urgent")))
+
+# Class: <http://example.org/wildlife-test#JuvenileAnimal> (JuvenileAnimal)
+
+AnnotationAssertion(rdfs:label :JuvenileAnimal "JuvenileAnimal")
+EquivalentClasses(:JuvenileAnimal ObjectIntersectionOf(:Animal DataHasValue(:lifeStage "Juvenile")))
+
+# Class: <http://example.org/wildlife-test#LowHealth> (LowHealth)
+
+AnnotationAssertion(rdfs:label :LowHealth "LowHealth")
+EquivalentClasses(:LowHealth DataSomeValuesFrom(:healthScore DataOneOf("1" "2")))
+
+# Class: <http://example.org/wildlife-test#LowQualityHabitat> (LowQualityHabitat)
+
+AnnotationAssertion(rdfs:label :LowQualityHabitat "LowQualityHabitat")
+EquivalentClasses(:LowQualityHabitat ObjectIntersectionOf(:Habitat DataSomeValuesFrom(:habitatQuality DatatypeRestriction(xsd:decimal xsd:minInclusive "1"^^xsd:integer xsd:maxExclusive "3"^^xsd:integer))))
+
+# Class: <http://example.org/wildlife-test#LowSurveyPriority> (LowSurveyPriority)
+
+AnnotationAssertion(rdfs:label :LowSurveyPriority "LowSurveyPriority")
+EquivalentClasses(:LowSurveyPriority DataSomeValuesFrom(:surveyPriority DataOneOf("Low" "Medium")))
+
+# Class: <http://example.org/wildlife-test#MaintainedRecord> (MaintainedRecord)
+
+AnnotationAssertion(rdfs:label :MaintainedRecord "MaintainedRecord")
+EquivalentClasses(:MaintainedRecord ObjectIntersectionOf(:Animal ObjectSomeValuesFrom(ObjectInverseOf(:hasCurator) :Researcher) DataSomeValuesFrom(:healthScore rdfs:Literal) DataHasValue(:curationAccepted "Yes")))
+EquivalentClasses(:MaintainedRecord DataHasValue(:recordCurationState "Maintained"))
+
+# Class: <http://example.org/wildlife-test#MigrationInFuture> (MigrationInFuture)
+
+AnnotationAssertion(rdfs:label :MigrationInFuture "MigrationInFuture")
+EquivalentClasses(:MigrationInFuture dle:E_afterNow_3ce45e2f)
+
+# Class: <http://example.org/wildlife-test#MigrationSoon> (MigrationSoon)
+
+AnnotationAssertion(rdfs:label :MigrationSoon "MigrationSoon")
+EquivalentClasses(:MigrationSoon dle:E_withinNextYear_de455e70)
+
+# Class: <http://example.org/wildlife-test#NominatedRecord> (NominatedRecord)
+
+AnnotationAssertion(rdfs:label :NominatedRecord "NominatedRecord")
+EquivalentClasses(:NominatedRecord ObjectIntersectionOf(:Animal ObjectSomeValuesFrom(ObjectInverseOf(:hasCurator) :Researcher) DataHasValue(:curationAccepted "No")))
+EquivalentClasses(:NominatedRecord DataHasValue(:recordCurationState "Nominated"))
+
+# Class: <http://example.org/wildlife-test#Observation> (Observation)
+
+AnnotationAssertion(:warning :Observation "Observation records may be unverified until reviewed.")
+AnnotationAssertion(rdfs:comment :Observation "Recorded wildlife observation.")
+AnnotationAssertion(rdfs:isDefinedBy :Observation "Observation")
+AnnotationAssertion(rdfs:label :Observation "Observation")
+SubClassOf(:Observation :WildlifeConcept)
+SubClassOf(:Observation ObjectAllValuesFrom(:inDomain :ResearchDomain))
+
+# Class: <http://example.org/wildlife-test#ObservationStale> (ObservationStale)
+
+AnnotationAssertion(rdfs:label :ObservationStale "ObservationStale")
+EquivalentClasses(:ObservationStale dle:E_beforeNow_eab1ae7d)
+
+# Class: <http://example.org/wildlife-test#PopulationDeclining> (PopulationDeclining)
+
+AnnotationAssertion(rdfs:label :PopulationDeclining "PopulationDeclining")
+EquivalentClasses(:PopulationDeclining dle:E_lessThan_b38f8ec8)
+
+# Class: <http://example.org/wildlife-test#PopulationIncreasing> (PopulationIncreasing)
+
+AnnotationAssertion(rdfs:label :PopulationIncreasing "PopulationIncreasing")
+EquivalentClasses(:PopulationIncreasing dle:E_greaterThan_5d36d20d)
+
+# Class: <http://example.org/wildlife-test#PriorityAnimal> (PriorityAnimal)
+
+AnnotationAssertion(rdfs:label :PriorityAnimal "PriorityAnimal")
+EquivalentClasses(:PriorityAnimal ObjectIntersectionOf(:Animal ObjectUnionOf(:LowHealth ObjectSomeValuesFrom(:belongsToSpecies ObjectIntersectionOf(:HighSurveyPriority :Species)))))
+
+# Class: <http://example.org/wildlife-test#Region> (Region)
+
+AnnotationAssertion(rdfs:comment :Region "Geographic region or named area in the reserve.")
+AnnotationAssertion(rdfs:isDefinedBy :Region "Region")
+AnnotationAssertion(rdfs:label :Region "Region")
+SubClassOf(:Region :WildlifeConcept)
+SubClassOf(:Region ObjectAllValuesFrom(:inDomain :HabitatDomain))
+
+# Class: <http://example.org/wildlife-test#RelationshipStatement> (RelationshipStatement)
+
+AnnotationAssertion(rdfs:comment :RelationshipStatement "A proposition whose described triple is asserted in the model. The predicate is a relationship type. Used to attach attributes or metadata to a relationship.")
+AnnotationAssertion(rdfs:label :RelationshipStatement "RelationshipStatement")
+SubClassOf(:RelationshipStatement rdfs:Proposition)
+
+# Class: <http://example.org/wildlife-test#ResearchDomain> (ResearchDomain)
+
+AnnotationAssertion(rdfs:label :ResearchDomain "ResearchDomain")
+SubClassOf(:ResearchDomain :Domain)
+
+# Class: <http://example.org/wildlife-test#ResearchTeam> (ResearchTeam)
+
+AnnotationAssertion(rdfs:isDefinedBy :ResearchTeam "ResearchTeam")
+AnnotationAssertion(rdfs:label :ResearchTeam "ResearchTeam")
+SubClassOf(:ResearchTeam :WildlifeConcept)
+SubClassOf(:ResearchTeam ObjectAllValuesFrom(:inDomain :ResearchDomain))
+
+# Class: <http://example.org/wildlife-test#Researcher> (Researcher)
+
+AnnotationAssertion(rdfs:isDefinedBy :Researcher "Researcher")
+AnnotationAssertion(rdfs:label :Researcher "Researcher")
+SubClassOf(:Researcher :WildlifeConcept)
+SubClassOf(:Researcher ObjectAllValuesFrom(:inDomain :ResearchDomain))
+
+# Class: <http://example.org/wildlife-test#ReviewDueNow> (ReviewDueNow)
+
+AnnotationAssertion(rdfs:label :ReviewDueNow "ReviewDueNow")
+EquivalentClasses(:ReviewDueNow dle:E_onOrBeforeNow_269f9110)
+
+# Class: <http://example.org/wildlife-test#Species> (Species)
+
+AnnotationAssertion(:example :Species "Species may be connected to many habitats through the inhabits relationship.")
+AnnotationAssertion(dle:comment :Species "###########################################################
+Additional annotations
+###########################################################")
+AnnotationAssertion(rdfs:comment :Species "Biological species represented in the reserve model.")
+AnnotationAssertion(rdfs:isDefinedBy :Species "Species")
+AnnotationAssertion(rdfs:label :Species "Species")
+SubClassOf(:Species :WildlifeConcept)
+SubClassOf(:Species ObjectAllValuesFrom(:inDomain :TaxonomyDomain))
+
+# Class: <http://example.org/wildlife-test#SurveyRoute> (SurveyRoute)
+
+AnnotationAssertion(rdfs:isDefinedBy :SurveyRoute "SurveyRoute")
+AnnotationAssertion(rdfs:label :SurveyRoute "SurveyRoute")
+SubClassOf(:SurveyRoute :WildlifeConcept)
+SubClassOf(:SurveyRoute ObjectAllValuesFrom(:inDomain :ResearchDomain))
+
+# Class: <http://example.org/wildlife-test#Taxon> (Taxon)
+
+AnnotationAssertion(rdfs:isDefinedBy :Taxon "Taxon")
+AnnotationAssertion(rdfs:label :Taxon "Taxon")
+SubClassOf(:Taxon :WildlifeConcept)
+SubClassOf(:Taxon ObjectAllValuesFrom(:inDomain :TaxonomyDomain))
+
+# Class: <http://example.org/wildlife-test#TaxonomyDomain> (TaxonomyDomain)
+
+AnnotationAssertion(rdfs:label :TaxonomyDomain "TaxonomyDomain")
+SubClassOf(:TaxonomyDomain :Domain)
+
+# Class: <http://example.org/wildlife-test#UnassignedRecord> (UnassignedRecord)
+
+AnnotationAssertion(rdfs:label :UnassignedRecord "UnassignedRecord")
+EquivalentClasses(:UnassignedRecord ObjectIntersectionOf(:Animal ObjectComplementOf(ObjectSomeValuesFrom(ObjectInverseOf(:hasCurator) :Researcher))))
+EquivalentClasses(:UnassignedRecord DataHasValue(:recordCurationState "Unassigned"))
+
+# Class: <http://example.org/wildlife-test#UnverifiedObservation> (UnverifiedObservation)
+
+AnnotationAssertion(rdfs:label :UnverifiedObservation "UnverifiedObservation")
+EquivalentClasses(:UnverifiedObservation ObjectIntersectionOf(:Observation DataHasValue(:verified "false"^^xsd:boolean)))
+
+# Class: <http://example.org/wildlife-test#VerifiedObservation> (VerifiedObservation)
+
+AnnotationAssertion(rdfs:label :VerifiedObservation "VerifiedObservation")
+EquivalentClasses(:VerifiedObservation ObjectIntersectionOf(:Observation DataHasValue(:verified "true"^^xsd:boolean)))
+
+# Class: <http://example.org/wildlife-test#WildlifeConcept> (WildlifeConcept)
+
+AnnotationAssertion(rdfs:comment :WildlifeConcept "Root class for modeled wildlife reserve concepts.")
+AnnotationAssertion(rdfs:label :WildlifeConcept "WildlifeConcept")
+EquivalentClasses(:WildlifeConcept ObjectIntersectionOf(ObjectSomeValuesFrom(:inDomain :Domain) DataSomeValuesFrom(:name xsd:string) DataExactCardinality(1 :id xsd:string)))
+SubClassOf(:WildlifeConcept owl:Thing)
+SubClassOf(:WildlifeConcept DataSomeValuesFrom(:name xsd:string))
+SubClassOf(:WildlifeConcept DataExactCardinality(1 :id xsd:string))
+
+# Class: <http://example.org/wildlife-test#recordsAnimalStatement> (recordsAnimalStatement)
+
+AnnotationAssertion(rdfs:label :recordsAnimalStatement "recordsAnimalStatement")
+SubClassOf(:recordsAnimalStatement :RelationshipStatement)
+SubClassOf(:recordsAnimalStatement ObjectHasValue(:statementRelationship :recordsAnimal))
+
+# Class: <http://example.org/wildlife-test#studiesStatement> (studiesStatement)
+
+AnnotationAssertion(dle:comment :studiesStatement "###########################################################
+Relationship statement attributes
+###########################################################")
+AnnotationAssertion(rdfs:label :studiesStatement "studiesStatement")
+SubClassOf(:studiesStatement :RelationshipStatement)
+SubClassOf(:studiesStatement ObjectHasValue(:statementRelationship :studies))
+
+# Class: <http://quoll.github.io/DLe/vocab#E_afterNow_3ce45e2f> (∃migrationDate.afterNow)
+
+AnnotationAssertion(rdfs:label dle:E_afterNow_3ce45e2f "∃migrationDate.afterNow")
+
+# Class: <http://quoll.github.io/DLe/vocab#E_beforeNow_eab1ae7d> (∃lastObservedAt.beforeNow)
+
+AnnotationAssertion(rdfs:label dle:E_beforeNow_eab1ae7d "∃lastObservedAt.beforeNow")
+
+# Class: <http://quoll.github.io/DLe/vocab#E_enclosesNow_7f8b225e> (∃surveyStart,surveyEnd.enclosesNow)
+
+AnnotationAssertion(rdfs:label dle:E_enclosesNow_7f8b225e "∃surveyStart,surveyEnd.enclosesNow")
+
+# Class: <http://quoll.github.io/DLe/vocab#E_greaterThan_5d36d20d> (∃populationEstimate,previousPopulationEstimate.greaterThan)
+
+AnnotationAssertion(rdfs:label dle:E_greaterThan_5d36d20d "∃populationEstimate,previousPopulationEstimate.greaterThan")
+
+# Class: <http://quoll.github.io/DLe/vocab#E_lessThan_b38f8ec8> (∃populationEstimate,previousPopulationEstimate.lessThan)
+
+AnnotationAssertion(rdfs:label dle:E_lessThan_b38f8ec8 "∃populationEstimate,previousPopulationEstimate.lessThan")
+
+# Class: <http://quoll.github.io/DLe/vocab#E_onOrBeforeNow_269f9110> (∃reviewDate.onOrBeforeNow)
+
+AnnotationAssertion(rdfs:label dle:E_onOrBeforeNow_269f9110 "∃reviewDate.onOrBeforeNow")
+
+# Class: <http://quoll.github.io/DLe/vocab#E_withinNextYear_de455e70> (∃migrationDate.withinNextYear)
+
+AnnotationAssertion(rdfs:label dle:E_withinNextYear_de455e70 "∃migrationDate.withinNextYear")
+
+# Class: rdf:Property (Property)
+
+AnnotationAssertion(rdfs:label rdf:Property "Property")
+
+# Class: rdfs:Proposition (Proposition)
+
+AnnotationAssertion(rdfs:label rdfs:Proposition "Proposition")
+
+
+
+EquivalentClasses(DataSomeValuesFrom(:populationEstimate DatatypeRestriction(xsd:integer xsd:minInclusive "1000"^^xsd:integer xsd:maxExclusive "10000"^^xsd:integer)) DataHasValue(:conservationStatus "Vulnerable"))
+EquivalentClasses(DataSomeValuesFrom(:populationEstimate DatatypeRestriction(xsd:integer xsd:minInclusive "10000"^^xsd:integer)) DataHasValue(:conservationStatus "Least Concern"))
+EquivalentClasses(DataSomeValuesFrom(:populationEstimate DatatypeRestriction(xsd:integer xsd:minInclusive "250"^^xsd:integer xsd:maxExclusive "1000"^^xsd:integer)) DataHasValue(:conservationStatus "Endangered"))
+EquivalentClasses(DataSomeValuesFrom(:populationEstimate DatatypeRestriction(xsd:integer xsd:maxExclusive "250"^^xsd:integer)) DataHasValue(:conservationStatus "Critical"))
+EquivalentClasses(DataSomeValuesFrom(:populationRisk DatatypeRestriction(xsd:decimal xsd:minInclusive "2"^^xsd:integer xsd:maxExclusive "3"^^xsd:integer)) DataHasValue(:surveyPriority "Medium"))
+EquivalentClasses(DataSomeValuesFrom(:populationRisk DatatypeRestriction(xsd:decimal xsd:minInclusive "3"^^xsd:integer xsd:maxExclusive "4"^^xsd:integer)) DataHasValue(:surveyPriority "High"))
+EquivalentClasses(DataSomeValuesFrom(:populationRisk DatatypeRestriction(xsd:decimal xsd:minInclusive "4"^^xsd:integer)) DataHasValue(:surveyPriority "Urgent"))
+EquivalentClasses(DataSomeValuesFrom(:populationRisk DatatypeRestriction(xsd:decimal xsd:maxExclusive "2"^^xsd:integer)) DataHasValue(:surveyPriority "Low"))
+EquivalentClasses(DataHasValue(:healthScore "1") DataHasValue(:healthScoreValue "1"^^xsd:integer))
+EquivalentClasses(DataHasValue(:healthScore "2") DataHasValue(:healthScoreValue "2"^^xsd:integer))
+EquivalentClasses(DataHasValue(:healthScore "3") DataHasValue(:healthScoreValue "3"^^xsd:integer))
+EquivalentClasses(DataHasValue(:healthScore "4") DataHasValue(:healthScoreValue "4"^^xsd:integer))
+EquivalentClasses(DataHasValue(:healthScore "5") DataHasValue(:healthScoreValue "5"^^xsd:integer))
+SubObjectPropertyOf(ObjectPropertyChain(:belongsToSpecies :inhabits) :speciesHabitat)
+SubObjectPropertyOf(ObjectPropertyChain(:containedIn ObjectInverseOf(:monitors)) :monitoredRegionBy)
+SubObjectPropertyOf(ObjectPropertyChain(:locatedIn :containedIn) :locatedInWiderRegion)
+SubObjectPropertyOf(ObjectPropertyChain(:locatedIn ObjectInverseOf(:locatedIn)) :neighboringPlace)
+SubObjectPropertyOf(ObjectPropertyChain(:recordsAnimal :belongsToSpecies) :recordsSpecies)
+HasKey(:Animal () (:tagId))
+HasKey(:WildlifeConcept () (:id))
+)
