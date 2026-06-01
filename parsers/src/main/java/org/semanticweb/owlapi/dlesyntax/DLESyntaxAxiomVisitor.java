@@ -411,8 +411,13 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
 
     @Override
     public OWLObject visitFunctionalRoleAxiom(DLESyntaxParser.FunctionalRoleAxiomContext ctx) {
-        OWLObjectProperty prop = objectProp(ctx.name());
-        axioms.add(df.getOWLFunctionalObjectPropertyAxiom(prop));
+        String name = ctx.name().getText();
+        if (dataPropertyNames.contains(name)) {
+            axioms.add(df.getOWLFunctionalDataPropertyAxiom(
+                df.getOWLDataProperty(expandName(ctx.name()))));
+        } else {
+            axioms.add(df.getOWLFunctionalObjectPropertyAxiom(objectProp(ctx.name())));
+        }
         return null;
     }
 
