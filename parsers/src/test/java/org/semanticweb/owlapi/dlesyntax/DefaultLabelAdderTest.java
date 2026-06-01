@@ -40,7 +40,7 @@ class DefaultLabelAdderTest {
 
     private Optional<String> labelFor(IRI entityIRI) {
         IRI labelIRI = OWLRDFVocabulary.RDFS_LABEL.getIRI();
-        return ontology.annotationAssertionAxioms(entityIRI)
+        return ontology.getAnnotationAssertionAxioms(entityIRI).stream()
             .filter(ax -> labelIRI.equals(ax.getProperty().getIRI()))
             .filter(ax -> ax.getValue() instanceof OWLLiteral)
             .map(ax -> ((OWLLiteral) ax.getValue()).getLiteral())
@@ -73,7 +73,7 @@ class DefaultLabelAdderTest {
 
         DefaultLabelAdder.addDefaultLabels(ontology);
 
-        long count = ontology.annotationAssertionAxioms(barIRI)
+        long count = ontology.getAnnotationAssertionAxioms(barIRI).stream()
             .filter(ax -> OWLRDFVocabulary.RDFS_LABEL.getIRI().equals(ax.getProperty().getIRI()))
             .count();
         assertEquals(1, count, "Should still have exactly one label");
@@ -91,7 +91,7 @@ class DefaultLabelAdderTest {
 
         DefaultLabelAdder.addDefaultLabels(ontology);
 
-        long count = ontology.annotationAssertionAxioms(thingIRI)
+        long count = ontology.getAnnotationAssertionAxioms(thingIRI).stream()
             .filter(ax -> OWLRDFVocabulary.RDFS_LABEL.getIRI().equals(ax.getProperty().getIRI()))
             .count();
         assertEquals(0, count, "owl:Thing must not receive a default label");
@@ -106,7 +106,7 @@ class DefaultLabelAdderTest {
 
         DefaultLabelAdder.addDefaultLabels(ontology);
 
-        long count = ontology.annotationAssertionAxioms(dleIRI)
+        long count = ontology.getAnnotationAssertionAxioms(dleIRI).stream()
             .filter(ax -> OWLRDFVocabulary.RDFS_LABEL.getIRI().equals(ax.getProperty().getIRI()))
             .count();
         assertEquals(0, count, "DLE-namespace entities must not receive a default label");

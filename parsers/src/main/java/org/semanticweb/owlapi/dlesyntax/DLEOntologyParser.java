@@ -1,7 +1,9 @@
 package org.semanticweb.owlapi.dlesyntax;
 
 import java.io.IOException;
+import java.io.InputStreamReader;
 import java.io.Reader;
+import java.nio.charset.StandardCharsets;
 import java.util.Collections;
 import java.util.List;
 
@@ -12,7 +14,6 @@ import org.antlr.v4.runtime.RecognitionException;
 import org.antlr.v4.runtime.Recognizer;
 import org.semanticweb.owlapi.formats.DLESyntaxDocumentFormat;
 import org.semanticweb.owlapi.io.AbstractOWLParser;
-import org.semanticweb.owlapi.io.DocumentSources;
 import org.semanticweb.owlapi.io.OWLOntologyDocumentSource;
 import org.semanticweb.owlapi.io.OWLOntologyInputSourceException;
 import org.semanticweb.owlapi.io.OWLParserException;
@@ -48,7 +49,14 @@ public class DLEOntologyParser extends AbstractOWLParser {
                                    OWLOntology ontology,
                                    OWLOntologyLoaderConfiguration configuration) {
         try {
-            Reader reader = DocumentSources.wrapInputAsReader(source, configuration);
+            final Reader reader;
+            if (source.isReaderAvailable()) {
+                reader = source.getReader();
+            } else if (source.isInputStreamAvailable()) {
+                reader = new InputStreamReader(source.getInputStream(), StandardCharsets.UTF_8);
+            } else {
+                throw new OWLOntologyInputSourceException("No reader or input stream available from document source");
+            }
             var chars  = CharStreams.fromReader(reader);
             var lexer  = new DLESyntaxLexer(chars);
             var tokens = new CommonTokenStream(lexer);
@@ -92,8 +100,8 @@ public class DLEOntologyParser extends AbstractOWLParser {
             if (ontIRI == null) ontIRI = DLESyntaxAxiomVisitor.DLE_DEFAULT_ONTOLOGY_IRI;
             IRI verIRI = visitor.getVersionIRI();
             OWLOntologyID id = new OWLOntologyID(
-                java.util.Optional.of(ontIRI),
-                java.util.Optional.ofNullable(verIRI));
+                com.google.common.base.Optional.of(ontIRI),
+                com.google.common.base.Optional.fromNullable(verIRI));
             ontology.getOWLOntologyManager().applyChange(new SetOntologyID(ontology, id));
 
             // Apply import declarations

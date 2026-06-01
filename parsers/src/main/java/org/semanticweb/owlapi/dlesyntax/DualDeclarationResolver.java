@@ -5,6 +5,7 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 import org.semanticweb.owlapi.model.AxiomType;
+import org.semanticweb.owlapi.model.parameters.Imports;
 import org.semanticweb.owlapi.model.IRI;
 import org.semanticweb.owlapi.model.OWLClass;
 import org.semanticweb.owlapi.model.OWLDataFactory;
@@ -37,10 +38,10 @@ class DualDeclarationResolver {
         while (changed) {
             changed = false;
 
-            Set<IRI> propIRIs = ontology.objectPropertiesInSignature()
+            Set<IRI> propIRIs = ontology.getObjectPropertiesInSignature().stream()
                 .map(OWLObjectProperty::getIRI)
                 .collect(Collectors.toSet());
-            Set<IRI> classIRIs = ontology.classesInSignature()
+            Set<IRI> classIRIs = ontology.getClassesInSignature().stream()
                 .map(OWLClass::getIRI)
                 .collect(Collectors.toSet());
 
@@ -51,11 +52,11 @@ class DualDeclarationResolver {
                 OWLClass xClass = df.getOWLClass(xIRI);
 
                 List<OWLSubObjectPropertyOfAxiom> toSwap = ontology
-                    .axioms(AxiomType.SUB_OBJECT_PROPERTY)
+                    .getAxioms(AxiomType.SUB_OBJECT_PROPERTY, Imports.EXCLUDED).stream()
                     .filter(a -> a.getSuperProperty().equals(xProp))
                     .filter(a -> a.getSubProperty().isNamed())
-                    .filter(a -> !ontology.annotationAssertionAxioms(
-                        a.getSubProperty().getNamedProperty().getIRI()).findAny().isPresent())
+                    .filter(a -> ontology.getAnnotationAssertionAxioms(
+                        a.getSubProperty().getNamedProperty().getIRI()).isEmpty())
                     .collect(Collectors.toList());
 
                 for (OWLSubObjectPropertyOfAxiom axiom : toSwap) {

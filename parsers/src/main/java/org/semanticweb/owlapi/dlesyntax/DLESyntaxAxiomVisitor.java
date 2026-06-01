@@ -2,6 +2,7 @@ package org.semanticweb.owlapi.dlesyntax;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -228,14 +229,14 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
                 List<OWLObjectPropertyExpression> props = disjointNames.stream()
                     .map(n -> (OWLObjectPropertyExpression) df.getOWLObjectProperty(expandName(n)))
                     .collect(Collectors.toList());
-                axioms.add(df.getOWLDisjointObjectPropertiesAxiom(props));
+                axioms.add(df.getOWLDisjointObjectPropertiesAxiom(new HashSet<>(props)));
                 return null;
             }
             if (texts.stream().allMatch(dataPropertyNames::contains)) {
                 List<OWLDataPropertyExpression> props = disjointNames.stream()
                     .map(n -> (OWLDataPropertyExpression) df.getOWLDataProperty(expandName(n)))
                     .collect(Collectors.toList());
-                axioms.add(df.getOWLDisjointDataPropertiesAxiom(props));
+                axioms.add(df.getOWLDisjointDataPropertiesAxiom(new HashSet<>(props)));
                 return null;
             }
         }
@@ -368,7 +369,7 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
                 return (OWLPropertyExpression) df.getOWLObjectProperty(expandName(n));
             })
             .collect(Collectors.toList());
-        axioms.add(df.getOWLHasKeyAxiom(ce, keys));
+        axioms.add(df.getOWLHasKeyAxiom(ce, new HashSet<>(keys)));
         return null;
     }
 
@@ -445,7 +446,7 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
         List<OWLObjectPropertyExpression> props = ctx.name().stream()
             .map(n -> (OWLObjectPropertyExpression) df.getOWLObjectProperty(expandName(n)))
             .collect(Collectors.toList());
-        axioms.add(df.getOWLDisjointObjectPropertiesAxiom(props));
+        axioms.add(df.getOWLDisjointObjectPropertiesAxiom(new HashSet<>(props)));
         return null;
     }
 
@@ -487,9 +488,9 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
         if (lhs instanceof OWLDataRange && rhs instanceof OWLDataRange) {
             // Flatten nested DataUnionOf
             if (lhs instanceof OWLDataUnionOf) {
-                List<OWLDataRange> ops = new ArrayList<>(((OWLDataUnionOf) lhs).operands().collect(Collectors.toList()));
+                List<OWLDataRange> ops = new ArrayList<>(((OWLDataUnionOf) lhs).getOperands());
                 ops.add((OWLDataRange) rhs);
-                return df.getOWLDataUnionOf(ops);
+                return df.getOWLDataUnionOf(new HashSet<>(ops));
             }
             return df.getOWLDataUnionOf((OWLDataRange) lhs, (OWLDataRange) rhs);
         }
@@ -497,9 +498,9 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
         OWLClassExpression rhsCE = asClass(rhs);
         // Flatten nested ObjectUnionOf
         if (lhsCE instanceof OWLObjectUnionOf) {
-            List<OWLClassExpression> ops = new ArrayList<>(((OWLObjectUnionOf) lhsCE).operands().collect(Collectors.toList()));
+            List<OWLClassExpression> ops = new ArrayList<>(((OWLObjectUnionOf) lhsCE).getOperands());
             ops.add(rhsCE);
-            return df.getOWLObjectUnionOf(ops);
+            return df.getOWLObjectUnionOf(new HashSet<>(ops));
         }
         return df.getOWLObjectUnionOf(lhsCE, rhsCE);
     }
@@ -511,18 +512,18 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
         if (lhs instanceof OWLDataRange && rhs instanceof OWLDataRange) {
             // Flatten nested DataIntersectionOf
             if (lhs instanceof OWLDataIntersectionOf) {
-                List<OWLDataRange> ops = new ArrayList<>(((OWLDataIntersectionOf) lhs).operands().collect(Collectors.toList()));
+                List<OWLDataRange> ops = new ArrayList<>(((OWLDataIntersectionOf) lhs).getOperands());
                 ops.add((OWLDataRange) rhs);
-                return df.getOWLDataIntersectionOf(ops);
+                return df.getOWLDataIntersectionOf(new HashSet<>(ops));
             }
             return df.getOWLDataIntersectionOf((OWLDataRange) lhs, (OWLDataRange) rhs);
         }
         OWLClassExpression lhsCE = asClass(lhs);
         OWLClassExpression rhsCE = asClass(rhs);
         if (lhsCE instanceof OWLObjectIntersectionOf) {
-            List<OWLClassExpression> ops = new ArrayList<>(((OWLObjectIntersectionOf) lhsCE).operands().collect(Collectors.toList()));
+            List<OWLClassExpression> ops = new ArrayList<>(((OWLObjectIntersectionOf) lhsCE).getOperands());
             ops.add(rhsCE);
-            return df.getOWLObjectIntersectionOf(ops);
+            return df.getOWLObjectIntersectionOf(new HashSet<>(ops));
         }
         return df.getOWLObjectIntersectionOf(lhsCE, rhsCE);
     }
@@ -557,7 +558,7 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
                 expandName(propCtxName(ctx.propertyExpr())));
             OWLDataRange range = asDataRange(filler);
             if (range instanceof OWLDataOneOf) {
-                List<OWLLiteral> lits = ((OWLDataOneOf) range).values().collect(Collectors.toList());
+                List<OWLLiteral> lits = new ArrayList<>(((OWLDataOneOf) range).getValues());
                 if (lits.size() == 1) return df.getOWLDataHasValue(prop, lits.get(0));
             }
             return df.getOWLDataSomeValuesFrom(prop, range);
@@ -565,7 +566,7 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
             OWLObjectPropertyExpression prop = buildObjectProp(ctx.propertyExpr());
             OWLClassExpression fce = asClass(filler);
             if (fce instanceof OWLObjectOneOf) {
-                List<OWLIndividual> inds = ((OWLObjectOneOf) fce).individuals().collect(Collectors.toList());
+                List<OWLIndividual> inds = new ArrayList<>(((OWLObjectOneOf) fce).getIndividuals());
                 if (inds.size() == 1) return df.getOWLObjectHasValue(prop, inds.get(0));
             }
             return df.getOWLObjectSomeValuesFrom(prop, fce);
@@ -609,7 +610,7 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
             OWLDataRange range = asDataRange(filler);
             // ∃r.{x} with single literal → DataHasValue
             if (range instanceof OWLDataOneOf) {
-                List<OWLLiteral> lits = ((OWLDataOneOf) range).values().collect(Collectors.toList());
+                List<OWLLiteral> lits = new ArrayList<>(((OWLDataOneOf) range).getValues());
                 if (lits.size() == 1) return df.getOWLDataHasValue(prop, lits.get(0));
             }
             return df.getOWLDataSomeValuesFrom(prop, range);
@@ -618,7 +619,7 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
             OWLClassExpression fce = asClass(filler);
             // ∃r.{x} with single individual → ObjectHasValue
             if (fce instanceof OWLObjectOneOf) {
-                List<OWLIndividual> inds = ((OWLObjectOneOf) fce).individuals().collect(Collectors.toList());
+                List<OWLIndividual> inds = new ArrayList<>(((OWLObjectOneOf) fce).getIndividuals());
                 if (inds.size() == 1) return df.getOWLObjectHasValue(prop, inds.get(0));
             }
             return df.getOWLObjectSomeValuesFrom(prop, fce);
@@ -728,13 +729,13 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
             List<OWLLiteral> lits = elems.stream()
                 .map(this::buildLiteral)
                 .collect(Collectors.toList());
-            return df.getOWLDataOneOf(lits);
+            return df.getOWLDataOneOf(new HashSet<>(lits));
         } else {
             List<OWLIndividual> inds = elems.stream()
                 .map(e -> (OWLIndividual) df.getOWLNamedIndividual(
                     expandName(((DLESyntaxParser.IndividualElemContext) e).name())))
                 .collect(Collectors.toList());
-            return df.getOWLObjectOneOf(inds);
+            return df.getOWLObjectOneOf(new HashSet<>(inds));
         }
     }
 
@@ -1081,7 +1082,7 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
                 return df.getOWLFacetRestriction(facet, value);
             })
             .collect(Collectors.toList());
-        return df.getOWLDatatypeRestriction(base, facets);
+        return df.getOWLDatatypeRestriction(base, new HashSet<>(facets));
     }
 
     @Override
@@ -1097,7 +1098,7 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
                     facetFromName(f.name()),
                     buildFacetLiteral(f.literal())))
             .collect(Collectors.toList());
-        return df.getOWLDatatypeRestriction(base, facets);
+        return df.getOWLDatatypeRestriction(base, new HashSet<>(facets));
     }
 
     /** Resolves a facet name context — bare keyword or prefixed IRI — to an OWLFacet. */

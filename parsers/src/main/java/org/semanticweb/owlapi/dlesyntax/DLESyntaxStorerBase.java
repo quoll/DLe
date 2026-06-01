@@ -5,6 +5,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.PrintWriter;
+import java.io.Writer;
 import java.nio.charset.StandardCharsets;
 import java.util.Collections;
 import java.util.HashMap;
@@ -16,6 +17,8 @@ import javax.annotation.Nullable;
 
 import org.semanticweb.owlapi.dlsyntax.renderer.DLSyntaxStorerBase;
 import org.semanticweb.owlapi.model.AxiomType;
+import org.semanticweb.owlapi.model.OWLAxiom;
+import org.semanticweb.owlapi.model.parameters.Imports;
 import org.semanticweb.owlapi.model.IRI;
 import org.semanticweb.owlapi.model.OWLAnnotationAssertionAxiom;
 import org.semanticweb.owlapi.model.OWLAxiom;
@@ -67,13 +70,14 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
     private boolean entityHadContent = false;
 
     @Override
-    protected void storeOntology(OWLOntology o, PrintWriter printWriter, OWLDocumentFormat outputFormat) {
+    protected void storeOntology(OWLOntology o, Writer writer, OWLDocumentFormat outputFormat) {
         // The output format is our own DLESyntaxDocumentFormat which carries no
         // prefixes, so we look at the format the ontology was loaded from instead.
         renderer.setOntology(o);
         currentOntology = o;
         writtenAnnotations = new HashSet<>();
-        OWLDocumentFormat sourceFormat = o.getFormat() != null ? o.getFormat() : outputFormat;
+        OWLDocumentFormat sourceFormat = o.getOWLOntologyManager().getOntologyFormat(o);
+        if (sourceFormat == null) sourceFormat = outputFormat;
         if (sourceFormat instanceof PrefixDocumentFormat) {
             currentPrefixFormat = (PrefixDocumentFormat) sourceFormat;
             DefaultPrefixManager pm = new DefaultPrefixManager();
@@ -81,7 +85,7 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
             renderer.setPrefixManager(pm);
         }
         try {
-            super.storeOntology(o, printWriter, outputFormat);
+            super.storeOntology(o, writer, outputFormat);
         } finally {
             currentOntology = null;
             writtenAnnotations = null;
@@ -90,14 +94,13 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
     }
 
     @Override
-    protected void beginWritingAxioms(OWLEntity entity, PrintWriter writer) {
+    protected void beginWritingAxioms(OWLEntity entity, Set<? extends OWLAxiom> axioms, PrintWriter writer) {
         entityHadContent = false;
         // Suppress internal dle: entities — their labels are embedded inline in expressions.
         if (entity.getIRI().toString().startsWith(DLESyntaxAxiomVisitor.DLE_NS)) {
             // Mark their annotations as written to prevent re-emission later.
             if (currentOntology != null && writtenAnnotations != null) {
-                currentOntology.annotationAssertionAxioms(entity.getIRI())
-                    .forEach(writtenAnnotations::add);
+                writtenAnnotations.addAll(currentOntology.getAnnotationAssertionAxioms(entity.getIRI()));
             }
             return;
         }
@@ -105,7 +108,7 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
 
         // Emit dle:comment annotations as # lines before the entity's logical axioms.
         // Each annotation may contain a multi-line block (lines joined with \n).
-        currentOntology.annotationAssertionAxioms(entity.getIRI())
+        currentOntology.getAnnotationAssertionAxioms(entity.getIRI()).stream()
             .filter(ax -> DLESyntaxAxiomVisitor.DLE_COMMENT_IRI.equals(ax.getProperty().getIRI()))
             .sorted()
             .forEach(ax -> {
@@ -118,7 +121,7 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
             });
 
         // Emit dle:inlineComment annotations as # lines (same treatment as dle:comment).
-        currentOntology.annotationAssertionAxioms(entity.getIRI())
+        currentOntology.getAnnotationAssertionAxioms(entity.getIRI()).stream()
             .filter(ax -> DLESyntaxAxiomVisitor.DLE_INLINE_COMMENT_IRI.equals(ax.getProperty().getIRI()))
             .sorted()
             .forEach(ax -> {
@@ -129,17 +132,17 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
             });
 
         // Emit all other annotations for this entity inline, before its logical axioms.
-        currentOntology.annotationAssertionAxioms(entity.getIRI()).sorted().forEach(ax -> {
+        currentOntology.getAnnotationAssertionAxioms(entity.getIRI()).stream().sorted().forEach(ax -> {
             if (writtenAnnotations.add(ax)) {
-                beginWritingAxiom(writer);
+                beginWritingAxiom(ax, writer);
                 writeAxiom(null, ax, writer);
-                endWritingAxiom(writer);
+                endWritingAxiom(ax, writer);
             }
         });
     }
 
     @Override
-    protected void endWritingAxioms(PrintWriter writer) {
+    protected void endWritingAxioms(OWLEntity entity, Set<? extends OWLAxiom> axioms, PrintWriter writer) {
         if (entityHadContent) {
             writer.println();
             entityHadContent = false;
@@ -147,7 +150,7 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
     }
 
     @Override
-    protected void endWritingAxiom(PrintWriter writer) {
+    protected void endWritingAxiom(OWLAxiom axiom, PrintWriter writer) {
         if (!lastRenderingEmpty) {
             writer.println();
         }
@@ -161,14 +164,14 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
         // dle:comment annotations are internal and are never emitted standalone.
         Set<OWLAnnotationAssertionAxiom> already = writtenAnnotations != null
             ? writtenAnnotations : new HashSet<>();
-        ontology.axioms(AxiomType.ANNOTATION_ASSERTION).sorted()
+        ontology.getAxioms(AxiomType.ANNOTATION_ASSERTION, Imports.EXCLUDED).stream().sorted()
             .filter(ax -> !already.contains(ax))
             .filter(ax -> !DLESyntaxAxiomVisitor.DLE_COMMENT_IRI.equals(ax.getProperty().getIRI())
                        && !DLESyntaxAxiomVisitor.DLE_INLINE_COMMENT_IRI.equals(ax.getProperty().getIRI()))
             .forEach(ax -> {
-                beginWritingAxiom(writer);
+                beginWritingAxiom(ax, writer);
                 writeAxiom(null, ax, writer);
-                endWritingAxiom(writer);
+                endWritingAxiom(ax, writer);
             });
     }
 
@@ -200,9 +203,9 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
             }
             writer.println();
         }
-        ontology.importsDeclarations().sorted().forEach(decl ->
+        ontology.getImportsDeclarations().stream().sorted().forEach(decl ->
             writer.println("@import <" + decl.getIRI() + ">"));
-        if (ontology.importsDeclarations().findAny().isPresent()) {
+        if (!ontology.getImportsDeclarations().isEmpty()) {
             writer.println();
         }
 
@@ -225,15 +228,15 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
         IRI rdfValueIRI = IRI.create("http://www.w3.org/1999/02/22-rdf-syntax-ns#value");
         if (writtenAnnotations != null) {
             long[] count = {0};
-            ontology.axioms(AxiomType.ANNOTATION_ASSERTION).sorted()
+            ontology.getAxioms(AxiomType.ANNOTATION_ASSERTION, Imports.EXCLUDED).stream().sorted()
                 .filter(ax -> rdfValueIRI.equals(ax.getProperty().getIRI()))
                 .filter(ax -> ax.getValue() instanceof OWLLiteral
                     && ((OWLLiteral) ax.getValue()).getLiteral().contains("\u2192"))
                 .forEach(ax -> {
                     if (writtenAnnotations.add(ax)) {
-                        beginWritingAxiom(writer);
+                        beginWritingAxiom(ax, writer);
                         writeAxiom(null, ax, writer);
-                        endWritingAxiom(writer);
+                        endWritingAxiom(ax, writer);
                         count[0]++;
                     }
                 });

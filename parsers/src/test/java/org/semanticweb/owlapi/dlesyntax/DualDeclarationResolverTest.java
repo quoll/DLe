@@ -12,6 +12,7 @@ import org.semanticweb.owlapi.model.OWLObjectProperty;
 import org.semanticweb.owlapi.model.OWLOntology;
 import org.semanticweb.owlapi.model.OWLOntologyCreationException;
 import org.semanticweb.owlapi.model.OWLOntologyManager;
+import org.semanticweb.owlapi.model.parameters.Imports;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -56,10 +57,10 @@ class DualDeclarationResolverTest {
 
         OWLClass yClass = df.getOWLClass(yIRI);
 
-        assertFalse(ontology.axioms(AxiomType.SUB_OBJECT_PROPERTY).anyMatch(
+        assertFalse(ontology.getAxioms(AxiomType.SUB_OBJECT_PROPERTY, Imports.EXCLUDED).stream().anyMatch(
             a -> a.getSubProperty().equals(yProp) && a.getSuperProperty().equals(xProp)),
             "SubObjectPropertyOf(Y, X) should have been removed");
-        assertTrue(ontology.axioms(AxiomType.SUBCLASS_OF).anyMatch(
+        assertTrue(ontology.getAxioms(AxiomType.SUBCLASS_OF, Imports.EXCLUDED).stream().anyMatch(
             a -> a.getSubClass().equals(yClass) && a.getSuperClass().equals(xClass)),
             "SubClassOf(Y, X) should have been added");
     }
@@ -87,15 +88,15 @@ class DualDeclarationResolverTest {
 
         OWLClass yClass = df.getOWLClass(yIRI);
 
-        assertTrue(ontology.axioms(AxiomType.SUB_OBJECT_PROPERTY).anyMatch(
+        assertTrue(ontology.getAxioms(AxiomType.SUB_OBJECT_PROPERTY, Imports.EXCLUDED).stream().anyMatch(
             a -> a.getSubProperty().equals(yProp) && a.getSuperProperty().equals(xProp)),
             "SubObjectPropertyOf(Y, X) should remain when Y is annotated");
-        assertFalse(ontology.axioms(AxiomType.SUBCLASS_OF).anyMatch(
+        assertFalse(ontology.getAxioms(AxiomType.SUBCLASS_OF, Imports.EXCLUDED).stream().anyMatch(
             a -> a.getSubClass().equals(yClass) && a.getSuperClass().equals(xClass)),
             "SubClassOf(Y, X) must not be added when Y is annotated");
-        assertTrue(ontology.objectPropertiesInSignature().anyMatch(p -> p.getIRI().equals(xIRI)),
+        assertTrue(ontology.getObjectPropertiesInSignature().stream().anyMatch(p -> p.getIRI().equals(xIRI)),
             "X must remain in object property signature");
-        assertTrue(ontology.classesInSignature().anyMatch(c -> c.getIRI().equals(xIRI)),
+        assertTrue(ontology.getClassesInSignature().stream().anyMatch(c -> c.getIRI().equals(xIRI)),
             "X must remain in class signature");
     }
 
@@ -130,25 +131,25 @@ class DualDeclarationResolverTest {
         OWLClass y2Class = df.getOWLClass(y2IRI);
 
         // Y1 (unannotated): sub-property axiom replaced by sub-class axiom
-        assertFalse(ontology.axioms(AxiomType.SUB_OBJECT_PROPERTY).anyMatch(
+        assertFalse(ontology.getAxioms(AxiomType.SUB_OBJECT_PROPERTY, Imports.EXCLUDED).stream().anyMatch(
             a -> a.getSubProperty().equals(y1Prop) && a.getSuperProperty().equals(xProp)),
             "SubObjectPropertyOf(Y1, X) should have been removed");
-        assertTrue(ontology.axioms(AxiomType.SUBCLASS_OF).anyMatch(
+        assertTrue(ontology.getAxioms(AxiomType.SUBCLASS_OF, Imports.EXCLUDED).stream().anyMatch(
             a -> a.getSubClass().equals(y1Class) && a.getSuperClass().equals(xClass)),
             "SubClassOf(Y1, X) should have been added");
 
         // Y2 (annotated): sub-property axiom must remain, no sub-class axiom added
-        assertTrue(ontology.axioms(AxiomType.SUB_OBJECT_PROPERTY).anyMatch(
+        assertTrue(ontology.getAxioms(AxiomType.SUB_OBJECT_PROPERTY, Imports.EXCLUDED).stream().anyMatch(
             a -> a.getSubProperty().equals(y2Prop) && a.getSuperProperty().equals(xProp)),
             "SubObjectPropertyOf(Y2, X) should remain when Y2 is annotated");
-        assertFalse(ontology.axioms(AxiomType.SUBCLASS_OF).anyMatch(
+        assertFalse(ontology.getAxioms(AxiomType.SUBCLASS_OF, Imports.EXCLUDED).stream().anyMatch(
             a -> a.getSubClass().equals(y2Class) && a.getSuperClass().equals(xClass)),
             "SubClassOf(Y2, X) must not be added when Y2 is annotated");
 
         // X stays dual-declared because Y2 still references it as an object property
-        assertTrue(ontology.objectPropertiesInSignature().anyMatch(p -> p.getIRI().equals(xIRI)),
+        assertTrue(ontology.getObjectPropertiesInSignature().stream().anyMatch(p -> p.getIRI().equals(xIRI)),
             "X must remain in object property signature");
-        assertTrue(ontology.classesInSignature().anyMatch(c -> c.getIRI().equals(xIRI)),
+        assertTrue(ontology.getClassesInSignature().stream().anyMatch(c -> c.getIRI().equals(xIRI)),
             "X must remain in class signature");
     }
 
@@ -182,26 +183,26 @@ class DualDeclarationResolverTest {
         OWLClass zClass = df.getOWLClass(zIRI);
 
         // Y: SubObjectPropertyOf(Y, X) replaced by SubClassOf(Y, X)
-        assertFalse(ontology.axioms(AxiomType.SUB_OBJECT_PROPERTY).anyMatch(
+        assertFalse(ontology.getAxioms(AxiomType.SUB_OBJECT_PROPERTY, Imports.EXCLUDED).stream().anyMatch(
             a -> a.getSubProperty().equals(yProp) && a.getSuperProperty().equals(xProp)),
             "SubObjectPropertyOf(Y, X) should have been removed");
-        assertTrue(ontology.axioms(AxiomType.SUBCLASS_OF).anyMatch(
+        assertTrue(ontology.getAxioms(AxiomType.SUBCLASS_OF, Imports.EXCLUDED).stream().anyMatch(
             a -> a.getSubClass().equals(yClass) && a.getSuperClass().equals(xClass)),
             "SubClassOf(Y, X) should have been added");
 
         // Z: SubObjectPropertyOf(Z, Y) must remain — Z is annotated so no push
-        assertTrue(ontology.axioms(AxiomType.SUB_OBJECT_PROPERTY).anyMatch(
+        assertTrue(ontology.getAxioms(AxiomType.SUB_OBJECT_PROPERTY, Imports.EXCLUDED).stream().anyMatch(
             a -> a.getSubProperty().equals(zProp) && a.getSuperProperty().equals(yProp)),
             "SubObjectPropertyOf(Z, Y) should remain when Z is annotated");
-        assertFalse(ontology.axioms(AxiomType.SUBCLASS_OF).anyMatch(
+        assertFalse(ontology.getAxioms(AxiomType.SUBCLASS_OF, Imports.EXCLUDED).stream().anyMatch(
             a -> a.getSubClass().equals(zClass) && a.getSuperClass().equals(yClass)),
             "SubClassOf(Z, Y) must not be added when Z is annotated");
 
         // Y is dual-declared: SubClassOf(Y, X) puts Y in classesInSignature;
         // SubObjectPropertyOf(Z, Y) keeps Y in objectPropertiesInSignature.
-        assertTrue(ontology.classesInSignature().anyMatch(c -> c.getIRI().equals(yIRI)),
+        assertTrue(ontology.getClassesInSignature().stream().anyMatch(c -> c.getIRI().equals(yIRI)),
             "Y must be in class signature after boundary push");
-        assertTrue(ontology.objectPropertiesInSignature().anyMatch(p -> p.getIRI().equals(yIRI)),
+        assertTrue(ontology.getObjectPropertiesInSignature().stream().anyMatch(p -> p.getIRI().equals(yIRI)),
             "Y must remain in object property signature (Z still references it as a property)");
     }
 }

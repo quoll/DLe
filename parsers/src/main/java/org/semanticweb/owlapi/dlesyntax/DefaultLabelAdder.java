@@ -35,15 +35,15 @@ class DefaultLabelAdder {
         OWLAnnotationProperty labelProp = df.getRDFSLabel();
         IRI labelIRI = labelProp.getIRI();
 
-        List<OWLEntity> toLabel = ontology.signature()
+        List<OWLEntity> toLabel = ontology.getSignature().stream()
             .filter(entity -> !entity.isBuiltIn())
             .filter(entity -> !entity.getIRI().toString().startsWith(DLESyntaxAxiomVisitor.DLE_NS))
-            .filter(entity -> ontology.annotationAssertionAxioms(entity.getIRI())
+            .filter(entity -> ontology.getAnnotationAssertionAxioms(entity.getIRI()).stream()
                 .noneMatch(ax -> labelIRI.equals(ax.getProperty().getIRI())))
             .collect(Collectors.toList());
 
         for (OWLEntity entity : toLabel) {
-            String localName = entity.getIRI().getRemainder().orElse(null);
+            String localName = entity.getIRI().getRemainder().orNull();
             if (localName != null && !localName.isEmpty()) {
                 manager.addAxiom(ontology, df.getOWLAnnotationAssertionAxiom(
                     labelProp, entity.getIRI(), df.getOWLLiteral(localName)));

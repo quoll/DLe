@@ -1,5 +1,6 @@
 package org.semanticweb.owlapi.dlesyntax;
 
+import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
@@ -9,6 +10,7 @@ import javax.annotation.Nullable;
 import org.semanticweb.owlapi.dlsyntax.renderer.DLSyntaxObjectRenderer;
 import org.semanticweb.owlapi.dlsyntax.renderer.DLSyntax;
 import org.semanticweb.owlapi.model.AxiomType;
+import org.semanticweb.owlapi.model.parameters.Imports;
 import org.semanticweb.owlapi.model.OWLDatatypeRestriction;
 import org.semanticweb.owlapi.model.OWLFacetRestriction;
 import org.semanticweb.owlapi.model.OWLAsymmetricObjectPropertyAxiom;
@@ -39,6 +41,8 @@ import org.semanticweb.owlapi.model.OWLAnnotationSubject;
 import org.semanticweb.owlapi.model.OWLAnnotationValue;
 import org.semanticweb.owlapi.model.OWLAnonymousIndividual;
 import org.semanticweb.owlapi.model.OWLClass;
+import org.semanticweb.owlapi.model.OWLEntity;
+import org.semanticweb.owlapi.util.ShortFormProvider;
 import org.semanticweb.owlapi.model.OWLClassExpression;
 import org.semanticweb.owlapi.model.OWLDataAllValuesFrom;
 import org.semanticweb.owlapi.model.OWLDataOneOf;
@@ -102,7 +106,7 @@ public class DLESyntaxObjectRenderer extends DLSyntaxObjectRenderer {
     @Override
     public void visit(OWLClass ce) {
         if (ontology != null && ce.getIRI().toString().startsWith(DLESyntaxAxiomVisitor.DLE_NS)) {
-            String label = ontology.annotationAssertionAxioms(ce.getIRI())
+            String label = ontology.getAnnotationAssertionAxioms(ce.getIRI()).stream()
                 .filter(ax -> OWLRDFVocabulary.RDFS_LABEL.getIRI().equals(ax.getProperty().getIRI()))
                 .filter(ax -> ax.getValue() instanceof OWLLiteral)
                 .map(ax -> ((OWLLiteral) ax.getValue()).getLiteral())
@@ -118,7 +122,7 @@ public class DLESyntaxObjectRenderer extends DLSyntaxObjectRenderer {
     @Nullable
     private OWLDataRange dataPropertyRange(OWLDataPropertyExpression property) {
         if (ontology == null) return null;
-        return ontology.axioms(AxiomType.DATA_PROPERTY_RANGE)
+        return ontology.getAxioms(AxiomType.DATA_PROPERTY_RANGE, Imports.EXCLUDED).stream()
             .filter(ax -> ax.getProperty().equals(property))
             .map(ax -> ax.getRange())
             .findFirst().orElse(null);
@@ -127,7 +131,7 @@ public class DLESyntaxObjectRenderer extends DLSyntaxObjectRenderer {
     @Nullable
     private OWLClassExpression objectPropertyRange(OWLObjectPropertyExpression property) {
         if (ontology == null) return null;
-        return ontology.axioms(AxiomType.OBJECT_PROPERTY_RANGE)
+        return ontology.getAxioms(AxiomType.OBJECT_PROPERTY_RANGE, Imports.EXCLUDED).stream()
             .filter(ax -> ax.getProperty().equals(property))
             .map(ax -> ax.getRange())
             .findFirst().orElse(null);
@@ -142,11 +146,16 @@ public class DLESyntaxObjectRenderer extends DLSyntaxObjectRenderer {
     public void setPrefixManager(@Nullable PrefixManager pm) {
         prefixManager = pm;
         if (pm != null) {
-            setShortFormProvider(entity -> {
-                String curie = pm.getPrefixIRI(entity.getIRI());
-                if (curie == null) curie = computeCurie(pm, entity.getIRI().toString());
-                return curie != null ? stripDefaultPrefix(curie)
-                    : entity.getIRI().getRemainder().orElse(entity.getIRI().toString());
+            setShortFormProvider(new ShortFormProvider() {
+                @Override
+                public String getShortForm(OWLEntity entity) {
+                    String curie = pm.getPrefixIRI(entity.getIRI());
+                    if (curie == null) curie = computeCurie(pm, entity.getIRI().toString());
+                    return curie != null ? stripDefaultPrefix(curie)
+                        : entity.getIRI().getRemainder().or(entity.getIRI().toString());
+                }
+                @Override
+                public void dispose() {}
             });
         }
     }
@@ -191,8 +200,11 @@ public class DLESyntaxObjectRenderer extends DLSyntaxObjectRenderer {
             if (curie == null) curie = computeCurie(prefixManager, iri.toString());
             if (curie != null) return stripDefaultPrefix(curie);
         }
-        return iri.getRemainder().orElseThrow(() ->
-            new IllegalStateException("No prefix/namespace found for IRI: " + iri));
+        com.google.common.base.Optional<String> remainder = iri.getRemainder();
+        if (!remainder.isPresent()) {
+            throw new IllegalStateException("No prefix/namespace found for IRI: " + iri);
+        }
+        return remainder.get();
     }
 
     /** Package-private: used by {@link DLESyntaxStorerBase} to render IRIs consistently. */
@@ -327,12 +339,12 @@ public class DLESyntaxObjectRenderer extends DLSyntaxObjectRenderer {
 
     @Override
     public void visit(OWLDisjointObjectPropertiesAxiom axiom) {
-        writeNaryRoleAxiom("Disj", axiom.properties());
+        writeNaryRoleAxiom("Disj", axiom.getProperties().stream());
     }
 
     @Override
     public void visit(OWLDisjointDataPropertiesAxiom axiom) {
-        writeNaryRoleAxiom("Disj", axiom.properties());
+        writeNaryRoleAxiom("Disj", axiom.getProperties().stream());
     }
 
     @Override
@@ -341,8 +353,7 @@ public class DLESyntaxObjectRenderer extends DLSyntaxObjectRenderer {
         write(" ");
         write(DLSyntax.SUBCLASS);
         write(" key(");
-        List<OWLPropertyExpression> keys = axiom.propertyExpressions()
-            .collect(java.util.stream.Collectors.toList());
+        List<OWLPropertyExpression> keys = new ArrayList<>(axiom.getPropertyExpressions());
         for (Iterator<OWLPropertyExpression> it = keys.iterator(); it.hasNext();) {
             it.next().accept(this);
             if (it.hasNext()) {
@@ -446,7 +457,7 @@ public class DLESyntaxObjectRenderer extends DLSyntaxObjectRenderer {
 
     @Override
     public void visit(OWLDatatypeRestriction restriction) {
-        List<OWLFacetRestriction> facets = restriction.facetRestrictions()
+        List<OWLFacetRestriction> facets = restriction.getFacetRestrictions().stream()
             .sorted().collect(java.util.stream.Collectors.toList());
         boolean compact = !facets.isEmpty()
             && facets.stream().allMatch(fr -> isNumericFacet(fr.getFacet()));
@@ -518,7 +529,7 @@ public class DLESyntaxObjectRenderer extends DLSyntaxObjectRenderer {
     @Override
     public void visit(OWLDataOneOf node) {
         write("{");
-        List<OWLLiteral> values = node.values().collect(java.util.stream.Collectors.toList());
+        List<OWLLiteral> values = new ArrayList<>(node.getValues());
         for (Iterator<OWLLiteral> it = values.iterator(); it.hasNext();) {
             OWLLiteral lit = it.next();
             if (lit.isInteger() || lit.isDouble() || lit.isFloat() || lit.isBoolean()) {
@@ -568,7 +579,7 @@ public class DLESyntaxObjectRenderer extends DLSyntaxObjectRenderer {
                 }
                 // Suppress default labels whose value is the entity's own IRI local name.
                 if (axiom.getSubject() instanceof IRI) {
-                    String localName = ((IRI) axiom.getSubject()).getRemainder().orElse(null);
+                    String localName = ((IRI) axiom.getSubject()).getRemainder().orNull();
                     if (labelText.equals(localName)) {
                         return;
                     }
