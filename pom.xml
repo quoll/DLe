@@ -40,6 +40,7 @@
     <modules>
         <module>parsers</module>
         <module>owltx</module>
+        <module>protege-plugin</module>
     </modules>
 
     <properties>

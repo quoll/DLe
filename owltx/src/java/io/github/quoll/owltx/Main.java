@@ -167,7 +167,7 @@ public class Main {
         // Copy prefix mappings from the source format to the output format so
         // that output syntaxes that support prefixes (OFN, Manchester, Turtle, …)
         // use short-form names instead of full IRIs.
-        OWLDocumentFormat sourceFormat = ontology.getFormat();
+        OWLDocumentFormat sourceFormat = manager.getOntologyFormat(ontology);
         if (sourceFormat instanceof PrefixDocumentFormat
                 && outputFormat instanceof PrefixDocumentFormat) {
             ((PrefixDocumentFormat) sourceFormat).getPrefixName2PrefixMap()
