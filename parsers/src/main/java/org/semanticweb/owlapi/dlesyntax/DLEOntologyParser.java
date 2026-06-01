@@ -55,7 +55,13 @@ public class DLEOntologyParser extends AbstractOWLParser {
             } else if (source.isInputStreamAvailable()) {
                 reader = new InputStreamReader(source.getInputStream(), StandardCharsets.UTF_8);
             } else {
-                throw new OWLOntologyInputSourceException("No reader or input stream available from document source");
+                // IRIDocumentSource (used by Protégé's OntologyLoader) reports neither
+                // reader nor stream available — it only provides the IRI.  Open the IRI
+                // using the AbstractOWLParser helper, which handles file:// and http://
+                // URLs, redirects, and loader configuration settings.
+                reader = new InputStreamReader(
+                        getInputStream(source.getDocumentIRI(), configuration, DEFAULT_REQUEST),
+                        StandardCharsets.UTF_8);
             }
             var chars  = CharStreams.fromReader(reader);
             var lexer  = new DLESyntaxLexer(chars);
