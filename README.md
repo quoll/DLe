@@ -10,6 +10,13 @@ DLe is a "storer" and "parser" for the OWLAPI library.
 
 ### How do I use it?
 This can be added to the ontology manager and used like any other syntax of OWL.
+```xml
+        <dependency>
+            <groupId>io.github.quoll.owlapi</groupId>
+            <artifactId>dlextended-parsers</artifactId>
+            <version>0.4.1</version>
+        </dependency>
+```
 
 Alternatively, if you have DLe installed (via Maven), then you can run it with the `owltx` utility.
 ```bash
