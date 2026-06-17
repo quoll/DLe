@@ -5,6 +5,9 @@ DL provides a compact, formal, and declarative way to describe ontologies, data 
 
 DLe is [OWL](https://www.w3.org/TR/owl2-overview/) compatible and is implemented as a module for [OWLAPI](https://github.com/owlcs/owlapi). The OWL constructs that are not in standard DL are provided via extensions. DLe also has extensions to describe rules through logic expressions.
 
+## Wiki
+Seriously, read [the Wiki](https://github.com/quoll/DLe/wiki). It contains everything here and a lot more.
+
 ## What is it?
 DLe is a "storer" and "parser" for the OWLAPI library.
 
