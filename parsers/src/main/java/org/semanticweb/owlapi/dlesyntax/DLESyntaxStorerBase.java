@@ -116,29 +116,55 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
     }
 
     /**
-     * The prefixes to write with: those the ontology was loaded from, overridden
-     * by any the caller supplied on the output format.
+     * The prefixes to write with, merged from the two places they can come from:
+     * the format passed to {@code saveOntology} and the format the ontology was
+     * loaded from.
      *
-     * <p>Both sources matter, which is why this merges rather than picking one.
-     * The usual call is {@code saveOntology(o, new DLESyntaxDocumentFormat(), t)},
-     * where the output format carries no document prefixes and the ontology's own
-     * format is the only place they exist. But a caller who invokes the parser
-     * directly gets a populated format back and may hand it straight to
-     * {@code saveOntology} — and that is an explicit instruction, so it wins.
-     * Preferring the ontology's format outright silently discarded it, which
-     * dropped every {@code @prefix} line and re-resolved bare names to the DLe
-     * default namespace on reload.
+     * <p>Both matter. The usual call is
+     * {@code saveOntology(o, new DLESyntaxDocumentFormat(), t)}, where the
+     * ontology's own format is the only place document prefixes exist. But a
+     * caller who invokes the parser directly gets a populated format back and may
+     * hand it straight to {@code saveOntology}, and preferring the ontology's
+     * format outright discarded it — dropping every {@code @prefix} line and
+     * re-resolving bare names to the DLe default namespace on reload.
+     *
+     * <p>Neither source can simply win, because neither is ever empty: a fresh
+     * {@code DLESyntaxDocumentFormat} already carries {@code owl:}, {@code rdf:},
+     * {@code rdfs:}, {@code xsd:} and {@code xml:} from
+     * {@code PrefixDocumentFormatImpl}. Letting it win would silently reset a
+     * document that redeclares one of those, and the renderer would then write the
+     * affected names bare, to be re-resolved against a different namespace on
+     * reload. Letting the ontology win loses the same thing in the other
+     * direction.
+     *
+     * <p>So a declaration that merely repeats a DLe default never displaces one
+     * that says something, and where both say something the ontology's wins,
+     * because that is the namespace its entities actually live in.
      */
     private static Map<String, String> prefixesFor(OWLOntology o, OWLDocumentFormat outputFormat) {
         Map<String, String> merged = new LinkedHashMap<>();
-        OWLDocumentFormat ontologyFormat = o.getFormat();
-        if (ontologyFormat instanceof PrefixDocumentFormat) {
-            merged.putAll(((PrefixDocumentFormat) ontologyFormat).getPrefixName2PrefixMap());
-        }
-        if (outputFormat instanceof PrefixDocumentFormat) {
-            merged.putAll(((PrefixDocumentFormat) outputFormat).getPrefixName2PrefixMap());
-        }
+        contribute(merged, outputFormat);
+        contribute(merged, o.getFormat());
         return merged;
+    }
+
+    /** Adds a format's prefixes, without letting a default value displace a real one. */
+    private static void contribute(Map<String, String> merged,
+                                   @Nullable OWLDocumentFormat format) {
+        if (!(format instanceof PrefixDocumentFormat)) return;
+        ((PrefixDocumentFormat) format).getPrefixName2PrefixMap().forEach((prefix, iri) -> {
+            if (isDleDefault(prefix, iri)
+                    && merged.containsKey(prefix)
+                    && !isDleDefault(prefix, merged.get(prefix))) {
+                return;
+            }
+            merged.put(prefix, iri);
+        });
+    }
+
+    /** Whether a declaration says no more than DLe already assumes. */
+    private static boolean isDleDefault(String prefix, String iri) {
+        return iri.equals(DLE_DEFAULT_PREFIXES.get(prefix));
     }
 
     @Override

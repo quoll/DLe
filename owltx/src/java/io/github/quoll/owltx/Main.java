@@ -20,7 +20,7 @@ import java.util.Map;
  *
  * If no output file is given, writes to stdout.
  * If no format is given, it is inferred from the output file extension,
- * or defaults to DL Syntax.
+ * or defaults to DLE Syntax.
  */
 public class Main {
 
@@ -186,8 +186,24 @@ public class Main {
         }
     }
 
-    // Package-private rather than private so the defaulting rules can be tested.
-    // The stdout default was wrong for a while precisely because nothing checked it.
+    /** A DLE format instance; the default when nothing else determines one. */
+    private static OWLDocumentFormat newDefaultFormat() {
+        return new DLESyntaxDocumentFormat();
+    }
+
+    /**
+     * Resolves the output format: an explicit {@code --format}, then the output
+     * file's extension, then DLE.
+     *
+     * <p>Package-private so the defaulting can be tested. The stdout default was
+     * wrong for a long time precisely because nothing checked it.
+     *
+     * <p>Every branch returns a fresh instance. The lookup tables hold one
+     * instance per format, and {@code main} copies the source document's prefixes
+     * into whatever this returns — so handing back the table's own instance would
+     * leave those prefixes on it for the life of the JVM, and a second conversion
+     * would render short names against the first document's namespaces.
+     */
     static OWLDocumentFormat resolveFormat(String formatName, String outputFile) {
         // 1. Explicit format option
         if (formatName != null) {
@@ -196,7 +212,7 @@ public class Main {
                 die("Unknown format: " + formatName
                     + "\nKnown formats: " + String.join(", ", FORMAT_BY_NAME.keySet()));
             }
-            return fmt;
+            return freshCopyOf(fmt);
         }
 
         // 2. Output file extension
@@ -205,17 +221,36 @@ public class Main {
             if (ext != null) {
                 OWLDocumentFormat fmt = FORMAT_BY_EXT.get(ext.toLowerCase());
                 if (fmt != null) {
-                    return fmt;
+                    return freshCopyOf(fmt);
                 }
             }
         }
 
-        // 3. Default: DLE syntax, as the usage text and the documentation both
-        //    say. This returned plain DL syntax, so `owltx doc.dle` with no
-        //    output file and no --format silently produced a different language:
-        //    no @prefix declarations, no header, `self` where DLe requires `Self`,
-        //    and no line breaks at all.
-        return new DLESyntaxDocumentFormat();
+        // 3. Default: DLE syntax. This returned plain DL syntax, so
+        //    `owltx doc.dle` with no output file and no --format silently
+        //    produced a different language: no @prefix declarations, no header,
+        //    `self` where DLe requires `Self`, and no line breaks at all. The
+        //    class javadoc and the usage text said DL Syntax and have been
+        //    corrected too — the default is DLe because that is what this tool
+        //    is for.
+        return newDefaultFormat();
+    }
+
+    /**
+     * A new instance of the same format class as {@code prototype}.
+     *
+     * <p>The lookup tables are built once and shared, but a format is mutable —
+     * {@code main} writes prefixes into it — so callers must not receive the
+     * shared instance. Every format here has a public no-argument constructor;
+     * if one ever does not, the prototype is returned rather than failing the
+     * conversion, since sharing is only a hazard across repeated use in one JVM.
+     */
+    private static OWLDocumentFormat freshCopyOf(OWLDocumentFormat prototype) {
+        try {
+            return prototype.getClass().getDeclaredConstructor().newInstance();
+        } catch (ReflectiveOperationException e) {
+            return prototype;
+        }
     }
 
     /** Returns the extension of a filename (without the dot), or null if none. */
@@ -235,8 +270,8 @@ public class Main {
         System.err.println("  -h, --help           Show this help");
         System.err.println();
         System.err.println("Formats (name aliases):");
-        System.err.println("  dle, dlesyntax       DLE Syntax — extended DL with annotations");
-        System.err.println("  dl, dlsyntax         DL Syntax (default)");
+        System.err.println("  dle, dlesyntax       DLE Syntax — extended DL with annotations (default)");
+        System.err.println("  dl, dlsyntax         DL Syntax — plain DL, no DLe extensions");
         System.err.println("  dlhtml, dlsyntaxhtml DL Syntax HTML");
         System.err.println("  functional, ofn      OWL Functional Syntax");
         System.err.println("  manchester, omn      Manchester OWL Syntax");

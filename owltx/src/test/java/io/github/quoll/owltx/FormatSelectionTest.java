@@ -2,6 +2,7 @@ package io.github.quoll.owltx;
 
 import org.junit.jupiter.api.Test;
 import org.semanticweb.owlapi.formats.DLESyntaxDocumentFormat;
+import org.semanticweb.owlapi.formats.DLSyntaxDocumentFormat;
 import org.semanticweb.owlapi.formats.FunctionalSyntaxDocumentFormat;
 import org.semanticweb.owlapi.formats.TurtleDocumentFormat;
 import org.semanticweb.owlapi.model.OWLDocumentFormat;
@@ -39,10 +40,20 @@ class FormatSelectionTest {
     @Test
     void plainDlIsStillReachableButOnlyOnRequest() {
         // The old default. It remains available, because rendering plain DL is a
-        // legitimate thing to ask for — it just is not what DLe means.
-        OWLDocumentFormat dl = Main.resolveFormat("dl", null);
-        assertFalse(dl instanceof DLESyntaxDocumentFormat,
-            "'dl' must be plain DL syntax, not DLe");
+        // legitimate thing to ask for — it just is not what DLe means. Asserted
+        // as the concrete class: `not DLe` would be satisfied by any format at all.
+        assertInstanceOf(DLSyntaxDocumentFormat.class, Main.resolveFormat("dl", null));
+    }
+
+    @Test
+    void eachCallGetsItsOwnFormatInstance() {
+        // main() writes the source document's prefixes into the format it is
+        // given. If that were the lookup table's own instance, the prefixes would
+        // outlive the conversion and a second one in the same JVM would render
+        // short names against the first document's namespaces.
+        assertNotSame(Main.resolveFormat("turtle", null), Main.resolveFormat("turtle", null));
+        assertNotSame(Main.resolveFormat(null, "a.dle"), Main.resolveFormat(null, "b.dle"));
+        assertNotSame(Main.resolveFormat(null, null), Main.resolveFormat(null, null));
     }
 
     @Test

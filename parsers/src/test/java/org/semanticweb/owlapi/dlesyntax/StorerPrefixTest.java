@@ -108,23 +108,67 @@ class StorerPrefixTest {
     }
 
     @Test
-    void theCallersPrefixWinsOverTheOntologys() throws Exception {
-        // Both sources present and disagreeing. An explicitly passed format is an
-        // instruction, so it takes precedence.
+    void aFreshFormatsStandardPrefixesDoNotResetTheDocuments() throws Exception {
+        // A fresh DLESyntaxDocumentFormat is not empty: PrefixDocumentFormatImpl
+        // seeds owl:, rdf:, rdfs:, xsd: and xml:. If those displaced the
+        // document's own declarations, a document that redeclares one of them
+        // would be silently rewritten — and the renderer, finding no prefix that
+        // matches, would write the affected names bare, to be re-resolved
+        // against a different namespace on reload.
+        String doc = "@prefix : <" + NS + ">\n"
+            + "@prefix xsd: <http://example.org/mine#>\n"
+            + "⊤ ⊑ ∀code.xsd:Code\n";
+
+        OWLOntologyManager manager = OWLManager.createOWLOntologyManager();
+        OWLOntology ontology = manager.createOntology();
+        OWLDocumentFormat parsed = parseInto(manager, ontology, doc);
+        manager.setOntologyFormat(ontology, parsed);
+        Set<OWLLogicalAxiom> before = ontology.getLogicalAxioms();
+
+        String written = write(manager, ontology, new DLESyntaxDocumentFormat());
+
+        assertTrue(written.contains("@prefix xsd: <http://example.org/mine#>"),
+            "a redeclared xsd: must survive:\n" + written);
+
+        OWLOntologyManager reader = OWLManager.createOWLOntologyManager();
+        OWLOntology reloaded = reader.createOntology();
+        new DLEOntologyParser().parse(
+            new StreamDocumentSource(new ByteArrayInputStream(written.getBytes(StandardCharsets.UTF_8))),
+            reloaded, reader.getOntologyLoaderConfiguration());
+        assertEquals(before, reloaded.getLogicalAxioms(),
+            "the redeclared namespace must survive the round trip:\n" + written);
+    }
+
+    @Test
+    void theDocumentsPrefixWinsWhenBothSourcesSaySomething() throws Exception {
+        // A genuine conflict: the document says `:` is one namespace, the caller
+        // says another. The document wins, because that is where its entities
+        // actually live. Letting the caller win produced a document whose every
+        // name reloaded against the overriding namespace — `t#Animal` came back
+        // as `override#Animal`, silently a different ontology.
         OWLOntologyManager manager = OWLManager.createOWLOntologyManager();
         OWLOntology ontology = manager.createOntology();
         OWLDocumentFormat parsed = parseInto(manager, ontology, DOC);
         manager.setOntologyFormat(ontology, parsed);
+        Set<OWLLogicalAxiom> before = ontology.getLogicalAxioms();
 
         DLESyntaxDocumentFormat override = new DLESyntaxDocumentFormat();
         override.setPrefix(":", "http://example.org/override#");
 
         String written = write(manager, ontology, override);
 
-        assertTrue(written.contains("@prefix : <http://example.org/override#>"),
-            "the caller's prefix must win:\n" + written);
-        assertFalse(written.contains("@prefix : <" + NS + ">"),
-            "the overridden prefix must not also be written:\n" + written);
+        assertTrue(written.contains("@prefix : <" + NS + ">"),
+            "the document's own namespace must be written:\n" + written);
+        assertFalse(written.contains("http://example.org/override#"),
+            "an override that would move the entities must not be written:\n" + written);
+
+        OWLOntologyManager reader = OWLManager.createOWLOntologyManager();
+        OWLOntology reloaded = reader.createOntology();
+        new DLEOntologyParser().parse(
+            new StreamDocumentSource(new ByteArrayInputStream(written.getBytes(StandardCharsets.UTF_8))),
+            reloaded, reader.getOntologyLoaderConfiguration());
+        assertEquals(before, reloaded.getLogicalAxioms(),
+            "names must not move namespace:\n" + written);
     }
 
     @Test
