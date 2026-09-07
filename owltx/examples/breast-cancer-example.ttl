@@ -1,0 +1,521 @@
+@prefix : <http://snomed.info/sct/900000000000207008#> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix xml: <http://www.w3.org/XML/1998/namespace> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix skos: <http://www.w3.org/2004/02/skos/core#> .
+@prefix sct: <http://snomed.info/id/> .
+@base <http://snomed.info/sct/900000000000207008> .
+
+###  http://snomed.info/id/373080008
+sct:373080008 rdf:type owl:Class ;
+               owl:equivalentClass [ owl:intersectionOf ( sct:64572001    ### Disease
+                                                          [ rdf:type owl:Restriction ;
+                                                            owl:onProperty sct:609096000 ;    ### Role group
+                                                            owl:someValuesFrom [ owl:intersectionOf ( [ rdf:type owl:Restriction ;
+                                                                                                        owl:onProperty sct:116676008 ;        ### Associated morphology
+                                                                                                        owl:someValuesFrom sct:1240414004 ]   ###  Malignant neoplasm
+                                                                                                      [ rdf:type owl:Restriction ;
+                                                                                                        owl:onProperty sct:363698007 ;        ### Finding site
+                                                                                                        owl:someValuesFrom sct:19100000 ]) ;  ### Structure of lower inner quadrant of breast
+                                                                                 rdf:type owl:Class ] ] ) ;
+                                     rdf:type owl:Class ] ;
+               rdfs:label "Malignant neoplasm of lower inner quadrant of breast (disorder)"@en ;
+               skos:altLabel "Malignant neoplasm of breast lower inner quadrant"@en ;
+               skos:prefLabel "Malignant neoplasm of lower inner quadrant of breast"@en .
+
+##########################
+### Referenced Classes ###
+##########################
+
+###  http://snomed.info/id/64572001
+sct:64572001 rdf:type owl:Class ;
+             rdfs:subClassOf sct:404684003 ;    ### Clinical finding
+             rdfs:label "Disease (disorder)"@en ;
+             skos:altLabel "Clinical disease AND/OR syndrome"@en ,
+                           "Diseases"@en ,
+                           "Disorder"@en ,
+                           "Disorders"@en ,
+                           "Syndrome"@en ;
+             skos:prefLabel "Disease"@en .
+
+###  http://snomed.info/id/1240414004
+sct:1240414004 rdf:type owl:Class ;
+               rdfs:subClassOf sct:108369006 ;    ### Neoplasm
+               rdfs:label "Malignant neoplasm (morphologic abnormality)"@en ;
+               skos:altLabel "Blastoma"@en ,
+                             "Cancer"@en ,
+                             "Malignancy"@en ,
+                             "Malignant neoplasm morphology"@en ,
+                             "Malignant tumor"@en-us ,
+                             "Malignant tumour"@en-gb ,
+                             "Unclassified malignant tumor"@en-us ,
+                             "Unclassified malignant tumour"@en-gb ;
+               skos:prefLabel "Malignant neoplasm"@en .
+
+###  http://snomed.info/id/19100000
+sct:19100000 rdf:type owl:Class ;
+             rdfs:subClassOf sct:272670002 ;    ### Breast quadrant
+             rdfs:label "Structure of lower inner quadrant of breast (body structure)"@en ;
+             skos:altLabel "Lower inner quadrant of breast"@en ;
+             skos:prefLabel "Structure of lower inner quadrant of breast"@en .
+
+###########################################
+###### First generation superclasses ######
+###########################################
+
+###  http://snomed.info/id/404684003
+sct:404684003 rdf:type owl:Class ;
+              rdfs:subClassOf sct:138875005 ;    ### SNOMED CT Concept
+              rdfs:label "Clinical finding (finding)"@en ;
+              skos:prefLabel "Clinical finding"@en .
+
+###  http://snomed.info/id/108369006
+sct:108369006 rdf:type owl:Class ;
+              rdfs:subClassOf sct:400177003 ;    ### Neoplasm and/or hamartoma
+              rdfs:label "Neoplasm (morphologic abnormality)"@en ;
+              skos:altLabel "Tumor"@en-us ,
+                            "Tumour"@en-gb ;
+              skos:prefLabel "Neoplasm"@en .
+
+###  http://snomed.info/id/272670002
+sct:272670002 rdf:type owl:Class ;
+              rdfs:subClassOf sct:279005008 ;    ### Region of breast
+              rdfs:label "Structure of breast quadrant (body structure)"@en ;
+              skos:altLabel "Structure of breast quadrant"@en ;
+              skos:prefLabel "Breast quadrant"@en .
+
+
+############################################
+###### Second generation superclasses ######
+############################################
+
+###  http://snomed.info/id/138875005
+sct:138875005 rdf:type owl:Class ;
+              rdfs:label "SNOMED CT Concept (SNOMED RT+CTV3)"@en ;
+              skos:altLabel "SNOMED CT has been created by combining SNOMED RT and a computer-based nomenclature and classification known as Read Codes Version 3, which was created on behalf of the U.K. Department of Health."@en ,
+                            "SNOMED Clinical Terms version: 20241001 [R] (October 2024 Release)"@en ,
+                            "© 2002-2024 International Health Terminology Standards Development Organisation (IHTSDO). All rights reserved. SNOMED CT®, was originally created by The College of American Pathologists. \"SNOMED\" and \"SNOMED CT\" are registered trademarks of the IHTSDO."@en ;
+              skos:prefLabel "SNOMED CT Concept"@en .
+
+###  http://snomed.info/id/400177003
+sct:400177003 rdf:type owl:Class ;
+              rdfs:subClassOf sct:416939005 ;    ### Proliferative mass
+              rdfs:label "Neoplasm and/or hamartoma (morphologic abnormality)"@en ;
+              skos:prefLabel "Neoplasm and/or hamartoma"@en .
+
+###  http://snomed.info/id/279005008
+sct:279005008 rdf:type owl:Class ;
+              rdfs:subClassOf sct:119184005 ;    ### Breast part
+              rdfs:label "Structure of region of breast (body structure)"@en ;
+              skos:altLabel "Structure of region of breast"@en ;
+              skos:prefLabel "Region of breast"@en .
+
+############################################
+###### Third generation superclasses ######
+############################################
+
+###  http://snomed.info/id/416939005
+sct:416939005 rdf:type owl:Class ;
+              rdfs:subClassOf [ owl:intersectionOf ( sct:30217000    ### Proliferation
+                                                     sct:4147007 ) ;    ### Mass
+                                rdf:type owl:Class ] ;
+              rdfs:label "Proliferative mass (morphologic abnormality)"@en ;
+              skos:prefLabel "Proliferative mass"@en .
+
+###  http://snomed.info/id/119184005
+sct:119184005 rdf:type owl:Class ;
+              rdfs:subClassOf [ owl:intersectionOf ( sct:76752008    ### Breast structure
+                                                     sct:91717005 ) ;    ### Organ part
+                                rdf:type owl:Class ] ;
+              rdfs:label "Breast part (body structure)"@en ;
+              skos:prefLabel "Breast part"@en .
+
+############################################
+###### Fourth generation superclasses ######
+############################################
+
+###  http://snomed.info/id/30217000
+sct:30217000 rdf:type owl:Class ;
+             rdfs:subClassOf sct:57697001 ;    ### Growth alteration
+             rdfs:label "Proliferation (morphologic abnormality)"@en ;
+             skos:prefLabel "Proliferation"@en .
+
+###  http://snomed.info/id/4147007
+sct:4147007 rdf:type owl:Class ;
+            rdfs:subClassOf sct:52988006 ;    ### Lesion
+            rdfs:label "Mass (morphologic abnormality)"@en ;
+            skos:altLabel "Localised mass"@en-gb ,
+                          "Localized mass"@en-us ,
+                          "Lump"@en ;
+            skos:prefLabel "Mass"@en .
+
+###  http://snomed.info/id/76752008
+sct:76752008 rdf:type owl:Class ;
+             rdfs:subClassOf [ owl:intersectionOf ( sct:113343008    ### Body organ structure
+                                                    sct:305072005    ### Structure of breast and/or endocrine system
+                                                    sct:32655009) ;    ### Structure of mammary region
+                               rdf:type owl:Class ] ;
+             rdfs:label "Breast structure (body structure)"@en ;
+             skos:altLabel "Breast"@en ,
+                           "Breast anatomy"@en ;
+             skos:prefLabel "Breast structure"@en .
+
+###  http://snomed.info/id/91717005
+sct:91717005 rdf:type owl:Class ;
+             rdfs:subClassOf sct:113343008 ;    ### Body organ structure
+             rdfs:label "Organ part (body structure)"@en ;
+             skos:prefLabel "Organ part"@en .
+
+###########################################
+###### Fifth generation superclasses ######
+###########################################
+
+###  http://snomed.info/id/57697001
+sct:57697001 rdf:type owl:Class ;
+             rdfs:subClassOf sct:49755003 ;    ### Morphologically abnormal structure
+             rdfs:label "Growth alteration (morphologic abnormality)"@en ;
+             skos:altLabel "Disturbance of growth"@en ;
+             skos:prefLabel "Growth alteration"@en .
+
+###  http://snomed.info/id/52988006
+sct:52988006 rdf:type owl:Class ;
+             rdfs:subClassOf sct:49755003 ;    ### Morphologically abnormal structure
+             rdfs:label "Lesion (morphologic abnormality)"@en ;
+             skos:prefLabel "Lesion"@en .
+
+###  http://snomed.info/id/113343008
+sct:113343008 rdf:type owl:Class ;
+              rdfs:subClassOf sct:91723000 ;    ### Anatomical structure
+              rdfs:label "Body organ structure (body structure)"@en ;
+              skos:altLabel "Body organ"@en ;
+              skos:definition "An anatomical structure that consists of the maximal set of organ parts so connected to one another that together they constitute a self-contained unit of macroscopic anatomy, distinct both morphologically and functionally from other such units. Together with other organs, an organ constitutes an organ system or a body part. An organ is divisible into organ parts but not organs (examples: femur, biceps, liver, heart, aorta, sciatic nerve, ovary)."@en ;
+              skos:prefLabel "Body organ structure"@en .
+
+###  http://snomed.info/id/305072005
+sct:305072005 rdf:type owl:Class ;
+              rdfs:subClassOf sct:91689009 ;    ### Body system structure
+              rdfs:label "Structure of breast and/or endocrine system (body structure)"@en ;
+              skos:altLabel "Breast and endocrine structures"@en ,
+                            "Breast and/or endocrine structures"@en ;
+              skos:prefLabel "Structure of breast and/or endocrine system"@en .
+
+###  http://snomed.info/id/32655009
+sct:32655009 rdf:type owl:Class ;
+             rdfs:subClassOf sct:251007 ;    ### Pectoral region structure
+             rdfs:label "Structure of mammary region (body structure)"@en ;
+             skos:altLabel "Mammary region"@en ;
+             skos:prefLabel "Structure of mammary region"@en .
+
+###########################################
+###### Sixth generation superclasses ######
+###########################################
+
+###  http://snomed.info/id/49755003
+sct:49755003 rdf:type owl:Class ;
+             rdfs:subClassOf sct:118956008 ;    ### Morphologically altered structure
+             rdfs:label "Morphologically abnormal structure (morphologic abnormality)"@en ;
+             skos:altLabel "Abnormal tissue appearance"@en ;
+             skos:prefLabel "Morphologically abnormal structure"@en .
+
+###  http://snomed.info/id/91723000
+sct:91723000 rdf:type owl:Class ;
+             rdfs:subClassOf sct:442083009 ;    ### Anatomical or acquired body structure
+             rdfs:label "Anatomical structure (body structure)"@en ;
+             skos:prefLabel "Anatomical structure"@en .
+
+###  http://snomed.info/id/91689009
+sct:91689009 rdf:type owl:Class ;
+             rdfs:subClassOf sct:91723000 ;    ### Anatomical structure
+             rdfs:label "Body system structure (body structure)"@en ;
+             skos:altLabel "Organ system"@en ;
+             skos:prefLabel "Body system structure"@en .
+
+###  http://snomed.info/id/251007
+sct:251007 rdf:type owl:Class ;
+           rdfs:subClassOf sct:422614002 ;    ### Structure of half of thorax lateral to midsagittal plane
+           rdfs:label "Pectoral region structure (body structure)"@en ;
+           skos:altLabel "Pectoral region"@en ;
+           skos:prefLabel "Pectoral region structure"@en .
+
+#############################################
+###### Seventh generation superclasses ######
+#############################################
+
+###  http://snomed.info/id/118956008
+sct:118956008 rdf:type owl:Class ;
+              rdfs:subClassOf sct:123037004 ;    ### Body structure
+              rdfs:label "Body structure, altered from its original anatomical structure (morphologic abnormality)"@en ;
+              skos:altLabel "Body structure, altered from its original anatomical structure"@en ,
+                            "Morphologic alteration"@en ,
+                            "Morphologic change"@en ;
+              skos:prefLabel "Morphologically altered structure"@en .
+
+###  http://snomed.info/id/442083009
+sct:442083009 rdf:type owl:Class ;
+              rdfs:subClassOf sct:123037004 ;    ### Body structure
+              rdfs:label "Anatomical or acquired body structure (body structure)"@en ;
+              skos:prefLabel "Anatomical or acquired body structure"@en .
+
+###  http://snomed.info/id/422614002
+sct:422614002 rdf:type owl:Class ;
+              owl:equivalentClass [ owl:intersectionOf ( sct:51185008    ### Thoracic structure
+                                                         [ rdf:type owl:Restriction ;
+                                                           owl:onProperty sct:272741003 ;    ### Laterality
+                                                           owl:someValuesFrom sct:182353008 ] ) ;    ### Side
+                                    rdf:type owl:Class ] ;
+              rdfs:label "Structure of half of thorax lateral to midsagittal plane (body structure)"@en ;
+              skos:altLabel "Hemithorax"@en ;
+              skos:prefLabel "Structure of half of thorax lateral to midsagittal plane"@en .
+
+############################################
+###### Eighth generation superclasses ######
+############################################
+
+###  http://snomed.info/id/123037004
+sct:123037004 rdf:type owl:Class ;
+              rdfs:subClassOf sct:138875005 ;    ### SNOMED CT Concept
+              rdfs:label "Body structure (body structure)"@en ;
+              skos:altLabel "Body structures"@en ;
+              skos:prefLabel "Body structure"@en .
+
+###  http://snomed.info/id/51185008
+sct:51185008 rdf:type owl:Class ;
+             rdfs:subClassOf [ owl:intersectionOf ( sct:416550000    ### Chest and abdomen
+                                                    sct:417437006    ### Neck and chest
+                                                    sct:67734004 ) ;    ### Thoracic segment of trunk
+                               rdf:type owl:Class ] ;
+             rdfs:label "Thoracic structure (body structure)"@en ;
+             skos:altLabel "Chest"@en ,
+                           "Thorax"@en ;
+             skos:prefLabel "Thoracic structure"@en .
+
+###  http://snomed.info/id/182353008
+sct:182353008 rdf:type owl:Class ;
+              rdfs:subClassOf sct:272424004 ;    ### Relative sites
+              rdfs:label "Side (qualifier value)"@en ;
+              skos:prefLabel "Side"@en .
+
+############################################
+###### Eighth generation superclasses ######
+############################################
+
+###  http://snomed.info/id/416550000
+sct:416550000 rdf:type owl:Class ;
+              rdfs:subClassOf [ owl:intersectionOf ( sct:416152001    ### Neck, chest and abdomen
+                                                     sct:416775004 ) ;    ### Chest, abdomen, and pelvis
+                                rdf:type owl:Class ] ;
+              rdfs:label "Chest and/or abdomen structure (body structure)"@en ;
+              skos:altLabel "Chest and/or abdomen structure"@en ;
+              skos:prefLabel "Chest and abdomen"@en .
+
+###  http://snomed.info/id/417437006
+sct:417437006 rdf:type owl:Class ;
+              rdfs:subClassOf sct:416152001 ;    ### Neck, chest and abdomen
+              rdfs:label "Neck and/or chest structure (body structure)"@en ;
+              skos:altLabel "Neck and/or chest structure"@en ;
+              skos:prefLabel "Neck and chest"@en .
+
+###  http://snomed.info/id/67734004
+sct:67734004 rdf:type owl:Class ;
+             rdfs:subClassOf [ owl:intersectionOf ( sct:70104002    ### Upper body part structure
+                                                    sct:816094009 ) ;    ### Cross-sectional thorax
+                               rdf:type owl:Class ] ;
+             rdfs:label "Structure of thoracic segment of trunk (body structure)"@en ;
+             skos:altLabel "Structure of thoracic segment of trunk"@en ,
+                           "Upper trunk"@en ,
+                           "Upper trunk structure"@en ;
+             skos:definition "This segment relates to the volume of the trunk that is bounded by and includes: superiorly the thoracic inlet; inferiorly the thoracic diaphragm; posteriorly the spinal column and back of the thorax; and laterally the chest wall: it contains the thoracic cavity and contents, and includes all the overlying muscles, skin and subcutaneous tissue."@en ;
+             skos:prefLabel "Thoracic segment of trunk"@en .
+
+###  http://snomed.info/id/272424004
+sct:272424004 rdf:type owl:Class ;
+              rdfs:subClassOf sct:309825002 ;    ### Spatial and relational concepts
+              rdfs:label "Relative sites (qualifier value)"@en ;
+              skos:prefLabel "Relative sites"@en .
+
+###########################################
+###### Ninth generation superclasses ######
+###########################################
+
+###  http://snomed.info/id/416152001
+sct:416152001 rdf:type owl:Class ;
+              rdfs:subClassOf sct:416319003 ;    ### Neck, chest, abdomen, and pelvis
+              rdfs:label "Neck and/or chest and/or abdomen structure (body structure)"@en ;
+              skos:altLabel "Neck and/or chest and/or abdomen structure"@en ;
+              skos:prefLabel "Neck, chest and abdomen"@en .
+
+###  http://snomed.info/id/416775004
+sct:416775004 rdf:type owl:Class ;
+              rdfs:subClassOf sct:52530000 ;    ### Body region structure
+              rdfs:label "Chest and/or abdomen and/or pelvis structure (body structure)"@en ;
+              skos:altLabel "Chest and/or abdomen and/or pelvis structure"@en ;
+              skos:prefLabel "Chest, abdomen, and pelvis"@en .
+
+###  http://snomed.info/id/70104002
+sct:70104002 rdf:type owl:Class ;
+             rdfs:subClassOf sct:128262006 ;    ### Upper body structure
+             rdfs:label "Upper body part structure (body structure)"@en ;
+             skos:altLabel "Upper body part"@en ;
+             skos:prefLabel "Upper body part structure"@en .
+
+###  http://snomed.info/id/816094009
+sct:816094009 rdf:type owl:Class ;
+              rdfs:subClassOf sct:420473002 ;    ### Structure of subregion of trunk
+              rdfs:label "Structure of thoracic cross-sectional segment of trunk (body structure)"@en ;
+              skos:altLabel "Cross-sectional chest"@en ,
+                            "Structure of thoracic cross-sectional segment of trunk"@en ,
+                            "Thoracic cross-sectional segment of trunk"@en ;
+              skos:definition "This cross-sectional segment is bounded superiorly by a virtual horizontal plane at the level of the thoracic inlet (upper boundary of first thoracic (T1) vertebra) and inferiorly by a virtual horizontal plane at the level of the lower boundary of the twelfth thoracic (T12) vertebra. The segment therefore includes the entire thoracic cavity but also part of the upper abdominal volume above the virtual plane at the T12 vertebra. The volume includes the entire transverse thickness of the body over the longitudinal extent between the superior (upper) and inferior (lower) boundaries including the skin and subcutaneous tissue. The segment relates to the cross-sectional or projectional volume as perceived by transmissive or emissive imaging."@en ;
+              skos:prefLabel "Cross-sectional thorax"@en .
+
+###  http://snomed.info/id/309825002
+sct:309825002 rdf:type owl:Class ;
+              rdfs:subClassOf sct:362981000 ;    ### Qualifier value
+              rdfs:label "Spatial and relational concepts (qualifier value)"@en ;
+              skos:prefLabel "Spatial and relational concepts"@en .
+
+###########################################
+###### Tenth generation superclasses ######
+###########################################
+
+###  http://snomed.info/id/416319003
+sct:416319003 rdf:type owl:Class ;
+              rdfs:subClassOf sct:52530000 ;    ### Body region structure
+              rdfs:label "Structure of neck and/or chest and/or abdomen and/or pelvis (body structure)"@en ;
+              skos:altLabel "Neck and/or chest and/or abdomen and/or pelvis"@en ,
+                            "Structure of neck and/or chest and/or abdomen and/or pelvis"@en ;
+              skos:prefLabel "Neck, chest, abdomen, and pelvis"@en .
+
+###  http://snomed.info/id/52530000
+sct:52530000 rdf:type owl:Class ;
+             rdfs:subClassOf sct:91723000 ;    ### Anatomical structure
+             rdfs:label "Body region structure (body structure)"@en ;
+             skos:altLabel "Anatomic region"@en ,
+                           "Body region"@en ,
+                           "Topographic region"@en ;
+             skos:prefLabel "Body region structure"@en .
+
+###  http://snomed.info/id/128262006
+sct:128262006 rdf:type owl:Class ;
+              rdfs:subClassOf sct:38866009 ;    ### Body part structure
+              rdfs:label "Upper body structure (body structure)"@en ;
+              skos:altLabel "Upper body"@en ;
+              skos:prefLabel "Upper body structure"@en .
+
+###  http://snomed.info/id/420473002
+sct:420473002 rdf:type owl:Class ;
+              rdfs:subClassOf sct:22943007 ;    ### Trunk structure
+              rdfs:label "Structure of subregion of trunk (body structure)"@en ;
+              skos:prefLabel "Structure of subregion of trunk"@en .
+
+###  http://snomed.info/id/362981000
+sct:362981000 rdf:type owl:Class ;
+              rdfs:subClassOf sct:138875005 ;    ### SNOMED CT Concept
+              rdfs:label "Qualifier value (qualifier value)"@en ;
+              skos:prefLabel "Qualifier value"@en .
+
+##############################################
+###### Eleventh generation superclasses ######
+##############################################
+
+###  http://snomed.info/id/38866009
+sct:38866009 rdf:type owl:Class ;
+             rdfs:subClassOf sct:52530000 ;    ### Body region structure
+             rdfs:label "Body part structure (body structure)"@en ;
+             skos:altLabel "Anatomic part"@en ,
+                           "Body part"@en ;
+             skos:prefLabel "Body part structure"@en .
+
+###  http://snomed.info/id/22943007
+sct:22943007 rdf:type owl:Class ;
+             rdfs:subClassOf sct:38866009 ;    ### Body part structure
+             rdfs:label "Trunk structure (body structure)"@en ;
+             skos:altLabel "Torso"@en ,
+                           "Trunk"@en ;
+             skos:prefLabel "Trunk structure"@en .
+
+
+#########################
+### Direct Properties ###
+#########################
+
+###  http://snomed.info/id/609096000
+sct:609096000 rdf:type owl:ObjectProperty ;
+              rdfs:subPropertyOf sct:762705008 ;    ### <<anonymous>>
+              rdfs:label "Role group (attribute)"@en ;
+              skos:prefLabel "Role group"@en .
+
+###  http://snomed.info/id/116676008
+sct:116676008 rdf:type owl:ObjectProperty ;
+              rdfs:subPropertyOf sct:762705008 ;    ### <<anonymous>>
+              rdfs:label "Associated morphology (attribute)"@en ;
+              skos:altLabel "Morphology"@en ;
+              skos:prefLabel "Associated morphology"@en .
+
+###  http://snomed.info/id/363698007
+sct:363698007 rdf:type owl:ObjectProperty ;
+              rdfs:subPropertyOf sct:762705008 ;    ### <<anonymous>>
+              rdfs:label "Finding site (attribute)"@en ;
+              skos:prefLabel "Finding site"@en .
+
+
+#############################################
+##### First Generation Super Properties #####
+#############################################
+
+###  http://snomed.info/id/762705008  <<anonymous>>
+sct:762705008 rdf:type owl:Class ;
+              rdfs:subClassOf sct:410662002 .    ### Concept model attribute
+
+##############################################
+##### Second Generation Super Properties #####
+##############################################
+
+###  http://snomed.info/id/410662002
+sct:410662002 rdf:type owl:Class ;
+              rdfs:subClassOf sct:246061005 ;    ### Attribute
+              rdfs:label "Concept model attribute (attribute)"@en ;
+              skos:prefLabel "Concept model attribute"@en .
+
+#############################################
+##### Third Generation Super Properties #####
+#############################################
+
+###  http://snomed.info/id/246061005
+sct:246061005 rdf:type owl:Class ;
+              rdfs:subClassOf sct:106237007 ;    ### Linkage concept
+              rdfs:label "Attribute (attribute)"@en ;
+              skos:prefLabel "Attribute"@en .
+
+#############################################
+##### Fourth Generation Super Properties #####
+#############################################
+
+###  http://snomed.info/id/106237007
+sct:106237007 rdf:type owl:Class ;
+              rdfs:subClassOf sct:900000000000441003 ;    ### SNOMED CT Model Component
+              rdfs:label "Linkage concept (linkage concept)"@en ;
+              skos:prefLabel "Linkage concept"@en .
+
+#############################################
+##### Fifth Generation Super Properties #####
+#############################################
+
+###  http://snomed.info/id/900000000000441003
+sct:900000000000441003 rdf:type owl:Class ;
+                       rdfs:subClassOf sct:138875005 ;    ### SNOMED CT Concept
+                       rdfs:label "SNOMED CT Model Component (metadata)"@en ;
+                       skos:prefLabel "SNOMED CT Model Component"@en .
+
+#############################################################
+##### Direct Class Properties in Sixth Generation Class #####
+#############################################################
+
+###  http://snomed.info/id/272741003
+sct:272741003 rdf:type owl:ObjectProperty ;
+              rdfs:subPropertyOf sct:762705008 ;    ### <<anonymous>>
+              rdfs:label "Laterality (attribute)"@en ;
+              skos:prefLabel "Laterality"@en .
+

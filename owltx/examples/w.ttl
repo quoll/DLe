@@ -1,0 +1,1723 @@
+@prefix : <http://example.org/wildlife-test#> .
+@prefix dle: <http://quoll.github.io/DLe/vocab#> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix xml: <http://www.w3.org/XML/1998/namespace> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@base <http://example.org/wildlife-test#> .
+
+<http://quoll.github.io/DLe/ontology> rdf:type owl:Ontology .
+
+#################################################################
+#    Annotation properties
+#################################################################
+
+###  http://example.org/wildlife-test#afterNow
+:afterNow rdf:type owl:AnnotationProperty ;
+          rdf:value "x → x > now()" ;
+          rdfs:label "afterNow(x)" .
+
+
+###  http://example.org/wildlife-test#beforeNow
+:beforeNow rdf:type owl:AnnotationProperty ;
+           rdf:value "x → x < now()" ;
+           rdfs:label "beforeNow(x)" .
+
+
+###  http://example.org/wildlife-test#enclosesNow
+:enclosesNow rdf:type owl:AnnotationProperty ;
+             rdf:value "x,y → x ≤ now() ∧ now() ≤ y" ;
+             rdfs:label "enclosesNow(x,y)" .
+
+
+###  http://example.org/wildlife-test#example
+:example rdf:type owl:AnnotationProperty ;
+         rdfs:label "example" .
+
+
+###  http://example.org/wildlife-test#greaterThan
+:greaterThan rdf:type owl:AnnotationProperty ;
+             dle:comment """###########################################################
+Predicate extensions and predicate restrictions
+###########################################################""" ;
+             rdf:value "x,y → x > y" ;
+             rdfs:label "greaterThan(x,y)" .
+
+
+###  http://example.org/wildlife-test#lessThan
+:lessThan rdf:type owl:AnnotationProperty ;
+          rdf:value "x,y → x < y" ;
+          rdfs:label "lessThan(x,y)" .
+
+
+###  http://example.org/wildlife-test#note
+:note rdf:type owl:AnnotationProperty ;
+      rdfs:label "note" .
+
+
+###  http://example.org/wildlife-test#onOrBeforeNow
+:onOrBeforeNow rdf:type owl:AnnotationProperty ;
+               rdf:value "x → x ≤ now()" ;
+               rdfs:label "onOrBeforeNow(x)" .
+
+
+###  http://example.org/wildlife-test#warning
+:warning rdf:type owl:AnnotationProperty ;
+         rdfs:label "warning" .
+
+
+###  http://example.org/wildlife-test#withinNextYear
+:withinNextYear rdf:type owl:AnnotationProperty ;
+                rdf:value "x → now() < x ∧ x < addDuration(now(), P1Y)" ;
+                rdfs:label "withinNextYear(x)" .
+
+
+###  http://quoll.github.io/DLe/vocab#comment
+dle:comment rdf:type owl:AnnotationProperty .
+
+
+###  http://www.w3.org/1999/02/22-rdf-syntax-ns#value
+rdf:value rdf:type owl:AnnotationProperty ;
+          rdfs:label "value" .
+
+
+#################################################################
+#    Datatypes
+#################################################################
+
+###  http://www.w3.org/2001/XMLSchema#date
+xsd:date rdf:type rdfs:Datatype ;
+         rdfs:label "date" .
+
+
+#################################################################
+#    Object Properties
+#################################################################
+
+###  http://example.org/wildlife-test#belongsToSpecies
+:belongsToSpecies rdf:type owl:ObjectProperty ;
+                  rdfs:subPropertyOf :relationship ;
+                  rdf:type owl:FunctionalProperty ;
+                  rdfs:domain :Animal ;
+                  rdfs:range :Species ;
+                  dle:comment """###########################################################
+Relationships
+###########################################################""" ,
+                              """###########################################################
+Role chains and inferred relationships
+###########################################################""" ;
+                  rdfs:comment "Species classification of an individual animal." ;
+                  rdfs:isDefinedBy "belongs_to_species" ;
+                  rdfs:label "Belongs To Species" .
+
+
+###  http://example.org/wildlife-test#broaderTaxon
+:broaderTaxon rdf:type owl:ObjectProperty ,
+                       owl:TransitiveProperty ;
+              rdfs:label "broaderTaxon" .
+
+
+###  http://example.org/wildlife-test#containedIn
+:containedIn rdf:type owl:ObjectProperty ,
+                      owl:TransitiveProperty ;
+             rdfs:label "containedIn" .
+
+
+###  http://example.org/wildlife-test#contains
+:contains rdf:type owl:ObjectProperty ;
+          owl:equivalentProperty [ owl:inverseOf :locatedIn
+                                 ] ;
+          rdfs:label "contains" .
+
+
+###  http://example.org/wildlife-test#containsTransitively
+:containsTransitively rdfs:label "containsTransitively" .
+
+
+###  http://example.org/wildlife-test#curates
+:curates rdf:type owl:ObjectProperty ;
+         rdfs:subPropertyOf :hasResponsibilityRelation ;
+         owl:propertyDisjointWith :leadsSurveyFor ,
+                                  :monitors ;
+         rdfs:comment "Researcher curates data for an animal, species, habitat, or route." ;
+         rdfs:label "curates" .
+
+
+###  http://example.org/wildlife-test#followsRoute
+:followsRoute rdf:type owl:ObjectProperty ;
+              rdfs:subPropertyOf :relationship ;
+              rdfs:domain :Observation ;
+              rdfs:range :SurveyRoute ;
+              rdfs:comment "Survey route followed when making an observation." ;
+              rdfs:isDefinedBy "follows_route" ;
+              rdfs:label "Follows Route" .
+
+
+###  http://example.org/wildlife-test#hasCurator
+:hasCurator rdf:type owl:ObjectProperty ;
+            rdfs:subPropertyOf :relationship ;
+            rdfs:domain :Researcher ;
+            rdfs:range :Animal ;
+            rdfs:comment "Researcher responsible for curating an animal record." ;
+            rdfs:isDefinedBy "Has Curator" ;
+            rdfs:label "Has Curator" .
+
+
+###  http://example.org/wildlife-test#hasMember
+:hasMember rdf:type owl:ObjectProperty ;
+           owl:equivalentProperty [ owl:inverseOf :memberOf
+                                  ] ;
+           rdfs:label "hasMember" .
+
+
+###  http://example.org/wildlife-test#hasResponsibilityRelation
+:hasResponsibilityRelation rdf:type owl:ObjectProperty ;
+                           rdfs:subPropertyOf :relationship ;
+                           rdfs:domain :Researcher ;
+                           rdfs:range [ rdf:type owl:Class ;
+                                        owl:unionOf ( :Animal
+                                                      :Habitat
+                                                      :Species
+                                                      :SurveyRoute
+                                                    )
+                                      ] ;
+                           rdfs:comment "General responsibility relation; specialized by more precise responsibility types." ;
+                           rdfs:isDefinedBy "Has Responsibility" ;
+                           rdfs:label "Has Responsibility" .
+
+
+###  http://example.org/wildlife-test#hasTaxonPart
+:hasTaxonPart rdf:type owl:ObjectProperty ;
+              owl:equivalentProperty [ owl:inverseOf :partOfTaxon
+                                     ] ;
+              rdfs:label "hasTaxonPart" .
+
+
+###  http://example.org/wildlife-test#inDomain
+:inDomain rdf:type owl:ObjectProperty ,
+                   owl:FunctionalProperty ;
+          rdfs:domain :WildlifeConcept ;
+          rdfs:range :Domain ;
+          dle:comment """###########################################################
+Domain assignment
+###########################################################""" ;
+          rdfs:comment "Primary subject grouping for a modeled wildlife concept." ;
+          rdfs:isDefinedBy "domain_id" ;
+          rdfs:label "In Domain" .
+
+
+###  http://example.org/wildlife-test#inhabits
+:inhabits rdf:type owl:ObjectProperty ;
+          rdfs:subPropertyOf :relationship ;
+          rdfs:domain [ rdf:type owl:Class ;
+                        owl:unionOf ( :Animal
+                                      :Species
+                                    )
+                      ] ;
+          rdfs:range :Habitat ;
+          rdfs:comment "Habitat normally used by an animal or species." ;
+          rdfs:isDefinedBy "inhabits" ;
+          rdfs:label "Inhabits" .
+
+
+###  http://example.org/wildlife-test#leadsSurveyFor
+:leadsSurveyFor rdf:type owl:ObjectProperty ;
+                rdfs:subPropertyOf :hasResponsibilityRelation ;
+                owl:propertyDisjointWith :monitors ;
+                rdfs:comment "Researcher leads surveys for an animal, species, habitat, or route." ;
+                rdfs:label "leadsSurveyFor" .
+
+
+###  http://example.org/wildlife-test#locatedIn
+:locatedIn rdf:type owl:ObjectProperty ;
+           rdfs:subPropertyOf :containedIn ,
+                              :relationship ;
+           rdf:type owl:FunctionalProperty ;
+           rdfs:domain [ rdf:type owl:Class ;
+                         owl:unionOf ( :Habitat
+                                       :Observation
+                                       :Region
+                                     )
+                       ] ;
+           rdfs:range [ rdf:type owl:Class ;
+                        owl:unionOf ( :Habitat
+                                      :Region
+                                    )
+                      ] ;
+           dle:comment """###########################################################
+Hierarchy and transitive closure
+###########################################################""" ;
+           rdfs:comment "Immediate geographic containment. This is instance-level location containment, not rdfs:subClassOf semantics." ;
+           rdfs:isDefinedBy "located_in" ;
+           rdfs:label "Located In" .
+
+
+###  http://example.org/wildlife-test#locatedInWiderRegion
+:locatedInWiderRegion rdf:type owl:ObjectProperty ;
+                      owl:propertyChainAxiom ( :locatedIn
+                                               :containedIn
+                                             ) ;
+                      rdfs:comment "Wider geographic region inferred through location containment." ;
+                      rdfs:label "locatedInWiderRegion" .
+
+
+###  http://example.org/wildlife-test#memberOf
+:memberOf rdf:type owl:ObjectProperty ;
+          rdfs:subPropertyOf :relationship ;
+          rdfs:domain :Researcher ;
+          rdfs:range :ResearchTeam ;
+          rdfs:comment "Research team membership." ;
+          rdfs:isDefinedBy "member_of" ;
+          rdfs:label "Member Of" .
+
+
+###  http://example.org/wildlife-test#monitoredRegionBy
+:monitoredRegionBy rdf:type owl:ObjectProperty ;
+                   owl:propertyChainAxiom ( :containedIn
+                                            [ owl:inverseOf :monitors
+                                            ]
+                                          ) ;
+                   rdfs:comment "Researcher inferred to monitor a wider region through responsibility for a contained location." ;
+                   rdfs:label "monitoredRegionBy" .
+
+
+###  http://example.org/wildlife-test#monitors
+:monitors rdf:type owl:ObjectProperty ;
+          rdfs:subPropertyOf :hasResponsibilityRelation ;
+          rdfs:comment "Researcher monitors an animal, species, habitat, or route." ;
+          rdfs:label "monitors" .
+
+
+###  http://example.org/wildlife-test#narrowerTaxon
+:narrowerTaxon rdfs:label "narrowerTaxon" .
+
+
+###  http://example.org/wildlife-test#neighboringPlace
+:neighboringPlace rdf:type owl:ObjectProperty ,
+                           owl:IrreflexiveProperty ;
+                  owl:propertyChainAxiom ( :locatedIn
+                                           [ owl:inverseOf :locatedIn
+                                           ]
+                                         ) ;
+                  rdfs:label "neighboringPlace" .
+
+
+###  http://example.org/wildlife-test#partOfTaxon
+:partOfTaxon rdf:type owl:ObjectProperty ;
+             rdfs:subPropertyOf :broaderTaxon ,
+                                :relationship ;
+             rdf:type owl:FunctionalProperty ;
+             rdfs:domain :Taxon ;
+             rdfs:range :Taxon ;
+             rdfs:comment "Immediate taxonomic containment, such as species within genus or genus within family." ;
+             rdfs:isDefinedBy "part_of_taxon" ;
+             rdfs:label "Part Of Taxon" .
+
+
+###  http://example.org/wildlife-test#recordedBy
+:recordedBy rdf:type owl:ObjectProperty ;
+            owl:equivalentProperty [ owl:inverseOf :recordsAnimal
+                                   ] ;
+            rdfs:label "recordedBy" .
+
+
+###  http://example.org/wildlife-test#recordsAnimal
+:recordsAnimal rdf:type owl:ObjectProperty ;
+               rdfs:subPropertyOf :relationship ;
+               rdfs:domain :Observation ;
+               rdfs:range :Animal .
+
+
+###  http://example.org/wildlife-test#recordsSpecies
+:recordsSpecies rdf:type owl:ObjectProperty ;
+                owl:propertyChainAxiom ( :recordsAnimal
+                                         :belongsToSpecies
+                                       ) ;
+                rdfs:comment "Species inferred for an observation through the animal it records." ;
+                rdfs:label "recordsSpecies" .
+
+
+###  http://example.org/wildlife-test#relationship
+:relationship rdf:type owl:ObjectProperty ;
+              rdfs:domain [ rdf:type owl:Class ;
+                            owl:unionOf ( :Domain
+                                          :WildlifeConcept
+                                        )
+                          ] ;
+              rdfs:range [ rdf:type owl:Class ;
+                           owl:unionOf ( :Domain
+                                         :WildlifeConcept
+                                       )
+                         ] ;
+              dle:comment """###########################################################
+Generic relationship and attribute roots
+###########################################################""" ;
+              rdfs:comment "Generic relationship between modeled wildlife concepts or domains; specialized by domain-specific relationship types." ;
+              rdfs:label "Relationship" .
+
+
+###  http://example.org/wildlife-test#responsibilityOf
+:responsibilityOf rdfs:label "responsibilityOf" .
+
+
+###  http://example.org/wildlife-test#speciesHabitat
+:speciesHabitat rdf:type owl:ObjectProperty ;
+                owl:propertyChainAxiom ( :belongsToSpecies
+                                         :inhabits
+                                       ) ;
+                rdfs:comment "Habitat inferred for an animal through the habitat associated with its species." ;
+                rdfs:label "speciesHabitat" .
+
+
+###  http://example.org/wildlife-test#statementRelationship
+:statementRelationship rdf:type owl:ObjectProperty ;
+                       rdfs:domain :RelationshipStatement ;
+                       rdfs:range rdf:Property ;
+                       rdfs:comment "The predicate resource in a triple." ;
+                       rdfs:label "statementRelationship" .
+
+
+###  http://example.org/wildlife-test#studiedBy
+:studiedBy rdf:type owl:ObjectProperty ;
+           owl:equivalentProperty [ owl:inverseOf :studies
+                                  ] ;
+           dle:comment """###########################################################
+Inverses named for convenience
+###########################################################""" ;
+           rdfs:label "studiedBy" .
+
+
+###  http://example.org/wildlife-test#studies
+:studies rdf:type owl:ObjectProperty ;
+         rdfs:subPropertyOf :relationship ;
+         rdfs:domain :Researcher ;
+         rdfs:range [ rdf:type owl:Class ;
+                      owl:unionOf ( :Animal
+                                    :Habitat
+                                    :Species
+                                  )
+                    ] .
+
+
+#################################################################
+#    Data properties
+#################################################################
+
+###  http://example.org/wildlife-test#attribute
+:attribute rdf:type owl:DatatypeProperty ;
+           rdfs:domain [ rdf:type owl:Class ;
+                         owl:unionOf ( :RelationshipStatement
+                                       :WildlifeConcept
+                                     )
+                       ] ;
+           rdfs:range [ rdf:type rdfs:Datatype ;
+                        owl:unionOf ( xsd:boolean
+                                      xsd:date
+                                      xsd:dateTime
+                                      xsd:decimal
+                                      xsd:integer
+                                      xsd:string
+                                    )
+                      ] ;
+           rdfs:comment "A scalar attribute belonging to a wildlife concept or to an asserted relationship." ;
+           rdfs:label "attribute" .
+
+
+###  http://example.org/wildlife-test#calculatedList
+:calculatedList rdf:type owl:DatatypeProperty ;
+                rdfs:subPropertyOf :calculatedValue ;
+                rdfs:range xsd:string ;
+                rdfs:comment "Subproperties of this are calculated string values selected from a model-defined list of enumerated terms." ;
+                rdfs:label "Calculated List" .
+
+
+###  http://example.org/wildlife-test#calculatedNumber
+:calculatedNumber rdf:type owl:DatatypeProperty ;
+                  rdfs:subPropertyOf :calculatedValue ;
+                  rdfs:range [ rdf:type rdfs:Datatype ;
+                               owl:unionOf ( xsd:decimal
+                                             xsd:integer
+                                           )
+                             ] ;
+                  rdfs:comment "Subproperties of this are numeric calculated values; this property is not intended for direct use." ;
+                  rdfs:label "Calculated Number" .
+
+
+###  http://example.org/wildlife-test#calculatedValue
+:calculatedValue rdf:type owl:DatatypeProperty ;
+                 rdfs:subPropertyOf :attribute ;
+                 rdfs:comment "Subproperties of this are system-calculated values; this property is not intended for direct use." ;
+                 rdfs:label "Calculated" .
+
+
+###  http://example.org/wildlife-test#confidenceLevel
+:confidenceLevel rdf:type owl:DatatypeProperty ;
+                 rdfs:subPropertyOf :attribute ;
+                 rdf:type owl:FunctionalProperty ;
+                 rdfs:domain :studiesStatement ;
+                 rdfs:range [ rdf:type rdfs:Datatype ;
+                              owl:oneOf [ rdf:type rdf:List ;
+                                          rdf:first "High" ;
+                                          rdf:rest [ rdf:type rdf:List ;
+                                                     rdf:first "Low" ;
+                                                     rdf:rest [ rdf:type rdf:List ;
+                                                                rdf:first "Medium" ;
+                                                                rdf:rest rdf:nil
+                                                              ]
+                                                   ]
+                                        ]
+                            ] ;
+                 rdfs:comment "Attribute on a Studies relationship indicating confidence in the relationship." ;
+                 rdfs:isDefinedBy "confidence_level" ;
+                 rdfs:label "Confidence Level" .
+
+
+###  http://example.org/wildlife-test#conservationStatus
+:conservationStatus rdf:type owl:DatatypeProperty ;
+                    rdfs:subPropertyOf :calculatedList ;
+                    rdf:type owl:FunctionalProperty ;
+                    rdfs:domain :Species ;
+                    rdfs:range [ rdf:type rdfs:Datatype ;
+                                 owl:oneOf [ rdf:type rdf:List ;
+                                             rdf:first "Critical" ;
+                                             rdf:rest [ rdf:type rdf:List ;
+                                                        rdf:first "Endangered" ;
+                                                        rdf:rest [ rdf:type rdf:List ;
+                                                                   rdf:first "Least Concern" ;
+                                                                   rdf:rest [ rdf:type rdf:List ;
+                                                                              rdf:first "Vulnerable" ;
+                                                                              rdf:rest rdf:nil
+                                                                            ]
+                                                                 ]
+                                                      ]
+                                           ]
+                               ] ;
+                    dle:comment """###########################################################
+Calculated category definitions
+###########################################################""" ;
+                    rdfs:comment "Calculated conservation category selected from a model-defined list of terms." ;
+                    rdfs:isDefinedBy "conservation_status" ;
+                    rdfs:label "Conservation Status" .
+
+
+###  http://example.org/wildlife-test#curationAccepted
+:curationAccepted rdf:type owl:DatatypeProperty ;
+                  rdfs:subPropertyOf :attribute ;
+                  rdf:type owl:FunctionalProperty ;
+                  rdfs:domain :Animal ;
+                  rdfs:range [ rdf:type rdfs:Datatype ;
+                               owl:oneOf [ rdf:type rdf:List ;
+                                           rdf:first "No" ;
+                                           rdf:rest [ rdf:type rdf:List ;
+                                                      rdf:first "Yes" ;
+                                                      rdf:rest rdf:nil
+                                                    ]
+                                         ]
+                             ] ;
+                  rdfs:comment "Whether a nominated curator has accepted responsibility for the animal record." ;
+                  rdfs:isDefinedBy "curation_accepted" ;
+                  rdfs:label "Curation Accepted" .
+
+
+###  http://example.org/wildlife-test#description
+:description rdf:type owl:DatatypeProperty ;
+             rdfs:subPropertyOf :attribute ;
+             rdf:type owl:FunctionalProperty ;
+             rdfs:domain :WildlifeConcept ;
+             rdfs:range xsd:string ;
+             rdfs:comment "Concise description of a wildlife concept." ;
+             rdfs:isDefinedBy "description" ;
+             rdfs:label "Description" .
+
+
+###  http://example.org/wildlife-test#habitatQuality
+:habitatQuality rdf:type owl:DatatypeProperty ;
+                rdfs:subPropertyOf :attribute ;
+                rdf:type owl:FunctionalProperty ;
+                rdfs:domain :Habitat ;
+                rdfs:range [ rdf:type rdfs:Datatype ;
+                             owl:onDatatype xsd:decimal ;
+                             owl:withRestrictions ( [ xsd:minInclusive 1
+                                                    ]
+                                                    [ xsd:maxInclusive 5
+                                                    ]
+                                                  )
+                           ] ;
+                rdfs:comment "Ordinal habitat quality score from 1 to 5." ;
+                rdfs:isDefinedBy "habitat_quality" ;
+                rdfs:label "Habitat Quality" .
+
+
+###  http://example.org/wildlife-test#habitatRisk
+:habitatRisk rdf:type owl:DatatypeProperty ;
+             rdfs:subPropertyOf :calculatedNumber ;
+             rdf:type owl:FunctionalProperty ;
+             rdfs:domain :Habitat ;
+             rdfs:range xsd:decimal ;
+             rdfs:comment "Calculated risk score derived from habitat quality and monitoring status." ;
+             rdfs:isDefinedBy "habitat_risk" ;
+             rdfs:label "Habitat Risk" .
+
+
+###  http://example.org/wildlife-test#healthScore
+:healthScore rdf:type owl:DatatypeProperty ;
+             rdfs:subPropertyOf :attribute ;
+             rdf:type owl:FunctionalProperty ;
+             rdfs:domain :Animal ;
+             rdfs:range [ rdf:type rdfs:Datatype ;
+                          owl:oneOf [ rdf:type rdf:List ;
+                                      rdf:first "1" ;
+                                      rdf:rest [ rdf:type rdf:List ;
+                                                 rdf:first "2" ;
+                                                 rdf:rest [ rdf:type rdf:List ;
+                                                            rdf:first "3" ;
+                                                            rdf:rest [ rdf:type rdf:List ;
+                                                                       rdf:first "4" ;
+                                                                       rdf:rest [ rdf:type rdf:List ;
+                                                                                  rdf:first "5" ;
+                                                                                  rdf:rest rdf:nil
+                                                                                ]
+                                                                     ]
+                                                          ]
+                                               ]
+                                    ]
+                        ] ;
+             rdfs:comment "Ordinal health score, 1..5." ;
+             rdfs:isDefinedBy "health_score" ;
+             rdfs:label "Health Score" .
+
+
+###  http://example.org/wildlife-test#healthScoreValue
+:healthScoreValue rdf:type owl:DatatypeProperty ,
+                           owl:FunctionalProperty ;
+                  rdfs:domain :Animal ;
+                  rdfs:range xsd:decimal ;
+                  dle:comment """###########################################################
+Numeric equivalents of enumerated scores
+###########################################################""" ;
+                  rdfs:comment "Numeric equivalent to the healthScore attribute." ;
+                  rdfs:label "healthScoreValue" .
+
+
+###  http://example.org/wildlife-test#id
+:id rdf:type owl:DatatypeProperty ,
+             owl:FunctionalProperty ;
+    rdfs:domain :WildlifeConcept ;
+    rdfs:range [ rdf:type rdfs:Datatype ;
+                 owl:onDatatype xsd:string ;
+                 owl:withRestrictions ( [ xsd:pattern "[A-Z]{3}-[0-9]{6}"
+                                        ]
+                                      )
+               ] ;
+    dle:comment "`matches` references the OWL xsd:pattern facet. `key()` references owl:hasKey." ;
+    rdfs:comment "Opaque unique identifier for a modeled wildlife concept." ;
+    rdfs:isDefinedBy "id" ;
+    rdfs:label "id" ;
+    rdfs:seeAlso "triplestore.subject" .
+
+
+###  http://example.org/wildlife-test#lastObservedAt
+:lastObservedAt rdf:type owl:DatatypeProperty ;
+                rdfs:subPropertyOf :attribute ;
+                rdf:type owl:FunctionalProperty ;
+                rdfs:domain :Animal ;
+                rdfs:range xsd:dateTime ;
+                rdfs:comment "Date and time when an animal was last observed." ;
+                rdfs:isDefinedBy "last_observed_at" ;
+                rdfs:label "Last Observed At" .
+
+
+###  http://example.org/wildlife-test#lifeStage
+:lifeStage rdf:type owl:DatatypeProperty ;
+           rdfs:subPropertyOf :attribute ;
+           rdf:type owl:FunctionalProperty ;
+           rdfs:domain :Animal ;
+           rdfs:range [ rdf:type rdfs:Datatype ;
+                        owl:oneOf [ rdf:type rdf:List ;
+                                    rdf:first "Adult" ;
+                                    rdf:rest [ rdf:type rdf:List ;
+                                               rdf:first "Juvenile" ;
+                                               rdf:rest [ rdf:type rdf:List ;
+                                                          rdf:first "Subadult" ;
+                                                          rdf:rest [ rdf:type rdf:List ;
+                                                                     rdf:first "Unknown" ;
+                                                                     rdf:rest rdf:nil
+                                                                   ]
+                                                        ]
+                                             ]
+                                  ]
+                      ] ;
+           dle:comment """###########################################################
+Enumerated attributes
+###########################################################""" ;
+           rdfs:comment "Observed maturity stage of an animal." ;
+           rdfs:isDefinedBy "life_stage" ;
+           rdfs:label "Life Stage" .
+
+
+###  http://example.org/wildlife-test#migrationDate
+:migrationDate rdf:type owl:DatatypeProperty ;
+               rdfs:subPropertyOf :attribute ;
+               rdf:type owl:FunctionalProperty ;
+               rdfs:domain :Animal ;
+               rdfs:range xsd:date ;
+               rdfs:comment "Expected or observed migration date." ;
+               rdfs:isDefinedBy "migration_date" ;
+               rdfs:label "Migration Date" .
+
+
+###  http://example.org/wildlife-test#name
+:name rdf:type owl:DatatypeProperty ,
+               owl:FunctionalProperty ;
+      rdfs:domain :WildlifeConcept ;
+      rdfs:range xsd:string ;
+      dle:comment """###########################################################
+Basic attributes and identifiers
+###########################################################""" ;
+      rdfs:comment "Unique display name for a wildlife concept." ;
+      rdfs:isDefinedBy "name" ;
+      rdfs:label "Name" .
+
+
+###  http://example.org/wildlife-test#observationMethod
+:observationMethod rdf:type owl:DatatypeProperty ;
+                   rdfs:subPropertyOf :attribute ;
+                   rdf:type owl:FunctionalProperty ;
+                   rdfs:domain :recordsAnimalStatement ;
+                   rdfs:range [ rdf:type rdfs:Datatype ;
+                                owl:oneOf [ rdf:type rdf:List ;
+                                            rdf:first "Audio" ;
+                                            rdf:rest [ rdf:type rdf:List ;
+                                                       rdf:first "Camera Trap" ;
+                                                       rdf:rest [ rdf:type rdf:List ;
+                                                                  rdf:first "Direct Sight" ;
+                                                                  rdf:rest [ rdf:type rdf:List ;
+                                                                             rdf:first "Track" ;
+                                                                             rdf:rest rdf:nil
+                                                                           ]
+                                                                ]
+                                                     ]
+                                          ]
+                              ] ;
+                   rdfs:comment "Attribute on a Records Animal relationship indicating how the observation was made." ;
+                   rdfs:isDefinedBy "observation_method" ;
+                   rdfs:label "Observation Method" .
+
+
+###  http://example.org/wildlife-test#populationEstimate
+:populationEstimate rdf:type owl:DatatypeProperty ;
+                    rdfs:subPropertyOf :attribute ;
+                    rdf:type owl:FunctionalProperty ;
+                    rdfs:domain :Species ;
+                    rdfs:range [ rdf:type rdfs:Datatype ;
+                                 owl:onDatatype xsd:integer ;
+                                 owl:withRestrictions ( [ xsd:minInclusive 0
+                                                        ]
+                                                      )
+                               ] ;
+                    dle:comment """###########################################################
+Numeric and date attributes
+###########################################################""" ;
+                    rdfs:comment "Estimated population count for a species." ;
+                    rdfs:isDefinedBy "population_estimate" ;
+                    rdfs:label "Population Estimate" .
+
+
+###  http://example.org/wildlife-test#populationRisk
+:populationRisk rdf:type owl:DatatypeProperty ;
+                rdfs:subPropertyOf :calculatedNumber ;
+                rdf:type owl:FunctionalProperty ;
+                rdfs:domain :Species ;
+                rdfs:range xsd:decimal ;
+                dle:comment """###########################################################
+Calculated numeric values
+###########################################################""" ;
+                rdfs:comment "Calculated population risk score derived from population estimate and trend." ;
+                rdfs:isDefinedBy "population_risk" ;
+                rdfs:label "Population Risk" .
+
+
+###  http://example.org/wildlife-test#previousPopulationEstimate
+:previousPopulationEstimate rdf:type owl:DatatypeProperty ;
+                            rdfs:subPropertyOf :attribute ;
+                            rdf:type owl:FunctionalProperty ;
+                            rdfs:domain :Species ;
+                            rdfs:range [ rdf:type rdfs:Datatype ;
+                                         owl:onDatatype xsd:integer ;
+                                         owl:withRestrictions ( [ xsd:minInclusive 0
+                                                                ]
+                                                              )
+                                       ] ;
+                            rdfs:comment "Earlier estimated population count for a species." ;
+                            rdfs:isDefinedBy "previous_population_estimate" ;
+                            rdfs:label "Previous Population Estimate" .
+
+
+###  http://example.org/wildlife-test#recordCurationState
+:recordCurationState rdf:type owl:DatatypeProperty ;
+                     rdfs:subPropertyOf :calculatedList ;
+                     rdf:type owl:FunctionalProperty ;
+                     rdfs:domain :Animal ;
+                     rdfs:range [ rdf:type rdfs:Datatype ;
+                                  owl:oneOf [ rdf:type rdf:List ;
+                                              rdf:first "Curated" ;
+                                              rdf:rest [ rdf:type rdf:List ;
+                                                         rdf:first "Maintained" ;
+                                                         rdf:rest [ rdf:type rdf:List ;
+                                                                    rdf:first "Nominated" ;
+                                                                    rdf:rest [ rdf:type rdf:List ;
+                                                                               rdf:first "Unassigned" ;
+                                                                               rdf:rest rdf:nil
+                                                                             ]
+                                                                  ]
+                                                       ]
+                                            ]
+                                ] ;
+                     dle:comment """###########################################################
+Ownership-like lifecycle states, rewritten for wildlife data
+###########################################################""" ;
+                     rdfs:comment "Calculated curation state for an animal record based on responsible researcher assignment, acceptance, health score, and review freshness." ;
+                     rdfs:isDefinedBy "record_curation_state" ;
+                     rdfs:label "Record Curation State" .
+
+
+###  http://example.org/wildlife-test#reviewDate
+:reviewDate rdf:type owl:DatatypeProperty ;
+            rdfs:subPropertyOf :attribute ;
+            rdf:type owl:FunctionalProperty ;
+            rdfs:domain :WildlifeConcept ;
+            rdfs:range xsd:dateTime ;
+            rdfs:comment "Date at which a modeled concept was last reviewed." ;
+            rdfs:isDefinedBy "review_date" ;
+            rdfs:label "Review Date" .
+
+
+###  http://example.org/wildlife-test#surveyEnd
+:surveyEnd rdf:type owl:DatatypeProperty ;
+           rdfs:subPropertyOf :attribute ;
+           rdf:type owl:FunctionalProperty ;
+           rdfs:domain :SurveyRoute ;
+           rdfs:range xsd:dateTime ;
+           rdfs:isDefinedBy "survey_end" ;
+           rdfs:label "Survey End" .
+
+
+###  http://example.org/wildlife-test#surveyPriority
+:surveyPriority rdf:type owl:DatatypeProperty ;
+                rdfs:subPropertyOf :calculatedList ;
+                rdf:type owl:FunctionalProperty ;
+                rdfs:domain [ rdf:type owl:Class ;
+                              owl:unionOf ( :Habitat
+                                            :Species
+                                          )
+                            ] ;
+                rdfs:range [ rdf:type rdfs:Datatype ;
+                             owl:oneOf [ rdf:type rdf:List ;
+                                         rdf:first "High" ;
+                                         rdf:rest [ rdf:type rdf:List ;
+                                                    rdf:first "Low" ;
+                                                    rdf:rest [ rdf:type rdf:List ;
+                                                               rdf:first "Medium" ;
+                                                               rdf:rest [ rdf:type rdf:List ;
+                                                                          rdf:first "Urgent" ;
+                                                                          rdf:rest rdf:nil
+                                                                        ]
+                                                             ]
+                                                  ]
+                                       ]
+                           ] ;
+                rdfs:comment "Calculated priority for future survey attention." ;
+                rdfs:isDefinedBy "survey_priority" ;
+                rdfs:label "Survey Priority" .
+
+
+###  http://example.org/wildlife-test#surveyStart
+:surveyStart rdf:type owl:DatatypeProperty ;
+             rdfs:subPropertyOf :attribute ;
+             rdf:type owl:FunctionalProperty ;
+             rdfs:domain :SurveyRoute ;
+             rdfs:range xsd:dateTime ;
+             dle:comment """###########################################################
+Attributes used only by predicate-restriction examples
+###########################################################""" ;
+             rdfs:isDefinedBy "survey_start" ;
+             rdfs:label "Survey Start" .
+
+
+###  http://example.org/wildlife-test#tagId
+:tagId rdf:type owl:DatatypeProperty ;
+       rdfs:subPropertyOf :attribute ;
+       rdf:type owl:FunctionalProperty ;
+       rdfs:domain :Animal ;
+       rdfs:range xsd:string ;
+       rdfs:comment "Field tag or tracking device identifier." ;
+       rdfs:isDefinedBy "tag_id" ;
+       rdfs:label "Tag ID" ;
+       rdfs:seeAlso "tracking.tag" .
+
+
+###  http://example.org/wildlife-test#verified
+:verified rdf:type owl:DatatypeProperty ;
+          rdfs:subPropertyOf :attribute ;
+          rdf:type owl:FunctionalProperty ;
+          rdfs:domain :Observation ;
+          rdfs:range xsd:boolean ;
+          rdfs:comment "Whether an observation has been reviewed and accepted." ;
+          rdfs:isDefinedBy "verified" ;
+          rdfs:label "Verified" .
+
+
+#################################################################
+#    Classes
+#################################################################
+
+###  http://example.org/wildlife-test#ActiveSurveyWindow
+:ActiveSurveyWindow rdf:type owl:Class ;
+                    owl:equivalentClass dle:E_enclosesNow_7f8b225e ;
+                    rdfs:label "ActiveSurveyWindow" .
+
+
+###  http://example.org/wildlife-test#AdultAnimal
+:AdultAnimal rdf:type owl:Class ;
+             owl:equivalentClass [ owl:intersectionOf ( :Animal
+                                                        [ rdf:type owl:Restriction ;
+                                                          owl:onProperty :lifeStage ;
+                                                          owl:hasValue "Adult"
+                                                        ]
+                                                      ) ;
+                                   rdf:type owl:Class
+                                 ] ;
+             rdfs:label "AdultAnimal" .
+
+
+###  http://example.org/wildlife-test#Animal
+:Animal rdf:type owl:Class ;
+        rdfs:subClassOf :WildlifeConcept ,
+                        [ rdf:type owl:Restriction ;
+                          owl:onProperty :inDomain ;
+                          owl:allValuesFrom :AnimalDomain
+                        ] ;
+        owl:hasKey ( :tagId
+                   ) ;
+        rdfs:comment "Individual animal tracked or observed in the reserve." ;
+        rdfs:isDefinedBy "Animal" ;
+        rdfs:label "Animal" .
+
+
+###  http://example.org/wildlife-test#AnimalDomain
+:AnimalDomain rdf:type owl:Class ;
+              rdfs:subClassOf :Domain ;
+              rdfs:label "AnimalDomain" .
+
+
+###  http://example.org/wildlife-test#CommonSpecies
+:CommonSpecies rdf:type owl:Class ;
+               owl:equivalentClass [ owl:intersectionOf ( :Species
+                                                          [ rdf:type owl:Restriction ;
+                                                            owl:onProperty :populationEstimate ;
+                                                            owl:someValuesFrom [ rdf:type rdfs:Datatype ;
+                                                                                 owl:onDatatype xsd:integer ;
+                                                                                 owl:withRestrictions ( [ xsd:minInclusive 10000
+                                                                                                        ]
+                                                                                                      )
+                                                                               ]
+                                                          ]
+                                                        ) ;
+                                     rdf:type owl:Class
+                                   ] ;
+               rdfs:label "CommonSpecies" .
+
+
+###  http://example.org/wildlife-test#CuratedRecord
+:CuratedRecord rdf:type owl:Class ;
+               owl:equivalentClass [ owl:intersectionOf ( :Animal
+                                                          [ rdf:type owl:Class ;
+                                                            owl:complementOf [ rdf:type owl:Restriction ;
+                                                                               owl:onProperty :healthScore ;
+                                                                               owl:someValuesFrom rdfs:Literal
+                                                                             ]
+                                                          ]
+                                                          [ rdf:type owl:Restriction ;
+                                                            owl:onProperty [ owl:inverseOf :hasCurator
+                                                                           ] ;
+                                                            owl:someValuesFrom :Researcher
+                                                          ]
+                                                          [ rdf:type owl:Restriction ;
+                                                            owl:onProperty :curationAccepted ;
+                                                            owl:hasValue "Yes"
+                                                          ]
+                                                        ) ;
+                                     rdf:type owl:Class
+                                   ] ,
+                                   [ rdf:type owl:Restriction ;
+                                     owl:onProperty :recordCurationState ;
+                                     owl:hasValue "Curated"
+                                   ] ;
+               rdfs:label "CuratedRecord" .
+
+
+###  http://example.org/wildlife-test#Domain
+:Domain rdf:type owl:Class ;
+        rdfs:subClassOf owl:Thing ;
+        dle:comment """###########################################################
+Domain-level grouping and modeled concepts
+###########################################################""" ;
+        rdfs:comment "Grouping class for broad wildlife reserve subject areas." ;
+        rdfs:label "Domain" .
+
+
+###  http://example.org/wildlife-test#EndangeredSpecies
+:EndangeredSpecies rdf:type owl:Class ;
+                   owl:equivalentClass [ owl:intersectionOf ( :Species
+                                                              [ rdf:type owl:Restriction ;
+                                                                owl:onProperty :populationEstimate ;
+                                                                owl:someValuesFrom [ rdf:type rdfs:Datatype ;
+                                                                                     owl:onDatatype xsd:integer ;
+                                                                                     owl:withRestrictions ( [ xsd:maxExclusive 1000
+                                                                                                            ]
+                                                                                                          )
+                                                                                   ]
+                                                              ]
+                                                            ) ;
+                                         rdf:type owl:Class
+                                       ] ;
+                   rdfs:label "EndangeredSpecies" .
+
+
+###  http://example.org/wildlife-test#Habitat
+:Habitat rdf:type owl:Class ;
+         rdfs:subClassOf :WildlifeConcept ,
+                         [ rdf:type owl:Restriction ;
+                           owl:onProperty :inDomain ;
+                           owl:allValuesFrom :HabitatDomain
+                         ] ;
+         :note "Habitats may overlap geographically; locatedIn only describes containment." ;
+         rdfs:comment "Ecological habitat or biome." ;
+         rdfs:isDefinedBy "Habitat" ;
+         rdfs:label "Habitat" .
+
+
+###  http://example.org/wildlife-test#HabitatDomain
+:HabitatDomain rdf:type owl:Class ;
+               rdfs:subClassOf :Domain ;
+               rdfs:label "HabitatDomain" .
+
+
+###  http://example.org/wildlife-test#HasLastObservation
+:HasLastObservation rdf:type owl:Class ;
+                    owl:equivalentClass [ rdf:type owl:Restriction ;
+                                          owl:onProperty :lastObservedAt ;
+                                          owl:someValuesFrom rdfs:Literal
+                                        ] ;
+                    rdfs:label "HasLastObservation" .
+
+
+###  http://example.org/wildlife-test#HasMigrationDate
+:HasMigrationDate rdf:type owl:Class ;
+                  owl:equivalentClass [ rdf:type owl:Restriction ;
+                                        owl:onProperty :migrationDate ;
+                                        owl:someValuesFrom rdfs:Literal
+                                      ] ;
+                  rdfs:label "HasMigrationDate" .
+
+
+###  http://example.org/wildlife-test#HasReviewDate
+:HasReviewDate rdf:type owl:Class ;
+               owl:equivalentClass [ rdf:type owl:Restriction ;
+                                     owl:onProperty :reviewDate ;
+                                     owl:someValuesFrom rdfs:Literal
+                                   ] ;
+               rdfs:label "HasReviewDate" .
+
+
+###  http://example.org/wildlife-test#HighHealth
+:HighHealth rdf:type owl:Class ;
+            owl:equivalentClass [ rdf:type owl:Restriction ;
+                                  owl:onProperty :healthScore ;
+                                  owl:someValuesFrom [ rdf:type rdfs:Datatype ;
+                                                       owl:oneOf [ rdf:type rdf:List ;
+                                                                   rdf:first "4" ;
+                                                                   rdf:rest [ rdf:type rdf:List ;
+                                                                              rdf:first "5" ;
+                                                                              rdf:rest rdf:nil
+                                                                            ]
+                                                                 ]
+                                                     ]
+                                ] ;
+            dle:comment """###########################################################
+Derived classes
+###########################################################""" ;
+            rdfs:label "HighHealth" .
+
+
+###  http://example.org/wildlife-test#HighQualityHabitat
+:HighQualityHabitat rdf:type owl:Class ;
+                    owl:equivalentClass [ owl:intersectionOf ( :Habitat
+                                                               [ rdf:type owl:Restriction ;
+                                                                 owl:onProperty :habitatQuality ;
+                                                                 owl:someValuesFrom [ rdf:type rdfs:Datatype ;
+                                                                                      owl:onDatatype xsd:decimal ;
+                                                                                      owl:withRestrictions ( [ xsd:minInclusive 4
+                                                                                                             ]
+                                                                                                             [ xsd:maxInclusive 5
+                                                                                                             ]
+                                                                                                           )
+                                                                                    ]
+                                                               ]
+                                                             ) ;
+                                          rdf:type owl:Class
+                                        ] ;
+                    rdfs:label "HighQualityHabitat" .
+
+
+###  http://example.org/wildlife-test#HighSurveyPriority
+:HighSurveyPriority rdf:type owl:Class ;
+                    owl:equivalentClass [ rdf:type owl:Restriction ;
+                                          owl:onProperty :surveyPriority ;
+                                          owl:someValuesFrom [ rdf:type rdfs:Datatype ;
+                                                               owl:oneOf [ rdf:type rdf:List ;
+                                                                           rdf:first "High" ;
+                                                                           rdf:rest [ rdf:type rdf:List ;
+                                                                                      rdf:first "Urgent" ;
+                                                                                      rdf:rest rdf:nil
+                                                                                    ]
+                                                                         ]
+                                                             ]
+                                        ] ;
+                    rdfs:label "HighSurveyPriority" .
+
+
+###  http://example.org/wildlife-test#JuvenileAnimal
+:JuvenileAnimal rdf:type owl:Class ;
+                owl:equivalentClass [ owl:intersectionOf ( :Animal
+                                                           [ rdf:type owl:Restriction ;
+                                                             owl:onProperty :lifeStage ;
+                                                             owl:hasValue "Juvenile"
+                                                           ]
+                                                         ) ;
+                                      rdf:type owl:Class
+                                    ] ;
+                rdfs:label "JuvenileAnimal" .
+
+
+###  http://example.org/wildlife-test#LowHealth
+:LowHealth rdf:type owl:Class ;
+           owl:equivalentClass [ rdf:type owl:Restriction ;
+                                 owl:onProperty :healthScore ;
+                                 owl:someValuesFrom [ rdf:type rdfs:Datatype ;
+                                                      owl:oneOf [ rdf:type rdf:List ;
+                                                                  rdf:first "1" ;
+                                                                  rdf:rest [ rdf:type rdf:List ;
+                                                                             rdf:first "2" ;
+                                                                             rdf:rest rdf:nil
+                                                                           ]
+                                                                ]
+                                                    ]
+                               ] ;
+           rdfs:label "LowHealth" .
+
+
+###  http://example.org/wildlife-test#LowQualityHabitat
+:LowQualityHabitat rdf:type owl:Class ;
+                   owl:equivalentClass [ owl:intersectionOf ( :Habitat
+                                                              [ rdf:type owl:Restriction ;
+                                                                owl:onProperty :habitatQuality ;
+                                                                owl:someValuesFrom [ rdf:type rdfs:Datatype ;
+                                                                                     owl:onDatatype xsd:decimal ;
+                                                                                     owl:withRestrictions ( [ xsd:minInclusive 1
+                                                                                                            ]
+                                                                                                            [ xsd:maxExclusive 3
+                                                                                                            ]
+                                                                                                          )
+                                                                                   ]
+                                                              ]
+                                                            ) ;
+                                         rdf:type owl:Class
+                                       ] ;
+                   rdfs:label "LowQualityHabitat" .
+
+
+###  http://example.org/wildlife-test#LowSurveyPriority
+:LowSurveyPriority rdf:type owl:Class ;
+                   owl:equivalentClass [ rdf:type owl:Restriction ;
+                                         owl:onProperty :surveyPriority ;
+                                         owl:someValuesFrom [ rdf:type rdfs:Datatype ;
+                                                              owl:oneOf [ rdf:type rdf:List ;
+                                                                          rdf:first "Low" ;
+                                                                          rdf:rest [ rdf:type rdf:List ;
+                                                                                     rdf:first "Medium" ;
+                                                                                     rdf:rest rdf:nil
+                                                                                   ]
+                                                                        ]
+                                                            ]
+                                       ] ;
+                   rdfs:label "LowSurveyPriority" .
+
+
+###  http://example.org/wildlife-test#MaintainedRecord
+:MaintainedRecord rdf:type owl:Class ;
+                  owl:equivalentClass [ owl:intersectionOf ( :Animal
+                                                             [ rdf:type owl:Restriction ;
+                                                               owl:onProperty [ owl:inverseOf :hasCurator
+                                                                              ] ;
+                                                               owl:someValuesFrom :Researcher
+                                                             ]
+                                                             [ rdf:type owl:Restriction ;
+                                                               owl:onProperty :healthScore ;
+                                                               owl:someValuesFrom rdfs:Literal
+                                                             ]
+                                                             [ rdf:type owl:Restriction ;
+                                                               owl:onProperty :curationAccepted ;
+                                                               owl:hasValue "Yes"
+                                                             ]
+                                                           ) ;
+                                        rdf:type owl:Class
+                                      ] ,
+                                      [ rdf:type owl:Restriction ;
+                                        owl:onProperty :recordCurationState ;
+                                        owl:hasValue "Maintained"
+                                      ] ;
+                  rdfs:label "MaintainedRecord" .
+
+
+###  http://example.org/wildlife-test#MigrationInFuture
+:MigrationInFuture rdf:type owl:Class ;
+                   owl:equivalentClass dle:E_afterNow_3ce45e2f ;
+                   rdfs:label "MigrationInFuture" .
+
+
+###  http://example.org/wildlife-test#MigrationSoon
+:MigrationSoon rdf:type owl:Class ;
+               owl:equivalentClass dle:E_withinNextYear_de455e70 ;
+               rdfs:label "MigrationSoon" .
+
+
+###  http://example.org/wildlife-test#NominatedRecord
+:NominatedRecord rdf:type owl:Class ;
+                 owl:equivalentClass [ owl:intersectionOf ( :Animal
+                                                            [ rdf:type owl:Restriction ;
+                                                              owl:onProperty [ owl:inverseOf :hasCurator
+                                                                             ] ;
+                                                              owl:someValuesFrom :Researcher
+                                                            ]
+                                                            [ rdf:type owl:Restriction ;
+                                                              owl:onProperty :curationAccepted ;
+                                                              owl:hasValue "No"
+                                                            ]
+                                                          ) ;
+                                       rdf:type owl:Class
+                                     ] ,
+                                     [ rdf:type owl:Restriction ;
+                                       owl:onProperty :recordCurationState ;
+                                       owl:hasValue "Nominated"
+                                     ] ;
+                 rdfs:label "NominatedRecord" .
+
+
+###  http://example.org/wildlife-test#Observation
+:Observation rdf:type owl:Class ;
+             rdfs:subClassOf :WildlifeConcept ,
+                             [ rdf:type owl:Restriction ;
+                               owl:onProperty :inDomain ;
+                               owl:allValuesFrom :ResearchDomain
+                             ] ;
+             :warning "Observation records may be unverified until reviewed." ;
+             rdfs:comment "Recorded wildlife observation." ;
+             rdfs:isDefinedBy "Observation" ;
+             rdfs:label "Observation" .
+
+
+###  http://example.org/wildlife-test#ObservationStale
+:ObservationStale rdf:type owl:Class ;
+                  owl:equivalentClass dle:E_beforeNow_eab1ae7d ;
+                  rdfs:label "ObservationStale" .
+
+
+###  http://example.org/wildlife-test#PopulationDeclining
+:PopulationDeclining rdf:type owl:Class ;
+                     owl:equivalentClass dle:E_lessThan_b38f8ec8 ;
+                     rdfs:label "PopulationDeclining" .
+
+
+###  http://example.org/wildlife-test#PopulationIncreasing
+:PopulationIncreasing rdf:type owl:Class ;
+                      owl:equivalentClass dle:E_greaterThan_5d36d20d ;
+                      rdfs:label "PopulationIncreasing" .
+
+
+###  http://example.org/wildlife-test#PriorityAnimal
+:PriorityAnimal rdf:type owl:Class ;
+                owl:equivalentClass [ owl:intersectionOf ( :Animal
+                                                           [ rdf:type owl:Class ;
+                                                             owl:unionOf ( :LowHealth
+                                                                           [ rdf:type owl:Restriction ;
+                                                                             owl:onProperty :belongsToSpecies ;
+                                                                             owl:someValuesFrom [ owl:intersectionOf ( :HighSurveyPriority
+                                                                                                                       :Species
+                                                                                                                     ) ;
+                                                                                                  rdf:type owl:Class
+                                                                                                ]
+                                                                           ]
+                                                                         )
+                                                           ]
+                                                         ) ;
+                                      rdf:type owl:Class
+                                    ] ;
+                rdfs:label "PriorityAnimal" .
+
+
+###  http://example.org/wildlife-test#Region
+:Region rdf:type owl:Class ;
+        rdfs:subClassOf :WildlifeConcept ,
+                        [ rdf:type owl:Restriction ;
+                          owl:onProperty :inDomain ;
+                          owl:allValuesFrom :HabitatDomain
+                        ] ;
+        rdfs:comment "Geographic region or named area in the reserve." ;
+        rdfs:isDefinedBy "Region" ;
+        rdfs:label "Region" .
+
+
+###  http://example.org/wildlife-test#RelationshipStatement
+:RelationshipStatement rdf:type owl:Class ;
+                       rdfs:subClassOf rdfs:Proposition ;
+                       rdfs:comment "A proposition whose described triple is asserted in the model. The predicate is a relationship type. Used to attach attributes or metadata to a relationship." ;
+                       rdfs:label "RelationshipStatement" .
+
+
+###  http://example.org/wildlife-test#ResearchDomain
+:ResearchDomain rdf:type owl:Class ;
+                rdfs:subClassOf :Domain ;
+                rdfs:label "ResearchDomain" .
+
+
+###  http://example.org/wildlife-test#ResearchTeam
+:ResearchTeam rdf:type owl:Class ;
+              rdfs:subClassOf :WildlifeConcept ,
+                              [ rdf:type owl:Restriction ;
+                                owl:onProperty :inDomain ;
+                                owl:allValuesFrom :ResearchDomain
+                              ] ;
+              rdfs:isDefinedBy "ResearchTeam" ;
+              rdfs:label "ResearchTeam" .
+
+
+###  http://example.org/wildlife-test#Researcher
+:Researcher rdf:type owl:Class ;
+            rdfs:subClassOf :WildlifeConcept ,
+                            [ rdf:type owl:Restriction ;
+                              owl:onProperty :inDomain ;
+                              owl:allValuesFrom :ResearchDomain
+                            ] ;
+            rdfs:isDefinedBy "Researcher" ;
+            rdfs:label "Researcher" .
+
+
+###  http://example.org/wildlife-test#ReviewDueNow
+:ReviewDueNow rdf:type owl:Class ;
+              owl:equivalentClass dle:E_onOrBeforeNow_269f9110 ;
+              rdfs:label "ReviewDueNow" .
+
+
+###  http://example.org/wildlife-test#Species
+:Species rdf:type owl:Class ;
+         rdfs:subClassOf :WildlifeConcept ,
+                         [ rdf:type owl:Restriction ;
+                           owl:onProperty :inDomain ;
+                           owl:allValuesFrom :TaxonomyDomain
+                         ] ;
+         :example "Species may be connected to many habitats through the inhabits relationship." ;
+         dle:comment """###########################################################
+Additional annotations
+###########################################################""" ;
+         rdfs:comment "Biological species represented in the reserve model." ;
+         rdfs:isDefinedBy "Species" ;
+         rdfs:label "Species" .
+
+
+###  http://example.org/wildlife-test#SurveyRoute
+:SurveyRoute rdf:type owl:Class ;
+             rdfs:subClassOf :WildlifeConcept ,
+                             [ rdf:type owl:Restriction ;
+                               owl:onProperty :inDomain ;
+                               owl:allValuesFrom :ResearchDomain
+                             ] ;
+             rdfs:isDefinedBy "SurveyRoute" ;
+             rdfs:label "SurveyRoute" .
+
+
+###  http://example.org/wildlife-test#Taxon
+:Taxon rdf:type owl:Class ;
+       rdfs:subClassOf :WildlifeConcept ,
+                       [ rdf:type owl:Restriction ;
+                         owl:onProperty :inDomain ;
+                         owl:allValuesFrom :TaxonomyDomain
+                       ] ;
+       rdfs:isDefinedBy "Taxon" ;
+       rdfs:label "Taxon" .
+
+
+###  http://example.org/wildlife-test#TaxonomyDomain
+:TaxonomyDomain rdf:type owl:Class ;
+                rdfs:subClassOf :Domain ;
+                rdfs:label "TaxonomyDomain" .
+
+
+###  http://example.org/wildlife-test#UnassignedRecord
+:UnassignedRecord rdf:type owl:Class ;
+                  owl:equivalentClass [ owl:intersectionOf ( :Animal
+                                                             [ rdf:type owl:Class ;
+                                                               owl:complementOf [ rdf:type owl:Restriction ;
+                                                                                  owl:onProperty [ owl:inverseOf :hasCurator
+                                                                                                 ] ;
+                                                                                  owl:someValuesFrom :Researcher
+                                                                                ]
+                                                             ]
+                                                           ) ;
+                                        rdf:type owl:Class
+                                      ] ,
+                                      [ rdf:type owl:Restriction ;
+                                        owl:onProperty :recordCurationState ;
+                                        owl:hasValue "Unassigned"
+                                      ] ;
+                  rdfs:label "UnassignedRecord" .
+
+
+###  http://example.org/wildlife-test#UnverifiedObservation
+:UnverifiedObservation rdf:type owl:Class ;
+                       owl:equivalentClass [ owl:intersectionOf ( :Observation
+                                                                  [ rdf:type owl:Restriction ;
+                                                                    owl:onProperty :verified ;
+                                                                    owl:hasValue "false"^^xsd:boolean
+                                                                  ]
+                                                                ) ;
+                                             rdf:type owl:Class
+                                           ] ;
+                       rdfs:label "UnverifiedObservation" .
+
+
+###  http://example.org/wildlife-test#VerifiedObservation
+:VerifiedObservation rdf:type owl:Class ;
+                     owl:equivalentClass [ owl:intersectionOf ( :Observation
+                                                                [ rdf:type owl:Restriction ;
+                                                                  owl:onProperty :verified ;
+                                                                  owl:hasValue "true"^^xsd:boolean
+                                                                ]
+                                                              ) ;
+                                           rdf:type owl:Class
+                                         ] ;
+                     rdfs:label "VerifiedObservation" .
+
+
+###  http://example.org/wildlife-test#WildlifeConcept
+:WildlifeConcept rdf:type owl:Class ;
+                 owl:equivalentClass [ owl:intersectionOf ( [ rdf:type owl:Restriction ;
+                                                              owl:onProperty :inDomain ;
+                                                              owl:someValuesFrom :Domain
+                                                            ]
+                                                            [ rdf:type owl:Restriction ;
+                                                              owl:onProperty :name ;
+                                                              owl:someValuesFrom xsd:string
+                                                            ]
+                                                            [ rdf:type owl:Restriction ;
+                                                              owl:onProperty :id ;
+                                                              owl:qualifiedCardinality "1"^^xsd:nonNegativeInteger ;
+                                                              owl:onDataRange xsd:string
+                                                            ]
+                                                          ) ;
+                                       rdf:type owl:Class
+                                     ] ;
+                 rdfs:subClassOf owl:Thing ,
+                                 [ rdf:type owl:Restriction ;
+                                   owl:onProperty :name ;
+                                   owl:someValuesFrom xsd:string
+                                 ] ,
+                                 [ rdf:type owl:Restriction ;
+                                   owl:onProperty :id ;
+                                   owl:qualifiedCardinality "1"^^xsd:nonNegativeInteger ;
+                                   owl:onDataRange xsd:string
+                                 ] ;
+                 owl:hasKey ( :id
+                            ) ;
+                 rdfs:comment "Root class for modeled wildlife reserve concepts." ;
+                 rdfs:label "WildlifeConcept" .
+
+
+###  http://example.org/wildlife-test#recordsAnimalStatement
+:recordsAnimalStatement rdf:type owl:Class ;
+                        rdfs:subClassOf :RelationshipStatement ,
+                                        [ rdf:type owl:Restriction ;
+                                          owl:onProperty :statementRelationship ;
+                                          owl:hasValue :recordsAnimal
+                                        ] ;
+                        rdfs:label "recordsAnimalStatement" .
+
+
+###  http://example.org/wildlife-test#studiesStatement
+:studiesStatement rdf:type owl:Class ;
+                  rdfs:subClassOf :RelationshipStatement ,
+                                  [ rdf:type owl:Restriction ;
+                                    owl:onProperty :statementRelationship ;
+                                    owl:hasValue :studies
+                                  ] ;
+                  dle:comment """###########################################################
+Relationship statement attributes
+###########################################################""" ;
+                  rdfs:label "studiesStatement" .
+
+
+###  http://quoll.github.io/DLe/vocab#E_afterNow_3ce45e2f
+dle:E_afterNow_3ce45e2f rdf:type owl:Class ;
+                        rdfs:label "∃migrationDate.afterNow" .
+
+
+###  http://quoll.github.io/DLe/vocab#E_beforeNow_eab1ae7d
+dle:E_beforeNow_eab1ae7d rdf:type owl:Class ;
+                         rdfs:label "∃lastObservedAt.beforeNow" .
+
+
+###  http://quoll.github.io/DLe/vocab#E_enclosesNow_7f8b225e
+dle:E_enclosesNow_7f8b225e rdf:type owl:Class ;
+                           rdfs:label "∃surveyStart,surveyEnd.enclosesNow" .
+
+
+###  http://quoll.github.io/DLe/vocab#E_greaterThan_5d36d20d
+dle:E_greaterThan_5d36d20d rdf:type owl:Class ;
+                           rdfs:label "∃populationEstimate,previousPopulationEstimate.greaterThan" .
+
+
+###  http://quoll.github.io/DLe/vocab#E_lessThan_b38f8ec8
+dle:E_lessThan_b38f8ec8 rdf:type owl:Class ;
+                        rdfs:label "∃populationEstimate,previousPopulationEstimate.lessThan" .
+
+
+###  http://quoll.github.io/DLe/vocab#E_onOrBeforeNow_269f9110
+dle:E_onOrBeforeNow_269f9110 rdf:type owl:Class ;
+                             rdfs:label "∃reviewDate.onOrBeforeNow" .
+
+
+###  http://quoll.github.io/DLe/vocab#E_withinNextYear_de455e70
+dle:E_withinNextYear_de455e70 rdf:type owl:Class ;
+                              rdfs:label "∃migrationDate.withinNextYear" .
+
+
+###  http://www.w3.org/1999/02/22-rdf-syntax-ns#Property
+rdf:Property rdf:type owl:Class ;
+             rdfs:label "Property" .
+
+
+###  http://www.w3.org/2000/01/rdf-schema#Proposition
+rdfs:Proposition rdf:type owl:Class ;
+                 rdfs:label "Proposition" .
+
+
+#################################################################
+#    Individuals
+#################################################################
+
+###  http://example.org/wildlife-test#recordsAnimal
+:recordsAnimal rdf:type owl:NamedIndividual .
+
+
+###  http://example.org/wildlife-test#studies
+:studies rdf:type owl:NamedIndividual .
+
+
+#################################################################
+#    Annotations
+#################################################################
+
+:recordsAnimal rdfs:comment "Animal recorded by an observation." ;
+               rdfs:isDefinedBy "records_animal" ;
+               rdfs:label "Records Animal" .
+
+
+:studies rdfs:comment "Research relationship from a researcher to an animal, species, or habitat." ;
+         rdfs:isDefinedBy "studies" ;
+         rdfs:label "Studies" .
+
+
+#################################################################
+#    General axioms
+#################################################################
+
+[ rdf:type owl:Restriction ;
+  owl:onProperty :populationEstimate ;
+  owl:someValuesFrom [ rdf:type rdfs:Datatype ;
+                       owl:onDatatype xsd:integer ;
+                       owl:withRestrictions ( [ xsd:minInclusive 1000
+                                              ]
+                                              [ xsd:maxExclusive 10000
+                                              ]
+                                            )
+                     ] ;
+  owl:equivalentClass [ rdf:type owl:Restriction ;
+                        owl:onProperty :conservationStatus ;
+                        owl:hasValue "Vulnerable"
+                      ]
+] .
+
+
+[ rdf:type owl:Restriction ;
+  owl:onProperty :populationEstimate ;
+  owl:someValuesFrom [ rdf:type rdfs:Datatype ;
+                       owl:onDatatype xsd:integer ;
+                       owl:withRestrictions ( [ xsd:minInclusive 10000
+                                              ]
+                                            )
+                     ] ;
+  owl:equivalentClass [ rdf:type owl:Restriction ;
+                        owl:onProperty :conservationStatus ;
+                        owl:hasValue "Least Concern"
+                      ]
+] .
+
+
+[ rdf:type owl:Restriction ;
+  owl:onProperty :populationEstimate ;
+  owl:someValuesFrom [ rdf:type rdfs:Datatype ;
+                       owl:onDatatype xsd:integer ;
+                       owl:withRestrictions ( [ xsd:minInclusive 250
+                                              ]
+                                              [ xsd:maxExclusive 1000
+                                              ]
+                                            )
+                     ] ;
+  owl:equivalentClass [ rdf:type owl:Restriction ;
+                        owl:onProperty :conservationStatus ;
+                        owl:hasValue "Endangered"
+                      ]
+] .
+
+
+[ rdf:type owl:Restriction ;
+  owl:onProperty :populationEstimate ;
+  owl:someValuesFrom [ rdf:type rdfs:Datatype ;
+                       owl:onDatatype xsd:integer ;
+                       owl:withRestrictions ( [ xsd:maxExclusive 250
+                                              ]
+                                            )
+                     ] ;
+  owl:equivalentClass [ rdf:type owl:Restriction ;
+                        owl:onProperty :conservationStatus ;
+                        owl:hasValue "Critical"
+                      ]
+] .
+
+
+[ rdf:type owl:Restriction ;
+  owl:onProperty :populationRisk ;
+  owl:someValuesFrom [ rdf:type rdfs:Datatype ;
+                       owl:onDatatype xsd:decimal ;
+                       owl:withRestrictions ( [ xsd:minInclusive 2
+                                              ]
+                                              [ xsd:maxExclusive 3
+                                              ]
+                                            )
+                     ] ;
+  owl:equivalentClass [ rdf:type owl:Restriction ;
+                        owl:onProperty :surveyPriority ;
+                        owl:hasValue "Medium"
+                      ]
+] .
+
+
+[ rdf:type owl:Restriction ;
+  owl:onProperty :populationRisk ;
+  owl:someValuesFrom [ rdf:type rdfs:Datatype ;
+                       owl:onDatatype xsd:decimal ;
+                       owl:withRestrictions ( [ xsd:minInclusive 3
+                                              ]
+                                              [ xsd:maxExclusive 4
+                                              ]
+                                            )
+                     ] ;
+  owl:equivalentClass [ rdf:type owl:Restriction ;
+                        owl:onProperty :surveyPriority ;
+                        owl:hasValue "High"
+                      ]
+] .
+
+
+[ rdf:type owl:Restriction ;
+  owl:onProperty :populationRisk ;
+  owl:someValuesFrom [ rdf:type rdfs:Datatype ;
+                       owl:onDatatype xsd:decimal ;
+                       owl:withRestrictions ( [ xsd:minInclusive 4
+                                              ]
+                                            )
+                     ] ;
+  owl:equivalentClass [ rdf:type owl:Restriction ;
+                        owl:onProperty :surveyPriority ;
+                        owl:hasValue "Urgent"
+                      ]
+] .
+
+
+[ rdf:type owl:Restriction ;
+  owl:onProperty :populationRisk ;
+  owl:someValuesFrom [ rdf:type rdfs:Datatype ;
+                       owl:onDatatype xsd:decimal ;
+                       owl:withRestrictions ( [ xsd:maxExclusive 2
+                                              ]
+                                            )
+                     ] ;
+  owl:equivalentClass [ rdf:type owl:Restriction ;
+                        owl:onProperty :surveyPriority ;
+                        owl:hasValue "Low"
+                      ]
+] .
+
+
+[ rdf:type owl:Restriction ;
+  owl:onProperty :healthScore ;
+  owl:hasValue "1" ;
+  owl:equivalentClass [ rdf:type owl:Restriction ;
+                        owl:onProperty :healthScoreValue ;
+                        owl:hasValue 1
+                      ]
+] .
+
+
+[ rdf:type owl:Restriction ;
+  owl:onProperty :healthScore ;
+  owl:hasValue "2" ;
+  owl:equivalentClass [ rdf:type owl:Restriction ;
+                        owl:onProperty :healthScoreValue ;
+                        owl:hasValue 2
+                      ]
+] .
+
+
+[ rdf:type owl:Restriction ;
+  owl:onProperty :healthScore ;
+  owl:hasValue "3" ;
+  owl:equivalentClass [ rdf:type owl:Restriction ;
+                        owl:onProperty :healthScoreValue ;
+                        owl:hasValue 3
+                      ]
+] .
+
+
+[ rdf:type owl:Restriction ;
+  owl:onProperty :healthScore ;
+  owl:hasValue "4" ;
+  owl:equivalentClass [ rdf:type owl:Restriction ;
+                        owl:onProperty :healthScoreValue ;
+                        owl:hasValue 4
+                      ]
+] .
+
+
+[ rdf:type owl:Restriction ;
+  owl:onProperty :healthScore ;
+  owl:hasValue "5" ;
+  owl:equivalentClass [ rdf:type owl:Restriction ;
+                        owl:onProperty :healthScoreValue ;
+                        owl:hasValue 5
+                      ]
+] .
+
+
+###  Generated by the OWL API (version 5.5.1) https://github.com/owlcs/owlapi/

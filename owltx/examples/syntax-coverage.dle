@@ -1,0 +1,201 @@
+# DLe — Description Logic (Extended)
+# Syntax coverage example: a small rail network.
+#
+# The other examples in this directory are realistic models, and between them
+# they exercise most of DLe. This one exists to cover what they do not: role
+# characteristic keywords, ∃r.Self, @version, parenthesised role expressions,
+# and property chains longer than two roles. It is deliberately small and its
+# domain is deliberately unlike the others, so it can be read end to end.
+
+@prefix : <http://example.org/rail#>
+@ontology <http://example.org/rail>
+@version <http://example.org/rail/1.0>
+
+############################################################
+# Concepts
+############################################################
+
+Station ⊑ ⊤
+Line ⊑ ⊤
+Operator ⊑ ⊤
+Region ⊑ ⊤
+Depot ⊑ ⊤
+
+@doc Station "A place where trains stop and passengers may board."
+@doc Line "A named route served by a sequence of stations."
+@doc Depot "A facility where rolling stock is stabled and maintained."
+
+@db Station "station"
+@db Line "line"
+@db Operator "operator"
+
+############################################################
+# Roles and their characteristics
+#
+# The keyword forms below are the textbook spellings. `Func(r)` and `≤1 r.⊤`
+# say the same thing; both are accepted, and the writer emits the keyword.
+############################################################
+
+∃connectsTo.⊤ ⊑ Station
+⊤ ⊑ ∀connectsTo.Station
+Sym(connectsTo)
+Irref(connectsTo)
+@label connectsTo "Connects To"
+@doc connectsTo "Direct track connection between two stations, in either direction."
+
+∃sameNetworkAs.⊤ ⊑ Station
+⊤ ⊑ ∀sameNetworkAs.Station
+Ref(sameNetworkAs)
+Sym(sameNetworkAs)
+Trans(sameNetworkAs)
+@doc sameNetworkAs "Equivalence over stations reachable within one network."
+
+∃precedes.⊤ ⊑ Station
+⊤ ⊑ ∀precedes.Station
+Asym(precedes)
+Trans(precedes)
+@doc precedes "Station ordering along a line's published direction of travel."
+
+∃partOfLine.⊤ ⊑ Station
+⊤ ⊑ ∀partOfLine.Line
+@db partOfLine "part_of_line"
+@label partOfLine "Part Of Line"
+
+∃operatedBy.⊤ ⊑ Line
+⊤ ⊑ ∀operatedBy.Operator
+Func(operatedBy)
+@db operatedBy "operated_by"
+
+∃headquarteredIn.⊤ ⊑ Operator
+⊤ ⊑ ∀headquarteredIn.Region
+Func(headquarteredIn)
+
+∃maintainedBy.⊤ ⊑ Depot ⊔ Line
+⊤ ⊑ ∀maintainedBy.Depot
+@doc maintainedBy "Depot responsible for maintenance. A depot may maintain itself."
+
+∃terminusOf.⊤ ⊑ Station
+⊤ ⊑ ∀terminusOf.Line
+
+Disj(partOfLine,terminusOf)
+
+############################################################
+# Inverses, including parenthesised and doubled forms
+#
+# Parentheses around a role are redundant and are simply read through, so all
+# three spellings below denote the same role. A doubled ⁻ cancels.
+############################################################
+
+servesStation ≡ partOfLine⁻
+reachableFrom ≡ (connectsTo)⁻
+follows ≡ precedes⁻
+operatorOf ≡ (operatedBy⁻)
+
+Junction ≡ Station ⊓ ≥3 connectsTo.Station
+Terminus ≡ Station ⊓ ∃terminusOf.Line
+Interchange ≡ Station ⊓ ≥2 partOfLine.Line
+Isolated ≡ Station ⊓ ¬∃connectsTo.Station
+Orphan ≡ Station ⊓ ¬∃(partOfLine).Line
+
+# ∃r.Self — a depot that maintains its own rolling stock.
+SelfMaintaining ≡ Depot ⊓ ∃maintainedBy.Self
+
+# The irreflexivity of connectsTo, stated the long way round. Equivalent to
+# Irref(connectsTo) above.
+∃connectsTo.Self ⊑ ⊥
+
+# A nested restriction, parenthesised because the grouping matters.
+MajorInterchange ≡ Station ⊓ ≥2 partOfLine.Line ⊓ ∃connectsTo.(Station ⊓ ∃terminusOf.Line)
+
+############################################################
+# Property chains
+############################################################
+
+partOfLine ∘ operatedBy ⊑ servedByOperator
+@doc servedByOperator "Operator of some line calling at this station."
+
+partOfLine ∘ operatedBy ∘ headquarteredIn ⊑ operatorRegion
+@doc operatorRegion "Region of the operator of some line calling at this station."
+
+connectsTo ∘ (partOfLine)⁻ ⊑ connectsToLineOf
+
+############################################################
+# Attributes
+############################################################
+
+∃stationCode.⊤ ⊑ Station
+⊤ ⊑ ∀stationCode.[xsd:string ⊓ [matches "[A-Z]{3}"]]
+≤1 stationCode.⊤
+Station ⊑ key(stationCode)
+@db stationCode "station_code"
+@storage stationCode "rail.station.code"
+@label stationCode "Station Code"
+
+∃platformCount.⊤ ⊑ Station
+⊤ ⊑ ∀platformCount.xsd:integer[≥1 ⊓ ≤40]
+≤1 platformCount.⊤
+@db platformCount "platform_count"
+
+∃openedOn.⊤ ⊑ Station
+⊤ ⊑ ∀openedOn.xsd:date
+≤1 openedOn.⊤
+
+∃stepFree.⊤ ⊑ Station
+⊤ ⊑ ∀stepFree.xsd:boolean
+≤1 stepFree.⊤
+
+∃fareZone.⊤ ⊑ Station
+⊤ ⊑ ∀fareZone.{"1","2","3","4","5","6"}
+≤1 fareZone.⊤
+
+∃servicePattern.⊤ ⊑ Line
+⊤ ⊑ ∀servicePattern.{"Peak","OffPeak","Night"}
+≤1 servicePattern.⊤
+
+∃trackGauge.⊤ ⊑ Line
+⊤ ⊑ ∀trackGauge.xsd:decimal[≥0]
+≤1 trackGauge.⊤
+
+∃firstTrain.⊤ ⊑ Station
+⊤ ⊑ ∀firstTrain.xsd:dateTime
+∃lastTrain.⊤ ⊑ Station
+⊤ ⊑ ∀lastTrain.xsd:dateTime
+
+############################################################
+# Enumerations over individuals, numbers and booleans
+############################################################
+
+StepFreeStation ≡ Station ⊓ ∃stepFree.{true}
+CentralZone ≡ Station ⊓ ∃fareZone.{"1"}
+NightServed ≡ Station ⊓ ∃partOfLine.(Line ⊓ ∃servicePattern.{"Night"})
+
+∃platformCount.{1} ≡ ∃platformCountBand.{"single"}
+∃platformCount.{2} ≡ ∃platformCountBand.{"pair"}
+
+∃trackGauge.xsd:decimal[≥1.5] ⊑ ∃gaugeClass.{"broad"}
+∃trackGauge.xsd:decimal[<1.5] ⊑ ∃gaugeClass.{"narrow"}
+
+############################################################
+# Predicate definitions and predicate restrictions
+############################################################
+
+before(x,y) ≝ x < y
+openNow(x,y) ≝ x ≤ now() ∧ now() ≤ y
+alreadyOpen(x) ≝ x ≤ now()
+
+OperatingNow ≡ ∃firstTrain,lastTrain.openNow
+OrderedTimetable ≡ ∃firstTrain,lastTrain.before
+HistoricStation ≡ ∃openedOn.alreadyOpen
+
+# The same predicate restriction with redundant parentheses on the roles. This
+# denotes the identical class: the parentheses are read through, so no second
+# class is created.
+OperatingNowToo ≡ ∃(firstTrain),(lastTrain).openNow
+
+############################################################
+# Additional annotations
+############################################################
+
+@ann Station note "Stations are identified by a three-letter code."
+@ann Line note "A line may be operated by exactly one operator at a time."
+@ann Depot warning "Depot records are maintained separately from station records."
