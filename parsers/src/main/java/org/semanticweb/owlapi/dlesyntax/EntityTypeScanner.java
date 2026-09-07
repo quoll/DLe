@@ -332,12 +332,11 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
     }
 
     private void classifyProp(DLESyntaxParser.PropertyExprContext propCtx, boolean isData) {
-        if (propCtx instanceof DLESyntaxParser.InversePropertyExprContext) {
+        String name = PropertyExprs.coreNameText(propCtx);
+        if (PropertyExprs.isInverse(propCtx)) {
             // Inverse properties are always object properties
-            String name = ((DLESyntaxParser.InversePropertyExprContext) propCtx).name().getText();
             objectPropertyNames.add(name);
         } else {
-            String name = ((DLESyntaxParser.SimplePropertyExprContext) propCtx).name().getText();
             if (isData) {
                 // Data classification is definitive — remove any prior object classification.
                 dataPropertyNames.add(name);

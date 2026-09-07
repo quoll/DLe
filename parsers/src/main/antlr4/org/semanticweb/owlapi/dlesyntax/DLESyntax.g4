@@ -71,10 +71,19 @@ keyExpr
     : 'key' '(' name (',' name)* ')'
     ;
 
-// A property expression is either a plain name or its inverse (r⁻).
+// A property expression: a name, an inverse (r⁻), or either in parentheses.
+//
+// ⁻ is a postfix operator over the whole expression rather than over a name, so
+// r⁻, (r⁻), (r)⁻ and r⁻⁻ are all accepted. Parentheses are transparent — they
+// group and carry no meaning of their own — and a doubled ⁻ cancels out.
+//
+// Redundant parentheses are accepted because generators produce them in role
+// positions whether or not they are needed, and the structure has to be parsed
+// before anything can tell which ones are droppable.
 propertyExpr
-    : name INVERSE  # InversePropertyExpr
-    | name          # SimplePropertyExpr
+    : propertyExpr INVERSE  # InversePropertyExpr
+    | '(' propertyExpr ')'  # ParenPropertyExpr
+    | name                  # SimplePropertyExpr
     ;
 
 // ── Class / data-range expressions ───────────────────────────────────────────

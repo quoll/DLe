@@ -964,7 +964,9 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
         StringBuilder sb = new StringBuilder(quantifier);
         for (int i = 0; i < roles.size(); i++) {
             if (i > 0) sb.append(",");
-            sb.append(roles.get(i).getText());
+            // Canonical form, not the raw source text: ∃(a⁻),b.p and ∃a⁻,b.p are
+            // the same expression and must hash to the same class IRI.
+            sb.append(PropertyExprs.render(roles.get(i)));
         }
         sb.append(".").append(predName);
         String expr = sb.toString();
@@ -1007,25 +1009,25 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
         return df.getOWLClass(iri);
     }
 
+    /**
+     * Builds the object property expression for a propertyExpr.
+     *
+     * <p>Parentheses and doubled inverse markers are collapsed by
+     * {@link PropertyExprs}, leaving either a named property or the inverse of
+     * one — which is all {@code getOWLObjectInverseOf} accepts.
+     */
     private OWLObjectPropertyExpression buildObjectProp(DLESyntaxParser.PropertyExprContext ctx) {
-        if (ctx instanceof DLESyntaxParser.InversePropertyExprContext) {
-            IRI iri = expandName(((DLESyntaxParser.InversePropertyExprContext) ctx).name());
-            return df.getOWLObjectInverseOf(df.getOWLObjectProperty(iri));
-        }
-        IRI iri = expandName(((DLESyntaxParser.SimplePropertyExprContext) ctx).name());
-        return df.getOWLObjectProperty(iri);
+        OWLObjectProperty prop = df.getOWLObjectProperty(expandName(PropertyExprs.coreName(ctx)));
+        return PropertyExprs.isInverse(ctx) ? df.getOWLObjectInverseOf(prop) : prop;
     }
 
     /** Returns the local text of the name in a propertyExpr (for type lookup). */
     private String propName(DLESyntaxParser.PropertyExprContext ctx) {
-        return propCtxName(ctx).getText();
+        return PropertyExprs.coreNameText(ctx);
     }
 
     private DLESyntaxParser.NameContext propCtxName(DLESyntaxParser.PropertyExprContext ctx) {
-        if (ctx instanceof DLESyntaxParser.InversePropertyExprContext) {
-            return ((DLESyntaxParser.InversePropertyExprContext) ctx).name();
-        }
-        return ((DLESyntaxParser.SimplePropertyExprContext) ctx).name();
+        return PropertyExprs.coreName(ctx);
     }
 
     private OWLClassExpression asClass(OWLObject obj) {
