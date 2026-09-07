@@ -69,6 +69,9 @@ public class DLEOntologyParser extends AbstractOWLParser {
             EntityTypeScanner scanner = new EntityTypeScanner();
             scanner.visit(tree);
             scanner.propagatePropertyTypes();
+            // Reject what parses but cannot be expressed in OWL, while the parse
+            // tree is still around to report a location.
+            scanner.validate();
 
             // Pass 2 — axiom construction
             // Fill the token stream so hidden comment tokens are available for retrieval.
