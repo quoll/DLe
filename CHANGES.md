@@ -49,9 +49,12 @@ concern has no Owlready2 counterpart; entries below say so explicitly.
 
 ## Unreleased
 
-### Parenthesised property expressions in role positions
+### Redundant parentheses are transparent
 
-Commit `968c9d3`, branch `feature/parenthesised-property-expressions`.
+Branch `feature/parenthesised-property-expressions`. Landed in two passes:
+`968c9d3` covered role positions; a follow-up extended it to class positions,
+the `Self` filler and predicate-restriction fillers after review found the first
+pass was asymmetric.
 **Porting to addle: required.** Grammar changed, and both passes are affected.
 
 #### Problem
@@ -98,12 +101,42 @@ rule. ANTLR reports no ambiguity against `atom`'s `'(' classExpr ')'`: `(r).C`
 resolves to a role because `ImplicitSomeValuesFrom` needs the following `.`,
 while `(A ⊔ B)` can only be a class expression.
 
-**The shape of the parse tree changed, and this is the trap.**
-`InversePropertyExprContext` no longer has a `name` child — it has a
-`propertyExpr` child. Any code that reached for `.name()` on it, or that used the
-alternative's *type* to decide whether a role is inverted, is now wrong. In
-Python this surfaces as an `AttributeError` rather than a wrong answer, because
-the generated context class has no `name` method at all.
+Two further rules changed, so that the same transparency holds outside role
+positions:
+
+```antlr
+// atom: a property expression used where a class expression is expected, as in
+// `contains ≡ locatedIn⁻`. Was `name INVERSE`.
+    | propertyExpr INVERSE                # InversePropertyAtom
+
+// primary: the filler of a multi-role predicate restriction. Was `DOT name`.
+    | EXISTS propertyExpr (',' propertyExpr)+ DOT predicateRef # MultiRoleSomeValuesFrom
+    | FORALL propertyExpr (',' propertyExpr)+ DOT predicateRef # MultiRoleAllValuesFrom
+
+// new
+predicateRef
+    : '(' predicateRef ')'
+    | name
+    ;
+```
+
+The trailing `INVERSE` on `InversePropertyAtom` is required: without it the
+alternative would collide with `NameAtom`.
+
+**The shape of the parse tree changed in two places, and this is the trap.**
+`InversePropertyExprContext` and `InversePropertyAtomContext` no longer have a
+`name` child — they have a `propertyExpr` child. `MultiRole*Context` no longer
+has a `name` child either; it has a `predicateRef`. Any code that reached for
+`.name()` on these, or that used the alternative's *type* to decide whether a
+role is inverted, is now wrong. In Python this surfaces as an `AttributeError`
+rather than a wrong answer, because the generated context class has no `name`
+method at all.
+
+Note the parity subtlety for `InversePropertyAtom`. The atom is
+`propertyExpr INVERSE`, so the parity of the whole atom is the parity of the
+inner expression *plus one*: `(locatedIn)⁻` is an inverse, `locatedIn⁻⁻` is not.
+The Java code reads `isInverse(inner) ? prop : inverseOf(prop)` — note the
+inversion of the test relative to the `propertyExpr` case.
 
 #### Consequences that are requirements, not choices
 
@@ -137,8 +170,33 @@ parenthesised) rather than the raw source text. Consequences:
   `String.hashCode()` in `vocab.py:java_string_hash`; what changes is the *string*
   being hashed.
 
+**3. The class-expression path needs its own unwrapping.** Property expressions
+handle their parentheses in the grammar, but a parenthesised *class* expression
+is a `ParenAtom` wrapping a whole `classExpr`. Code that recognises DLe's special
+fillers matches on parse-tree shape, so without unwrapping it cannot see a filler
+wrapped in parentheses: `∃r.(Self)` and `∃a.(greaterThan)` both failed with
+`IllegalStateException` before this change, and `∃a,b.(greaterThan)` was a syntax
+error.
+
+Parentheses are stripped only when genuinely redundant, i.e. when they enclose a
+single `primary`. In `(A ⊔ B)` they group, and the expression must be returned
+untouched — there is a test asserting `(B ⊔ C) ⊓ D` differs from `B ⊔ (C ⊓ D)`.
+
 #### Java implementation
 
+- New `Parens` holds the class-expression unwrapping: `unwrap`, `lonePrimary`,
+  `atomOf` (for both `primary` and `classExpr`), and `predicateName`. Unwrapping
+  is depth-unbounded — `((Self))` occurs.
+- `DLESyntaxAxiomVisitor.visitSomeValuesFrom` finds the `Self` and predicate
+  fillers through `Parens.atomOf` instead of casting to `AtomWrapContext`.
+- `DLESyntaxAxiomVisitor.visitInversePropertyAtom` uses `PropertyExprs`, with the
+  parity inversion noted above.
+- `EntityTypeScanner`'s shape helpers — `primaryBareName`, `isBottomClassExpr`,
+  `singleInverseAtom`, `isDataPrimary` — go through `Parens`. Without this a
+  parenthesised filler silently stops being *classified*, which is worse than
+  failing: `singleInverseAtom` is what recognises `contains ≡ locatedIn⁻` as an
+  inverse-property axiom, and if it stops matching the axiom does not error, it
+  quietly degrades into something else.
 - New `PropertyExprs` (package-private, `parsers/src/main/java/.../PropertyExprs.java`)
   holds the reduction: `coreName`, `coreNameText`, `isInverse`, `render`. It is a
   separate class because both passes need it and neither owns it.
@@ -194,9 +252,33 @@ Precise targets, as of addle commit `1767c64`:
 6. **`src/addle/vocab.py` — no change.** `java_string_hash` and
    `synthetic_class_iri` are unaffected; only their input string changes.
 
+7. **`src/addle/scanner.py` — the class-position analogues.**
+   `_single_inverse_name` reads `atom.name()` off an `InversePropertyAtomContext`
+   and is what recognises `contains ≡ locatedIn⁻`; it needs the core-name
+   reduction and, being an *equivalence* recogniser, its silent-degradation risk
+   is the one called out above. `_atom`'s `InversePropertyAtomContext` branch
+   needs the same. `_unwrap_atom`, `_unwrap_class_expr_atom` and `_leaf_atoms`
+   are the analogues of Java's `Parens` and need paren-stripping so that a
+   parenthesised filler is still classified.
+
+8. **`src/addle/reader.py` — `Self` and predicate fillers through parentheses.**
+   `_primary` detects `Self` with
+   `isinstance(_unwrap_atom_of(filler), P.SelfAtomContext)` and predicates via
+   `_predicate_filler`, both of which need paren-stripping to arbitrary depth.
+   `_multi_role` reads `ctx.name()`, which is now `ctx.predicateRef()`.
+   `_atom`'s `InversePropertyAtomContext` branch needs the parity reduction.
+
+9. **Decide the same boundary.** Transparency deliberately stops at
+   keyword-argument positions: `Trans((r))`, `Disj((a),(b))`, `C ⊑ key((id))` and
+   parenthesised `@label`/`@doc`/`@db`/`@storage`/`@ann` subjects are all syntax
+   errors, because those positions name an entity rather than take an expression
+   and the keyword's own parentheses already delimit. There are tests pinning
+   this as an error so the boundary cannot drift; mirror them rather than
+   extending transparency further.
+
 #### Tests to mirror
 
-`parsers/src/test/java/.../ParenthesisedPropertyExprTest.java`, 21 tests. The
+`parsers/src/test/java/.../ParenthesisTransparencyTest.java`, 43 tests. The
 useful shape is a helper asserting that a parenthesised spelling yields *the same
 axioms* as the plain one, which keeps the tests about meaning rather than about
 parse trees. Guard it against comparing two empty axiom sets, or a document that
@@ -204,23 +286,51 @@ silently parses to nothing will make the test pass for the wrong reason.
 
 Covered: the reported expression verbatim; transparency in every role position
 (`∃`, `∀`, `Self`, qualified and unqualified cardinality, implicit `∃`, property
-chains, functional-property axioms); a non-inverse role in parentheses;
-`⁻` outside the parentheses; nested parentheses; `⁻⁻` cancelling and `⁻⁻⁻` not;
-entity typing unaffected for both object and data properties; predicate
-restriction IRIs ignoring redundant parentheses; class-position parentheses still
-working; and a write/read round trip through the storer.
+chains, functional-property axioms); every class-position spelling
+(`(r⁻)`, `(r)⁻`, `((r))⁻`, `((r)⁻)`, `r⁻⁻⁻`) plus the left-hand side of an
+equivalence and a sub-property axiom; `Self` at each nesting depth; multi-role and
+single-role predicate fillers; `⁻⁻` cancelling in both role and class position and
+`⁻⁻⁻` not; entity typing unaffected for both object and data properties;
+predicate-restriction IRIs unchanged by redundant parentheses; the keyword-argument
+boundary pinned as a syntax error; and a write/read round trip through the storer.
+
+Two assertions are worth copying deliberately, because both replaced tests that
+passed for the wrong reason:
+
+- `parenthesesThatGroupAreNotStripped` asserts an *inequality* against the other
+  grouping. Comparing two spellings of the same grouping is vacuous, because
+  OWLAPI normalises intersection operand order into a set — the earlier version
+  would have passed even if both sides were parsed wrongly in the same way.
+- `keywordArgumentPositionsTakeABareName` asserts the specific parser exception
+  rather than any exception, which a broad `assertThrows` would also satisfy for
+  an unrelated internal failure.
+
+Regression evidence beyond the unit tests: the functional-syntax axiom dump of
+every `.dle` document in the repository (6 files, ~3,600 axiom lines) is
+byte-identical between `main` and this branch. Worth reproducing on the addle
+side, since the scanner's shape helpers were touched and those drive axiom
+*recognition*.
 
 One note on that last test. It originally declared `@prefix : <http://example.org/t#>`
 and failed — not because of parentheses, but because of the storer issue recorded
 below. Keeping a custom default prefix out of that test is deliberate.
 
+#### Still not transparent, deliberately or otherwise
+
+- Keyword-argument positions, deliberately: see item 9 above.
+- An inverse on a data property, `⊤ ⊑ ∀age⁻.xsd:integer`, fails with
+  `IllegalStateException: Expected class expression, got: xsd:integer`. Data
+  properties have no inverses in OWL, so rejecting it is correct; surfacing it as
+  an internal error rather than a diagnostic is not. Pre-existing, and listed
+  below rather than fixed here.
+
 ---
 
 ## Found but not fixed
 
-Discovered while working on the above. Both reproduce on `main` with input as
-plain as `Animal ⊑ Organism`, so neither is caused by the change above. Recorded
-here so they are not mistaken for new breakage, and so they are not ported.
+Discovered while working on the above; all reproduce on `main`, so none is caused
+by that change. Recorded here so they are not mistaken for new breakage, and so
+they are not ported. These are being fixed in their own PR.
 
 ### The storer ignores the format passed to `saveOntology`
 
@@ -259,3 +369,22 @@ defaults to DLe, so there is nothing to port — but it is worth confirming that
 Committed as `0.4.0` while the POM is at `0.4.1`. The build regenerates it, so it
 appears as a spurious modification after every build. Harmless, but it means a
 fresh checkout's launch script looks for a JAR version that was never built.
+
+### An inverse on a data property reports an internal error
+
+`⊤ ⊑ ∀age⁻.xsd:integer` throws `IllegalStateException: Expected class expression,
+got: xsd:integer` from `DLESyntaxAxiomVisitor.asClass`. The input is invalid —
+OWL data properties have no inverses — so rejection is right, but it should be a
+diagnostic naming the problem, not an internal failure.
+
+addle reaches the same input through `reader.py:_class_expr`, which would raise
+`DleSemanticError` or an Owlready2 type error depending on the path; worth
+checking what it actually does when this is fixed here.
+
+### `mvn verify` can leave a stale shaded jar
+
+Not a code issue, but it cost an hour of confusion and will cost it again.
+`mvn verify` without `clean` can reuse a previously shaded `owltx` jar, so
+hand-testing a grammar change through `owltx` reports the *old* behaviour while
+`mvn test` reports the new one. Use `mvn clean package` before trusting anything
+`owltx` prints.

@@ -1,8 +1,11 @@
 package org.semanticweb.owlapi.dlesyntax;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.semanticweb.owlapi.apibinding.OWLManager;
 import org.semanticweb.owlapi.formats.DLESyntaxDocumentFormat;
+import org.semanticweb.owlapi.io.OWLParserException;
 import org.semanticweb.owlapi.io.StreamDocumentSource;
 import org.semanticweb.owlapi.io.StreamDocumentTarget;
 import org.semanticweb.owlapi.io.StringDocumentSource;
@@ -20,18 +23,25 @@ import java.util.stream.Collectors;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * Parentheses around a property expression in a role position.
+ * Redundant parentheses are transparent.
  *
  * <p>Generators — LLMs in particular — write {@code ∃(ownerOrg⁻).Self} rather
- * than {@code ∃ownerOrg⁻.Self}. The parentheses are redundant here, but a parser
- * has to understand the structure before it can decide that, so they are
- * accepted rather than rejected.
+ * than {@code ∃ownerOrg⁻.Self}. The parentheses are redundant, but a parser has
+ * to understand the structure before it can decide that, so they are accepted
+ * rather than rejected.
  *
- * <p>The property is that parentheses are <em>transparent</em>: a parenthesised
- * expression must produce exactly the same axioms as the same expression written
- * without them.
+ * <p>The invariant under test: wherever parentheses are redundant, a
+ * parenthesised expression produces exactly the same axioms as the same
+ * expression written without them. Parentheses that <em>group</em> — as in
+ * {@code (A ⊔ B) ⊓ C} — are not redundant and must survive; see
+ * {@link #parenthesesThatGroupAreNotStripped()}.
+ *
+ * <p>The transparency covers role positions, class positions, the {@code Self}
+ * filler and predicate-restriction fillers. It deliberately stops at
+ * keyword-argument positions such as {@code Trans(r)}; see
+ * {@link #keywordArgumentPositionsTakeABareName}.
  */
-class ParenthesisedPropertyExprTest {
+class ParenthesisTransparencyTest {
 
     private static final String PREFIX = "@prefix : <http://example.org/t#>\n";
 
@@ -49,6 +59,14 @@ class ParenthesisedPropertyExprTest {
     private Set<String> logicalAxioms(String body) throws Exception {
         return parse(body).getLogicalAxioms().stream()
             .map(OWLAxiom::toString)
+            .collect(Collectors.toSet());
+    }
+
+    /** IRIs of the synthetic dle: classes a document produces. */
+    private Set<String> predicateClassIris(String body) throws Exception {
+        return parse(body).classesInSignature()
+            .map(c -> c.getIRI().toString())
+            .filter(iri -> iri.startsWith(DLESyntaxAxiomVisitor.DLE_NS))
             .collect(Collectors.toSet());
     }
 
@@ -194,13 +212,130 @@ class ParenthesisedPropertyExprTest {
     // ── Class-position parentheses must keep working ────────────────────────
 
     @Test
-    void parenthesisedClassExpressionsAreUnaffected() throws Exception {
+    void intersectionOperandOrderDoesNotMatter() throws Exception {
+        // Commutativity only — OWLAPI holds intersection operands in a set. This
+        // says nothing about whether the parentheses were honoured; see below.
         equivalentSpellings("A ≡ (B ⊔ C) ⊓ D\n", "A ≡ D ⊓ (B ⊔ C)\n");
     }
 
     @Test
-    void parenthesisedInverseInClassPositionStillParses() throws Exception {
-        equivalentSpellings("contains ≡ (locatedIn⁻)\n", "contains ≡ locatedIn⁻\n");
+    void parenthesesThatGroupAreNotStripped() throws Exception {
+        // `(B ⊔ C) ⊓ D` is not `B ⊔ (C ⊓ D)`. Asserted as an inequality against
+        // the other grouping, because comparing two spellings of the *same*
+        // grouping would pass even if both were parsed wrongly in the same way —
+        // which is what made the previous version of this test vacuous.
+        assertNotEquals(
+            logicalAxioms("A ≡ (B ⊔ C) ⊓ D\n"),
+            logicalAxioms("A ≡ B ⊔ (C ⊓ D)\n"),
+            "parentheses that change the grouping must change the axioms");
+
+        // Union binds loosest, so the unparenthesised form is `B ⊔ (C ⊓ D)`.
+        equivalentSpellings("A ≡ B ⊔ (C ⊓ D)\n", "A ≡ B ⊔ C ⊓ D\n");
+
+        // And the grouped form really is an intersection containing a union.
+        String axiom = logicalAxioms("A ≡ (B ⊔ C) ⊓ D\n").stream()
+            .filter(a -> a.startsWith("EquivalentClasses")).findFirst().orElseThrow();
+        assertTrue(axiom.matches(".*ObjectIntersectionOf\\(.*ObjectUnionOf\\(.*"),
+            "expected a union nested inside an intersection, got: " + axiom);
+    }
+
+    // ── Class positions get the same transparency as role positions ─────────
+
+    @ParameterizedTest(name = "contains ≡ {0}")
+    @ValueSource(strings = {
+        "locatedIn⁻",       // the plain spelling, for comparison
+        "(locatedIn⁻)",     // parenthesised inverse
+        "(locatedIn)⁻",     // inverse outside the parentheses
+        "((locatedIn))⁻",
+        "((locatedIn)⁻)",
+        "locatedIn⁻⁻⁻",     // odd parity is still an inverse
+    })
+    void inverseInClassPositionAcceptsAnySpelling(String spelling) throws Exception {
+        equivalentSpellings("contains ≡ " + spelling + "\n", "contains ≡ locatedIn⁻\n");
+    }
+
+    @Test
+    void doubledInverseCancelsInClassPositionToo() throws Exception {
+        equivalentSpellings("contains ≡ locatedIn⁻⁻\n", "contains ≡ locatedIn\n");
+        equivalentSpellings("contains ≡ (locatedIn⁻)⁻\n", "contains ≡ locatedIn\n");
+    }
+
+    @Test
+    void inverseOnTheLeftOfAnAxiom() throws Exception {
+        equivalentSpellings("(contains)⁻ ≡ locatedIn\n", "contains⁻ ≡ locatedIn\n");
+    }
+
+    @Test
+    void inverseInASubPropertyAxiom() throws Exception {
+        equivalentSpellings("contains ⊑ (locatedIn)⁻\n", "contains ⊑ locatedIn⁻\n");
+    }
+
+    // ── The Self filler ─────────────────────────────────────────────────────
+
+    @ParameterizedTest(name = "∃owns.{0}")
+    @ValueSource(strings = {"Self", "(Self)", "((Self))"})
+    void selfFillerMayBeParenthesised(String spelling) throws Exception {
+        equivalentSpellings("A ≡ ∃owns." + spelling + "\n", "A ≡ ∃owns.Self\n");
+    }
+
+    @Test
+    void parenthesesOnBothRoleAndSelfFiller() throws Exception {
+        equivalentSpellings("A ≡ ∃(owns⁻).(Self)\n", "A ≡ ∃owns⁻.Self\n");
+    }
+
+    // ── Predicate-restriction fillers ───────────────────────────────────────
+
+    private static final String PREDICATE_SETUP =
+        "greaterThan(x,y) ≝ x > y\n⊤ ⊑ ∀a.xsd:integer\n⊤ ⊑ ∀b.xsd:integer\n";
+
+    @ParameterizedTest(name = "R ≡ ∃{0}")
+    @ValueSource(strings = {
+        "a,b.greaterThan",
+        "a,b.(greaterThan)",
+        "(a),(b).greaterThan",
+        "(a),(b).((greaterThan))",
+    })
+    void multiRolePredicateFillerMayBeParenthesised(String spelling) throws Exception {
+        equivalentSpellings(PREDICATE_SETUP + "R ≡ ∃" + spelling + "\n",
+                            PREDICATE_SETUP + "R ≡ ∃a,b.greaterThan\n");
+    }
+
+    @Test
+    void singleRolePredicateFillerMayBeParenthesised() throws Exception {
+        equivalentSpellings(PREDICATE_SETUP + "R ≡ ∃a.(greaterThan)\n",
+                            PREDICATE_SETUP + "R ≡ ∃a.greaterThan\n");
+    }
+
+    @Test
+    void parenthesesDoNotChangeThePredicateClassIri() throws Exception {
+        // The synthetic class IRI embeds a hash of the expression text, and that
+        // IRI is the contract with the Python implementation. Redundant
+        // parentheses must not move it.
+        assertEquals(
+            predicateClassIris(PREDICATE_SETUP + "R ≡ ∃a,b.greaterThan\n"),
+            predicateClassIris(PREDICATE_SETUP + "R ≡ ∃(a),(b).((greaterThan))\n"));
+    }
+
+    // ── Where transparency deliberately stops ───────────────────────────────
+
+    /**
+     * Keyword-argument positions name an entity rather than take an expression,
+     * and the keyword's own parentheses already delimit the argument. These are
+     * pinned as errors so the boundary cannot drift unnoticed, and so the Python
+     * port does not have to guess where transparency ends.
+     */
+    @ParameterizedTest(name = "{0}")
+    @ValueSource(strings = {
+        "Trans((locatedIn))",
+        "Disj((contains),(locatedIn))",
+        "C ⊑ key((id))",
+    })
+    void keywordArgumentPositionsTakeABareName(String body) {
+        // Specifically a syntax error, not any exception: a broad assertThrows
+        // would also be satisfied by an internal failure elsewhere.
+        assertThrows(OWLParserException.class,
+            () -> parse("⊤ ⊑ ∀id.xsd:string\n" + body + "\n"),
+            "parentheses are not accepted in keyword-argument positions");
     }
 
     // ── Writing back out ────────────────────────────────────────────────────

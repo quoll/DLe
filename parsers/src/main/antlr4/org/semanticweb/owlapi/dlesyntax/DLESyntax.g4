@@ -102,14 +102,21 @@ intersectionExpr
 
 primary
     : COMPLEMENT primary                                        # Complement
-    | EXISTS propertyExpr (',' propertyExpr)+ DOT name         # MultiRoleSomeValuesFrom
-    | FORALL propertyExpr (',' propertyExpr)+ DOT name         # MultiRoleAllValuesFrom
+    | EXISTS propertyExpr (',' propertyExpr)+ DOT predicateRef # MultiRoleSomeValuesFrom
+    | FORALL propertyExpr (',' propertyExpr)+ DOT predicateRef # MultiRoleAllValuesFrom
     | EXISTS propertyExpr DOT primary                          # SomeValuesFrom
     | FORALL propertyExpr DOT primary                          # AllValuesFrom
     | cardSymbol NUMBER propertyExpr DOT primary       # CardinalityRestriction
     | cardSymbol NUMBER propertyExpr                   # UnqualifiedCardinalityRestriction
     | propertyExpr DOT primary                         # ImplicitSomeValuesFrom
     | atom                                             # AtomWrap
+    ;
+
+// The filler of a predicate restriction: `∃r₁,…,rₙ.P`. Parenthesised for the
+// same reason roles are — generators add parentheses that carry no meaning.
+predicateRef
+    : '(' predicateRef ')'
+    | name
     ;
 
 // A cardinality symbol is one of ≥ ≤ =
@@ -119,7 +126,12 @@ cardSymbol
 
 atom
     : name '[' numericFacet (INTERSECTION numericFacet)* ']'  # NumericDataRangeAtom
-    | name INVERSE                        # InversePropertyAtom
+    // A property expression used where a class expression is expected, as in
+    // `contains ≡ locatedIn⁻`. Delegating to propertyExpr rather than matching
+    // `name INVERSE` is what gives class positions the same parenthesis and
+    // double-inverse transparency that role positions have. The trailing INVERSE
+    // is required: without it this would collide with NameAtom.
+    | propertyExpr INVERSE                # InversePropertyAtom
     | name                                # NameAtom
     | TOP                                 # TopAtom
     | BOTTOM                              # BottomAtom
