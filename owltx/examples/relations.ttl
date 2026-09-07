@@ -1,0 +1,110 @@
+@prefix : <http://snomed.info/sct/900000000000207008#> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix xml: <http://www.w3.org/XML/1998/namespace> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix skos: <http://www.w3.org/2004/02/skos/core#> .
+@prefix sct: <http://snomed.info/id/> .
+@base <http://snomed.info/sct/900000000000207008> .
+
+###  http://snomed.info/id/373080008
+sct:373080008 rdf:type owl:Class ;
+               owl:equivalentClass [ owl:intersectionOf ( sct:64572001    ### Disease
+                                                          [ rdf:type owl:Restriction ;
+                                                            owl:onProperty sct:609096000 ;    ### Role group
+                                                            owl:someValuesFrom [ owl:intersectionOf ( [ rdf:type owl:Restriction ;
+                                                                                                        owl:onProperty sct:116676008 ;        ### Associated morphology
+                                                                                                        owl:someValuesFrom sct:1240414004 ]   ###  Malignant neoplasm
+                                                                                                      [ rdf:type owl:Restriction ;
+                                                                                                        owl:onProperty sct:363698007 ;        ### Finding site
+                                                                                                        owl:someValuesFrom sct:19100000 ]) ;  ### Structure of lower inner quadrant of breast
+                                                                                 rdf:type owl:Class ] ] ) ;
+                                     rdf:type owl:Class ] ;
+               rdfs:label "Malignant neoplasm of lower inner quadrant of breast (disorder)"@en ;
+               skos:altLabel "Malignant neoplasm of breast lower inner quadrant"@en ;
+               skos:prefLabel "Malignant neoplasm of lower inner quadrant of breast"@en .
+
+
+#########################
+### Direct Properties ###
+#########################
+
+###  http://snomed.info/id/609096000
+sct:609096000 rdf:type owl:ObjectProperty ;
+              rdfs:subPropertyOf sct:762705008 ;    ### <<anonymous>>
+              rdfs:label "Role group (attribute)"@en ;
+              skos:prefLabel "Role group"@en .
+
+###  http://snomed.info/id/116676008
+sct:116676008 rdf:type owl:ObjectProperty ;
+              rdfs:subPropertyOf sct:762705008 ;    ### <<anonymous>>
+              rdfs:label "Associated morphology (attribute)"@en ;
+              skos:altLabel "Morphology"@en ;
+              skos:prefLabel "Associated morphology"@en .
+
+###  http://snomed.info/id/363698007
+sct:363698007 rdf:type owl:ObjectProperty ;
+              rdfs:subPropertyOf sct:762705008 ;    ### <<anonymous>>
+              rdfs:label "Finding site (attribute)"@en ;
+              skos:prefLabel "Finding site"@en .
+
+
+#############################################
+##### First Generation Super Properties #####
+#############################################
+
+###  http://snomed.info/id/762705008  <<anonymous>>
+sct:762705008 rdf:type owl:Class ;
+              rdfs:subClassOf sct:410662002 .    ### Concept model attribute
+
+##############################################
+##### Second Generation Super Properties #####
+##############################################
+
+###  http://snomed.info/id/410662002
+sct:410662002 rdf:type owl:Class ;
+              rdfs:subClassOf sct:246061005 ;    ### Attribute
+              rdfs:label "Concept model attribute (attribute)"@en ;
+              skos:prefLabel "Concept model attribute"@en .
+
+#############################################
+##### Third Generation Super Properties #####
+#############################################
+
+###  http://snomed.info/id/246061005
+sct:246061005 rdf:type owl:Class ;
+              rdfs:subClassOf sct:106237007 ;    ### Linkage concept
+              rdfs:label "Attribute (attribute)"@en ;
+              skos:prefLabel "Attribute"@en .
+
+#############################################
+##### Fourth Generation Super Properties #####
+#############################################
+
+###  http://snomed.info/id/106237007
+sct:106237007 rdf:type owl:Class ;
+              rdfs:subClassOf sct:900000000000441003 ;    ### SNOMED CT Model Component
+              rdfs:label "Linkage concept (linkage concept)"@en ;
+              skos:prefLabel "Linkage concept"@en .
+
+#############################################
+##### Fifth Generation Super Properties #####
+#############################################
+
+###  http://snomed.info/id/900000000000441003
+sct:900000000000441003 rdf:type owl:Class ;
+                       rdfs:subClassOf sct:138875005 ;    ### SNOMED CT Concept
+                       rdfs:label "SNOMED CT Model Component (metadata)"@en ;
+                       skos:prefLabel "SNOMED CT Model Component"@en .
+
+#############################################################
+##### Direct Class Properties in Sixth Generation Class #####
+#############################################################
+
+###  http://snomed.info/id/272741003
+sct:272741003 rdf:type owl:ObjectProperty ;
+              rdfs:subPropertyOf sct:762705008 ;    ### <<anonymous>>
+              rdfs:label "Laterality (attribute)"@en ;
+              skos:prefLabel "Laterality"@en .
+
