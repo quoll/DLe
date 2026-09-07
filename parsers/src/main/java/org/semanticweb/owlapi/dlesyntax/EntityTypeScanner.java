@@ -56,14 +56,14 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
     @Override
     public Void visitMultiRoleSomeValuesFrom(DLESyntaxParser.MultiRoleSomeValuesFromContext ctx) {
         ctx.propertyExpr().forEach(pe -> classifyProp(pe, false));
-        predicateNames.add(ctx.name().getText());
+        predicateNames.add(Parens.predicateName(ctx.predicateRef()));
         return null;
     }
 
     @Override
     public Void visitMultiRoleAllValuesFrom(DLESyntaxParser.MultiRoleAllValuesFromContext ctx) {
         ctx.propertyExpr().forEach(pe -> classifyProp(pe, false));
-        predicateNames.add(ctx.name().getText());
+        predicateNames.add(Parens.predicateName(ctx.predicateRef()));
         return null;
     }
 
@@ -176,7 +176,7 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
     @Override
     public Void visitInversePropertyAtom(DLESyntaxParser.InversePropertyAtomContext ctx) {
         // The base name is always an object property
-        objectPropertyNames.add(ctx.name().getText());
+        objectPropertyNames.add(PropertyExprs.coreNameText(ctx.propertyExpr()));
         return visitChildren(ctx);
     }
 
@@ -332,12 +332,11 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
     }
 
     private void classifyProp(DLESyntaxParser.PropertyExprContext propCtx, boolean isData) {
-        if (propCtx instanceof DLESyntaxParser.InversePropertyExprContext) {
+        String name = PropertyExprs.coreNameText(propCtx);
+        if (PropertyExprs.isInverse(propCtx)) {
             // Inverse properties are always object properties
-            String name = ((DLESyntaxParser.InversePropertyExprContext) propCtx).name().getText();
             objectPropertyNames.add(name);
         } else {
-            String name = ((DLESyntaxParser.SimplePropertyExprContext) propCtx).name().getText();
             if (isData) {
                 // Data classification is definitive — remove any prior object classification.
                 dataPropertyNames.add(name);
@@ -351,10 +350,8 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
 
     /** True if the primary is an atom that looks like a data range. */
     private boolean isDataPrimary(DLESyntaxParser.PrimaryContext ctx) {
-        if (ctx instanceof DLESyntaxParser.AtomWrapContext) {
-            return isDataAtom(((DLESyntaxParser.AtomWrapContext) ctx).atom());
-        }
-        return false;
+        var atom = Parens.atomOf(ctx);
+        return atom != null && isDataAtom(atom);
     }
 
     /**
@@ -470,29 +467,18 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
     }
 
     private String primaryBareName(DLESyntaxParser.PrimaryContext ctx) {
-        if (!(ctx instanceof DLESyntaxParser.AtomWrapContext)) return null;
-        var atom = ((DLESyntaxParser.AtomWrapContext) ctx).atom();
+        var atom = Parens.atomOf(ctx);
         if (!(atom instanceof DLESyntaxParser.NameAtomContext)) return null;
         return ((DLESyntaxParser.NameAtomContext) atom).name().getText();
     }
 
     private boolean isBottomClassExpr(DLESyntaxParser.ClassExprContext ctx) {
-        if (!(ctx instanceof DLESyntaxParser.IntersectionWrapContext)) return false;
-        var inter = ((DLESyntaxParser.IntersectionWrapContext) ctx).intersectionExpr();
-        if (!(inter instanceof DLESyntaxParser.PrimaryWrapContext)) return false;
-        var prim = ((DLESyntaxParser.PrimaryWrapContext) inter).primary();
-        if (!(prim instanceof DLESyntaxParser.AtomWrapContext)) return false;
-        return ((DLESyntaxParser.AtomWrapContext) prim).atom() instanceof DLESyntaxParser.BottomAtomContext;
+        return Parens.atomOf(ctx) instanceof DLESyntaxParser.BottomAtomContext;
     }
 
     /** Returns the InversePropertyAtomContext if the classExpr is just a single name⁻, else null. */
     private DLESyntaxParser.InversePropertyAtomContext singleInverseAtom(DLESyntaxParser.ClassExprContext ctx) {
-        if (!(ctx instanceof DLESyntaxParser.IntersectionWrapContext)) return null;
-        var inter = ((DLESyntaxParser.IntersectionWrapContext) ctx).intersectionExpr();
-        if (!(inter instanceof DLESyntaxParser.PrimaryWrapContext)) return null;
-        var prim = ((DLESyntaxParser.PrimaryWrapContext) inter).primary();
-        if (!(prim instanceof DLESyntaxParser.AtomWrapContext)) return null;
-        var atom = ((DLESyntaxParser.AtomWrapContext) prim).atom();
+        var atom = Parens.atomOf(ctx);
         if (!(atom instanceof DLESyntaxParser.InversePropertyAtomContext)) return null;
         return (DLESyntaxParser.InversePropertyAtomContext) atom;
     }

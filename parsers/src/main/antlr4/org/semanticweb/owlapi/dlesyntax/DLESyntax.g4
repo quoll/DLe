@@ -71,10 +71,19 @@ keyExpr
     : 'key' '(' name (',' name)* ')'
     ;
 
-// A property expression is either a plain name or its inverse (r⁻).
+// A property expression: a name, an inverse (r⁻), or either in parentheses.
+//
+// ⁻ is a postfix operator over the whole expression rather than over a name, so
+// r⁻, (r⁻), (r)⁻ and r⁻⁻ are all accepted. Parentheses are transparent — they
+// group and carry no meaning of their own — and a doubled ⁻ cancels out.
+//
+// Redundant parentheses are accepted because generators produce them in role
+// positions whether or not they are needed, and the structure has to be parsed
+// before anything can tell which ones are droppable.
 propertyExpr
-    : name INVERSE  # InversePropertyExpr
-    | name          # SimplePropertyExpr
+    : propertyExpr INVERSE  # InversePropertyExpr
+    | '(' propertyExpr ')'  # ParenPropertyExpr
+    | name                  # SimplePropertyExpr
     ;
 
 // ── Class / data-range expressions ───────────────────────────────────────────
@@ -93,14 +102,21 @@ intersectionExpr
 
 primary
     : COMPLEMENT primary                                        # Complement
-    | EXISTS propertyExpr (',' propertyExpr)+ DOT name         # MultiRoleSomeValuesFrom
-    | FORALL propertyExpr (',' propertyExpr)+ DOT name         # MultiRoleAllValuesFrom
+    | EXISTS propertyExpr (',' propertyExpr)+ DOT predicateRef # MultiRoleSomeValuesFrom
+    | FORALL propertyExpr (',' propertyExpr)+ DOT predicateRef # MultiRoleAllValuesFrom
     | EXISTS propertyExpr DOT primary                          # SomeValuesFrom
     | FORALL propertyExpr DOT primary                          # AllValuesFrom
     | cardSymbol NUMBER propertyExpr DOT primary       # CardinalityRestriction
     | cardSymbol NUMBER propertyExpr                   # UnqualifiedCardinalityRestriction
     | propertyExpr DOT primary                         # ImplicitSomeValuesFrom
     | atom                                             # AtomWrap
+    ;
+
+// The filler of a predicate restriction: `∃r₁,…,rₙ.P`. Parenthesised for the
+// same reason roles are — generators add parentheses that carry no meaning.
+predicateRef
+    : '(' predicateRef ')'
+    | name
     ;
 
 // A cardinality symbol is one of ≥ ≤ =
@@ -110,7 +126,12 @@ cardSymbol
 
 atom
     : name '[' numericFacet (INTERSECTION numericFacet)* ']'  # NumericDataRangeAtom
-    | name INVERSE                        # InversePropertyAtom
+    // A property expression used where a class expression is expected, as in
+    // `contains ≡ locatedIn⁻`. Delegating to propertyExpr rather than matching
+    // `name INVERSE` is what gives class positions the same parenthesis and
+    // double-inverse transparency that role positions have. The trailing INVERSE
+    // is required: without it this would collide with NameAtom.
+    | propertyExpr INVERSE                # InversePropertyAtom
     | name                                # NameAtom
     | TOP                                 # TopAtom
     | BOTTOM                              # BottomAtom

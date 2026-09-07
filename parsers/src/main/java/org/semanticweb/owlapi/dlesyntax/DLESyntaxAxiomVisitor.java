@@ -579,30 +579,30 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
 
     @Override
     public OWLObject visitMultiRoleSomeValuesFrom(DLESyntaxParser.MultiRoleSomeValuesFromContext ctx) {
-        return buildPredicateClass("\u2203", ctx.propertyExpr(), ctx.name().getText());
+        return buildPredicateClass("\u2203", ctx.propertyExpr(),
+            Parens.predicateName(ctx.predicateRef()));
     }
 
     @Override
     public OWLObject visitMultiRoleAllValuesFrom(DLESyntaxParser.MultiRoleAllValuesFromContext ctx) {
-        return buildPredicateClass("\u2200", ctx.propertyExpr(), ctx.name().getText());
+        return buildPredicateClass("\u2200", ctx.propertyExpr(),
+            Parens.predicateName(ctx.predicateRef()));
     }
 
     @Override
     public OWLObject visitSomeValuesFrom(DLESyntaxParser.SomeValuesFromContext ctx) {
-        // ∃r.Self → ObjectHasSelf(r)
-        if (ctx.primary() instanceof DLESyntaxParser.AtomWrapContext) {
-            DLESyntaxParser.AtomContext atom =
-                ((DLESyntaxParser.AtomWrapContext) ctx.primary()).atom();
-            if (atom instanceof DLESyntaxParser.SelfAtomContext) {
-                return df.getOWLObjectHasSelf(buildObjectProp(ctx.propertyExpr()));
-            }
-            // ∃r.p where p is a unary predicate
-            if (atom instanceof DLESyntaxParser.NameAtomContext) {
-                String fillerName = ((DLESyntaxParser.NameAtomContext) atom).name().getText();
-                if (isPredicateName(propName(ctx.propertyExpr()), fillerName)) {
-                    return buildPredicateClass("\u2203",
-                        Collections.singletonList(ctx.propertyExpr()), fillerName);
-                }
+        // ∃r.Self → ObjectHasSelf(r). Parentheses around the filler are stripped
+        // first, so ∃r.(Self) and ∃r.((Self)) are the same expression.
+        DLESyntaxParser.AtomContext atom = Parens.atomOf(ctx.primary());
+        if (atom instanceof DLESyntaxParser.SelfAtomContext) {
+            return df.getOWLObjectHasSelf(buildObjectProp(ctx.propertyExpr()));
+        }
+        // ∃r.p where p is a unary predicate
+        if (atom instanceof DLESyntaxParser.NameAtomContext) {
+            String fillerName = ((DLESyntaxParser.NameAtomContext) atom).name().getText();
+            if (isPredicateName(propName(ctx.propertyExpr()), fillerName)) {
+                return buildPredicateClass("\u2203",
+                    Collections.singletonList(ctx.propertyExpr()), fillerName);
             }
         }
         String pName = propName(ctx.propertyExpr());
@@ -706,7 +706,14 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
 
     @Override
     public OWLObject visitInversePropertyAtom(DLESyntaxParser.InversePropertyAtomContext ctx) {
-        return df.getOWLObjectInverseOf(df.getOWLObjectProperty(expandName(ctx.name())));
+        // `locatedIn⁻` in class position. The inner propertyExpr may itself carry
+        // parentheses and inverse markers, so parity is counted over the whole
+        // thing: `(locatedIn)⁻` is an inverse, `locatedIn⁻⁻` is not.
+        OWLObjectProperty prop =
+            df.getOWLObjectProperty(expandName(PropertyExprs.coreName(ctx.propertyExpr())));
+        return PropertyExprs.isInverse(ctx.propertyExpr())
+            ? prop
+            : df.getOWLObjectInverseOf(prop);
     }
 
     @Override
@@ -964,7 +971,9 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
         StringBuilder sb = new StringBuilder(quantifier);
         for (int i = 0; i < roles.size(); i++) {
             if (i > 0) sb.append(",");
-            sb.append(roles.get(i).getText());
+            // Canonical form, not the raw source text: ∃(a⁻),b.p and ∃a⁻,b.p are
+            // the same expression and must hash to the same class IRI.
+            sb.append(PropertyExprs.render(roles.get(i)));
         }
         sb.append(".").append(predName);
         String expr = sb.toString();
@@ -1007,25 +1016,25 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
         return df.getOWLClass(iri);
     }
 
+    /**
+     * Builds the object property expression for a propertyExpr.
+     *
+     * <p>Parentheses and doubled inverse markers are collapsed by
+     * {@link PropertyExprs}, leaving either a named property or the inverse of
+     * one — which is all {@code getOWLObjectInverseOf} accepts.
+     */
     private OWLObjectPropertyExpression buildObjectProp(DLESyntaxParser.PropertyExprContext ctx) {
-        if (ctx instanceof DLESyntaxParser.InversePropertyExprContext) {
-            IRI iri = expandName(((DLESyntaxParser.InversePropertyExprContext) ctx).name());
-            return df.getOWLObjectInverseOf(df.getOWLObjectProperty(iri));
-        }
-        IRI iri = expandName(((DLESyntaxParser.SimplePropertyExprContext) ctx).name());
-        return df.getOWLObjectProperty(iri);
+        OWLObjectProperty prop = df.getOWLObjectProperty(expandName(PropertyExprs.coreName(ctx)));
+        return PropertyExprs.isInverse(ctx) ? df.getOWLObjectInverseOf(prop) : prop;
     }
 
     /** Returns the local text of the name in a propertyExpr (for type lookup). */
     private String propName(DLESyntaxParser.PropertyExprContext ctx) {
-        return propCtxName(ctx).getText();
+        return PropertyExprs.coreNameText(ctx);
     }
 
     private DLESyntaxParser.NameContext propCtxName(DLESyntaxParser.PropertyExprContext ctx) {
-        if (ctx instanceof DLESyntaxParser.InversePropertyExprContext) {
-            return ((DLESyntaxParser.InversePropertyExprContext) ctx).name();
-        }
-        return ((DLESyntaxParser.SimplePropertyExprContext) ctx).name();
+        return PropertyExprs.coreName(ctx);
     }
 
     private OWLClassExpression asClass(OWLObject obj) {
