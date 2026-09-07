@@ -32,3 +32,9 @@ CLAUDE.md
 
 # Local working notes, not part of the project
 CHANGES.md
+
+# Local working documents. Some describe a private data model and must not be
+# published; the publishable ones live in owltx/examples instead.
+owltx/data/
+
+.DS_Store

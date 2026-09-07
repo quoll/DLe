@@ -9,6 +9,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
 
@@ -58,8 +59,8 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
     @Nullable private OWLOntology currentOntology;
     /** Annotation assertions already written inline; set for the duration of {@code storeOntology}. */
     @Nullable private Set<OWLAnnotationAssertionAxiom> writtenAnnotations;
-    /** Prefix format of the ontology being stored, if any. */
-    @Nullable private PrefixDocumentFormat currentPrefixFormat;
+    /** Prefixes in force while storing: the ontology's, overridden by the caller's. */
+    @Nullable private Map<String, String> currentPrefixes;
     /** Set to true when {@code getRendering} returns {@code ""} so {@code endWritingAxiom} suppresses the blank line. */
     private boolean lastRenderingEmpty = false;
     /** Set to true whenever an axiom renders to non-empty content for the current entity;
@@ -68,16 +69,13 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
 
     @Override
     protected void storeOntology(OWLOntology o, PrintWriter printWriter, OWLDocumentFormat outputFormat) {
-        // The output format is our own DLESyntaxDocumentFormat which carries no
-        // prefixes, so we look at the format the ontology was loaded from instead.
         renderer.setOntology(o);
         currentOntology = o;
         writtenAnnotations = new HashSet<>();
-        OWLDocumentFormat sourceFormat = o.getFormat() != null ? o.getFormat() : outputFormat;
-        if (sourceFormat instanceof PrefixDocumentFormat) {
-            currentPrefixFormat = (PrefixDocumentFormat) sourceFormat;
+        currentPrefixes = prefixesFor(o, outputFormat);
+        if (!currentPrefixes.isEmpty()) {
             DefaultPrefixManager pm = new DefaultPrefixManager();
-            currentPrefixFormat.getPrefixName2PrefixMap().forEach(pm::setPrefix);
+            currentPrefixes.forEach(pm::setPrefix);
             renderer.setPrefixManager(pm);
         }
         try {
@@ -85,7 +83,7 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
         } finally {
             currentOntology = null;
             writtenAnnotations = null;
-            currentPrefixFormat = null;
+            currentPrefixes = null;
         }
     }
 
@@ -115,6 +113,32 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
                 }
             });
         return wrote[0];
+    }
+
+    /**
+     * The prefixes to write with: those the ontology was loaded from, overridden
+     * by any the caller supplied on the output format.
+     *
+     * <p>Both sources matter, which is why this merges rather than picking one.
+     * The usual call is {@code saveOntology(o, new DLESyntaxDocumentFormat(), t)},
+     * where the output format carries no document prefixes and the ontology's own
+     * format is the only place they exist. But a caller who invokes the parser
+     * directly gets a populated format back and may hand it straight to
+     * {@code saveOntology} — and that is an explicit instruction, so it wins.
+     * Preferring the ontology's format outright silently discarded it, which
+     * dropped every {@code @prefix} line and re-resolved bare names to the DLe
+     * default namespace on reload.
+     */
+    private static Map<String, String> prefixesFor(OWLOntology o, OWLDocumentFormat outputFormat) {
+        Map<String, String> merged = new LinkedHashMap<>();
+        OWLDocumentFormat ontologyFormat = o.getFormat();
+        if (ontologyFormat instanceof PrefixDocumentFormat) {
+            merged.putAll(((PrefixDocumentFormat) ontologyFormat).getPrefixName2PrefixMap());
+        }
+        if (outputFormat instanceof PrefixDocumentFormat) {
+            merged.putAll(((PrefixDocumentFormat) outputFormat).getPrefixName2PrefixMap());
+        }
+        return merged;
     }
 
     @Override
@@ -227,9 +251,9 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
 
         // Emit prefix declarations that differ from the DLE defaults.
         // The six standard prefixes are implicit in every DLE file and need not be repeated.
-        if (currentPrefixFormat != null) {
+        if (currentPrefixes != null) {
             long[] count = {0};
-            currentPrefixFormat.getPrefixName2PrefixMap().forEach((prefix, iri) -> {
+            currentPrefixes.forEach((prefix, iri) -> {
                 String defaultIri = DLE_DEFAULT_PREFIXES.get(prefix);
                 if (defaultIri == null || !defaultIri.equals(iri)) {
                     writer.println("@prefix " + prefix + " <" + iri + ">");

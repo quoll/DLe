@@ -186,7 +186,9 @@ public class Main {
         }
     }
 
-    private static OWLDocumentFormat resolveFormat(String formatName, String outputFile) {
+    // Package-private rather than private so the defaulting rules can be tested.
+    // The stdout default was wrong for a while precisely because nothing checked it.
+    static OWLDocumentFormat resolveFormat(String formatName, String outputFile) {
         // 1. Explicit format option
         if (formatName != null) {
             OWLDocumentFormat fmt = FORMAT_BY_NAME.get(formatName.toLowerCase());
@@ -208,8 +210,12 @@ public class Main {
             }
         }
 
-        // 3. Default: DL Syntax
-        return new DLSyntaxDocumentFormat();
+        // 3. Default: DLE syntax, as the usage text and the documentation both
+        //    say. This returned plain DL syntax, so `owltx doc.dle` with no
+        //    output file and no --format silently produced a different language:
+        //    no @prefix declarations, no header, `self` where DLe requires `Self`,
+        //    and no line breaks at all.
+        return new DLESyntaxDocumentFormat();
     }
 
     /** Returns the extension of a filename (without the dot), or null if none. */

@@ -10,6 +10,7 @@ import org.semanticweb.owlapi.io.StreamDocumentSource;
 import org.semanticweb.owlapi.io.StreamDocumentTarget;
 import org.semanticweb.owlapi.io.StringDocumentSource;
 import org.semanticweb.owlapi.model.OWLAxiom;
+import org.semanticweb.owlapi.model.OWLDocumentFormat;
 import org.semanticweb.owlapi.model.OWLLogicalAxiom;
 import org.semanticweb.owlapi.model.OWLOntology;
 import org.semanticweb.owlapi.model.OWLOntologyManager;
@@ -345,25 +346,25 @@ class ParenthesisTransparencyTest {
         // Parentheses collapse at parse time, so the storer never sees them and
         // writes the canonical spelling. What matters is that its output parses
         // back to the same axioms.
-        // No @prefix here, deliberately: names resolve to the DLe default
-        // namespace on both sides of the round trip. Declaring a custom default
-        // prefix would drag prefix handling into a test about role expressions —
-        // and the storer takes its prefix map from the ontology's recorded
-        // format, which a directly-invoked parser does not set.
-        String body = "⊤ ⊑ ∀ownerOrg.Org\n"
+        // Written with the document's own @prefix, which is the realistic case.
+        // This test previously avoided declaring one: the storer discarded the
+        // format the parser returned, so the prefix was dropped and every name
+        // silently moved to the DLe default namespace. That is fixed, and
+        // StorerPrefixTest covers it directly.
+        String body = PREFIX
+            + "⊤ ⊑ ∀ownerOrg.Org\n"
             + "Flagged ≡ Application ⊓ ¬∃consumedBy.(∃(ownerOrg⁻).Self)\n";
 
         OWLOntologyManager manager = OWLManager.createOWLOntologyManager();
         OWLOntology original = manager.createOntology();
-        new DLEOntologyParser().parse(
+        OWLDocumentFormat format = new DLEOntologyParser().parse(
             new StringDocumentSource(body), original,
             manager.getOntologyLoaderConfiguration());
         Set<OWLLogicalAxiom> originalAxioms = original.getLogicalAxioms();
         assertFalse(originalAxioms.isEmpty());
 
         ByteArrayOutputStream out = new ByteArrayOutputStream();
-        manager.saveOntology(original, new DLESyntaxDocumentFormat(),
-            new StreamDocumentTarget(out));
+        manager.saveOntology(original, format, new StreamDocumentTarget(out));
         String written = new String(out.toByteArray(), StandardCharsets.UTF_8);
 
         // The canonical output carries no redundant parentheses around the role.
@@ -381,5 +382,7 @@ class ParenthesisTransparencyTest {
 
         assertEquals(originalAxioms, reloaded.getLogicalAxioms(),
             "written DLe must parse back to the same axioms:\n" + written);
+        assertTrue(written.contains("@prefix : <http://example.org/t#>"),
+            "the document's own prefix must survive the round trip:\n" + written);
     }
 }
