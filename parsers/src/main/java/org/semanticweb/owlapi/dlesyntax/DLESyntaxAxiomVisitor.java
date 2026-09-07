@@ -889,7 +889,12 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
             String prefixLabel = text.substring(0, colon + 1); // "xsd:"
             String local       = text.substring(colon + 1);
             String base = prefixes.get(prefixLabel);
-            if (base == null) throw new IllegalStateException("Unknown prefix: " + prefixLabel);
+            if (base == null) {
+                // An undeclared prefix is a mistake in the document, not a bug here.
+                throw DLESemanticException.at(ctx,
+                    "unknown prefix '" + prefixLabel + "'. Declare it with "
+                        + "@prefix " + prefixLabel + " <namespace>, or check for a typo.");
+            }
             return IRI.create(base + local);
         }
         // Bare name — use default prefix ":"
@@ -1039,8 +1044,23 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
 
     private OWLClassExpression asClass(OWLObject obj) {
         if (obj instanceof OWLClassExpression) return (OWLClassExpression) obj;
-        String loc = currentLine > 0 ? " (line " + currentLine + ")" : "";
-        throw new IllegalStateException("Expected class expression, got: " + obj + loc);
+        // Reached when a well-formed expression puts something in a class
+        // position that cannot be a class — most often a datatype, e.g. an
+        // object-property restriction whose filler is xsd:integer. The scanner
+        // catches the common cases with a specific message; this is the backstop,
+        // and it must still read as a diagnostic rather than an internal error.
+        throw new DLESemanticException(
+            "expected a class expression here, but found " + describe(obj)
+                + ". A datatype can only be the filler of a data property restriction.",
+            currentLine, 0);
+    }
+
+    /** A short, author-facing description of an OWL object for error messages. */
+    private static String describe(OWLObject obj) {
+        if (obj == null) return "nothing";
+        if (obj instanceof OWLDatatype) return "the datatype " + obj;
+        if (obj instanceof OWLDataRange) return "the data range " + obj;
+        return String.valueOf(obj);
     }
 
     private OWLDataRange asDataRange(OWLObject obj) {
@@ -1056,7 +1076,12 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
                 return df.getOWLDatatype(iri);
             }
         }
-        throw new IllegalStateException("Expected data range, got: " + obj);
+        // A class where a datatype belongs — the mirror of asClass. Most often a
+        // property used with a datatype filler in one axiom and a class in another.
+        throw new DLESemanticException(
+            "expected a datatype or data range here, but found " + describe(obj)
+                + ". A class can only be the filler of an object property restriction.",
+            currentLine, 0);
     }
 
     private boolean isOWLThing(OWLObject obj) {
@@ -1121,7 +1146,7 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
             for (OWLFacet f : OWLFacet.values()) {
                 if (f.getIRI().equals(iri)) return f;
             }
-            throw new IllegalStateException("Unknown facet IRI: " + iri);
+            throw DLESemanticException.at(nameCtx, "unknown datatype facet <" + iri + ">");
         }
         return facetFromKeyword(nameCtx.getText());
     }
@@ -1139,7 +1164,9 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
             case "totalDigits":    return OWLFacet.TOTAL_DIGITS;
             case "fractionDigits": return OWLFacet.FRACTION_DIGITS;
             case "langRange":      return OWLFacet.LANG_RANGE;
-            default: throw new IllegalStateException("Unknown facet keyword: " + keyword);
+            default:
+                throw new DLESemanticException(
+                    "unknown datatype facet '" + keyword + "'", currentLine, 0);
         }
     }
 

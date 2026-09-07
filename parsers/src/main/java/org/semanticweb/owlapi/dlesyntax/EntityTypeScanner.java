@@ -2,6 +2,7 @@ package org.semanticweb.owlapi.dlesyntax;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -33,6 +34,18 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
     // or complex-expression subclass/equiv contexts).  Role propagation will not cross
     // these nodes, preventing the attribute hierarchy from bleeding into the concept hierarchy.
     private final Set<String> mustBeClass = new HashSet<>();
+
+    // Where each name was first used as an inverse role (r⁻). Only needed to
+    // report a location if that name also turns out to be a data property:
+    // inverting a data property is not expressible in OWL. See validate().
+    private final Map<String, DLESyntaxParser.PropertyExprContext> invertedRoleUse =
+        new LinkedHashMap<>();
+
+    // Inverse roles whose filler is a datatype. This is the conflict outright,
+    // and it has to be recorded separately: an inverse role is classified as an
+    // object property, so the datatype evidence never reaches dataPropertyNames.
+    private final Map<String, DLESyntaxParser.PropertyExprContext> datatypeFilledInverse =
+        new LinkedHashMap<>();
 
     Set<String> getObjectPropertyNames() { return objectPropertyNames; }
     Set<String> getDataPropertyNames()   { return dataPropertyNames; }
@@ -309,6 +322,45 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
 
     // ── Helpers ──────────────────────────────────────────────────────────────
 
+    /**
+     * Rejects documents that parse but cannot be expressed in OWL.
+     *
+     * <p>Run after {@link #propagatePropertyTypes()}, because a name can become a
+     * data property indirectly — through a sub-property axiom — and the conflict
+     * is only visible once classification has settled.
+     *
+     * <p>The one conflict checked here is a data property used as an inverse
+     * role. It is worth a dedicated diagnostic because the failure was otherwise
+     * an {@code IllegalStateException} escaping the axiom visitor, which told the
+     * author nothing about what was wrong with their document.
+     */
+    void validate() {
+        // An inverse role with a datatype filler: the contradiction is in the one
+        // expression, so no propagation is needed to see it.
+        for (Map.Entry<String, DLESyntaxParser.PropertyExprContext> use
+                : datatypeFilledInverse.entrySet()) {
+            throw inverseOfDataProperty(use.getKey(), use.getValue());
+        }
+        // Or the two halves are in different axioms, possibly only connected once
+        // sub-property classifications have propagated.
+        for (Map.Entry<String, DLESyntaxParser.PropertyExprContext> use
+                : invertedRoleUse.entrySet()) {
+            if (dataPropertyNames.contains(use.getKey())) {
+                throw inverseOfDataProperty(use.getKey(), use.getValue());
+            }
+        }
+    }
+
+    private static DLESemanticException inverseOfDataProperty(
+            String name, DLESyntaxParser.PropertyExprContext where) {
+        return DLESemanticException.at(where,
+            "'" + name + "' is used as an inverse role, but it is a data property. "
+                + "A data property cannot have an inverse: that would put a literal "
+                + "in the subject position of a triple. Either give '" + name
+                + "' a class as its range so it is an object property, or drop the "
+                + "inverse marker.");
+    }
+
     private void classifyRestriction(DLESyntaxParser.PropertyExprContext propCtx,
                                      DLESyntaxParser.PrimaryContext fillerCtx) {
         boolean data = isDataPrimary(fillerCtx);
@@ -336,6 +388,8 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
         if (PropertyExprs.isInverse(propCtx)) {
             // Inverse properties are always object properties
             objectPropertyNames.add(name);
+            invertedRoleUse.putIfAbsent(name, propCtx);
+            if (isData) datatypeFilledInverse.putIfAbsent(name, propCtx);
         } else {
             if (isData) {
                 // Data classification is definitive — remove any prior object classification.
