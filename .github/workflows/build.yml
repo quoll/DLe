@@ -48,6 +48,11 @@ jobs:
     # OWLAPI can discover the DLe parser and storer inside the fat jar — if that
     # merging breaks, every unit test still passes and the CLI silently stops
     # recognising its own format.
+    #
+    # It runs over every document in owltx/examples, which between them exercise
+    # far more of the language than any single file: predicate definitions,
+    # multi-role restrictions, datatype facets, keys, chains, parenthesised roles,
+    # ∃r.Self and the role-characteristic keywords.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -61,38 +66,66 @@ jobs:
       - name: Package
         run: mvn -B -ntp clean package -DskipTests
 
-      - name: owltx reads DLe and writes it back
+      # The build regenerates owltx/VERSION, which is tracked. If the committed
+      # value drifts from the POM version, every build leaves a dirty tree and
+      # the owltx launch script points at a JAR that was never built. Asserting
+      # the tree is unchanged catches that, and anything else the build writes
+      # into tracked files.
+      - name: The build does not modify tracked files
         run: |
-          set -euo pipefail
+          if ! git diff --exit-code; then
+            echo "::error::the build modified tracked files listed above"
+            exit 1
+          fi
+
+      - name: Every example converts, and every document round-trips
+        run: |
+          set -uo pipefail
           JAR=$(ls owltx/target/owltx-*.jar | grep -vE 'sources|javadoc' | head -1)
-          DOC=parsers/src/test/resources/data/wildlife-reserve-test.dle
           echo "using $JAR"
 
-          # DLe in, OWL functional syntax out.
-          java -jar "$JAR" --format functional "$DOC" > direct.ofn
-          grep -q '^EquivalentClasses' direct.ofn
-
-          # DLe in, DLe out, then read that back. Proves the storer was
-          # discovered and that what it writes is valid input.
-          java -jar "$JAR" "$DOC" round.dle
-          java -jar "$JAR" --format functional round.dle > roundtrip.ofn
-
-          # Compare axiom counts rather than diffing the text. Annotation
-          # literals in DLe can span lines and section comments re-attach when
-          # entities are written in canonical order, so a text diff reports
-          # layout churn as failure. Logical axiom preservation itself is
-          # asserted properly, over Set<OWLLogicalAxiom>, in
-          # WildlifeReserveIntegrationTest.
+          # Count top-level logical axioms. Not a text diff: annotation literals
+          # in DLe can span lines, and section comments re-attach to whichever
+          # entity follows them once entities are written in canonical order, so
+          # a diff reports layout churn as failure.
           count() {
-            grep -E '^[A-Za-z]+\(' "$1" \
-              | grep -vE '^(AnnotationAssertion|Declaration|Prefix|Ontology|Import)' \
-              | wc -l | tr -d ' '
+            grep -E '^[A-Za-z]+\(' "$1" 2>/dev/null \
+              | grep -vcE '^(AnnotationAssertion|Declaration|Prefix|Ontology|Import)' || true
           }
-          direct=$(count direct.ofn)
-          roundtrip=$(count roundtrip.ofn)
-          echo "axioms: direct=$direct round-tripped=$roundtrip"
-          test "$direct" -gt 100
-          test "$direct" = "$roundtrip"
+
+          failed=0
+          for doc in owltx/examples/*.dle owltx/examples/*.ttl; do
+            name=$(basename "$doc")
+
+            if ! java -jar "$JAR" --format functional "$doc" > direct.ofn 2> err.txt; then
+              echo "::error file=$doc::$name failed to convert"; sed 's/^/    /' err.txt
+              failed=1; continue
+            fi
+            direct=$(count direct.ofn)
+            if [ "$direct" -lt 5 ]; then
+              echo "::error file=$doc::$name produced only $direct axioms"
+              failed=1; continue
+            fi
+
+            # Write it as DLe and read that back. Proves the storer was
+            # discovered and that what it emits is valid input.
+            if ! java -jar "$JAR" "$doc" round.dle 2> err.txt; then
+              echo "::error file=$doc::$name failed to write as DLe"; sed 's/^/    /' err.txt
+              failed=1; continue
+            fi
+            if ! java -jar "$JAR" --format functional round.dle > roundtrip.ofn 2> err.txt; then
+              echo "::error file=$doc::the DLe written for $name does not parse"; sed 's/^/    /' err.txt
+              failed=1; continue
+            fi
+            roundtrip=$(count roundtrip.ofn)
+
+            if [ "$direct" != "$roundtrip" ]; then
+              echo "::error file=$doc::$name lost axioms through a DLe round trip: $direct -> $roundtrip"
+              failed=1; continue
+            fi
+            printf '  ok  %-30s %s axioms, round-trip stable\n' "$name" "$direct"
+          done
+          exit $failed
 
       - name: A malformed document fails with a diagnostic, not a stack trace
         run: |
@@ -107,4 +140,98 @@ jobs:
           # A leaked internal exception is a reporting bug, not a diagnostic.
           if grep -q 'IllegalStateException\|NullPointerException' out.txt; then
             echo "internal exception leaked to the user"; exit 1
+          fi
+
+  # Compares the parser's output before and after the change, over every example
+  # document. This is the check that gave confidence in the last two parser PRs,
+  # run by hand each time; the examples being committed is what lets CI do it.
+  #
+  # Advisory on purpose. A PR that changes output may be entirely correct — that
+  # is what a parser fix looks like — so failing the build here would cry wolf
+  # and teach everyone to ignore it. Instead it always succeeds and writes what
+  # it found to the run summary, where a reviewer sees "output unchanged" or a
+  # diff to think about.
+  regression:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the branch
+        uses: actions/checkout@v4
+        with:
+          path: head
+
+      - name: Check out the base of the pull request
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: base
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+
+      - name: Build both
+        run: |
+          set -euo pipefail
+          for side in base head; do
+            (cd "$side" && mvn -B -ntp -q clean package -DskipTests)
+          done
+
+      - name: Compare parser output
+        run: |
+          set -uo pipefail
+          base_jar=$(ls base/owltx/target/owltx-*.jar | grep -vE 'sources|javadoc' | head -1)
+          head_jar=$(ls head/owltx/target/owltx-*.jar | grep -vE 'sources|javadoc' | head -1)
+
+          # Both jars read the branch's copies of the documents, so what is being
+          # compared is the effect of the code change, not of edits to an example.
+          changed=()
+          unchanged=0
+          for doc in head/owltx/examples/*.dle head/owltx/examples/*.ttl; do
+            name=$(basename "$doc")
+            java -jar "$base_jar" --format functional "$doc" > "before-$name.ofn" 2>&1 || true
+            java -jar "$head_jar" --format functional "$doc" > "after-$name.ofn"  2>&1 || true
+            if diff -q "before-$name.ofn" "after-$name.ofn" > /dev/null 2>&1; then
+              unchanged=$((unchanged + 1))
+            else
+              changed+=("$name")
+            fi
+          done
+
+          {
+            echo "## Parser output comparison"
+            echo
+            echo "Base \`${{ github.event.pull_request.base.sha }}\` vs this branch, over \`owltx/examples\`."
+            echo
+            if [ ${#changed[@]} -eq 0 ]; then
+              echo "**No change.** All $unchanged documents produce byte-identical OWL functional syntax."
+            else
+              echo "**Output changed for ${#changed[@]} of $((unchanged + ${#changed[@]})) documents.** This may well be intended —"
+              echo "a parser fix is supposed to change output. Worth confirming the change is the one you meant."
+              echo
+              for name in "${changed[@]}"; do
+                echo "<details><summary><code>$name</code></summary>"
+                echo
+                echo '```diff'
+                # Unified, so it renders as a diff rather than as ed commands.
+                diff -u --label base --label branch \
+                  "before-$name.ofn" "after-$name.ofn" > "diff-$name.txt" || true
+                head -60 "diff-$name.txt"
+                total=$(wc -l < "diff-$name.txt" | tr -d ' ')
+                if [ "$total" -gt 60 ]; then
+                  echo "... $((total - 60)) further lines omitted; see the job log"
+                fi
+                echo '```'
+                echo
+                echo "</details>"
+              done
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [ ${#changed[@]} -eq 0 ]; then
+            echo "parser output unchanged across $unchanged documents"
+          else
+            echo "parser output changed for: ${changed[*]}"
           fi
