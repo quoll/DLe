@@ -1,0 +1,110 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  # A newer push to the same ref makes the in-flight run irrelevant.
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # 11 is the level the compiler targets (<release>11</release>), and until
+        # now nothing checked that the source actually compiles there. The rest
+        # are the LTS releases plus current, which is what contributors will have.
+        java: ["11", "17", "21", "25"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ matrix.java }}
+          cache: maven
+
+      # `clean` is not redundant on a fresh runner: it states that the build must
+      # not depend on prior output. Incremental Maven builds can reuse a stale
+      # shaded jar, which is exactly how a grammar change once appeared not to
+      # work while the tests said it did.
+      - name: Build and test
+        run: mvn -B -ntp clean verify
+
+  cli:
+    # The library is tested through its API by the unit tests. This checks the
+    # other deliverable: that the shaded owltx jar is actually assembled into
+    # something that works. The shade plugin merges META-INF/services so that
+    # OWLAPI can discover the DLe parser and storer inside the fat jar — if that
+    # merging breaks, every unit test still passes and the CLI silently stops
+    # recognising its own format.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+
+      - name: Package
+        run: mvn -B -ntp clean package -DskipTests
+
+      - name: owltx reads DLe and writes it back
+        run: |
+          set -euo pipefail
+          JAR=$(ls owltx/target/owltx-*.jar | grep -vE 'sources|javadoc' | head -1)
+          DOC=parsers/src/test/resources/data/wildlife-reserve-test.dle
+          echo "using $JAR"
+
+          # DLe in, OWL functional syntax out.
+          java -jar "$JAR" --format functional "$DOC" > direct.ofn
+          grep -q '^EquivalentClasses' direct.ofn
+
+          # DLe in, DLe out, then read that back. Proves the storer was
+          # discovered and that what it writes is valid input.
+          java -jar "$JAR" "$DOC" round.dle
+          java -jar "$JAR" --format functional round.dle > roundtrip.ofn
+
+          # Compare axiom counts rather than diffing the text. Annotation
+          # literals in DLe can span lines and section comments re-attach when
+          # entities are written in canonical order, so a text diff reports
+          # layout churn as failure. Logical axiom preservation itself is
+          # asserted properly, over Set<OWLLogicalAxiom>, in
+          # WildlifeReserveIntegrationTest.
+          count() {
+            grep -E '^[A-Za-z]+\(' "$1" \
+              | grep -vE '^(AnnotationAssertion|Declaration|Prefix|Ontology|Import)' \
+              | wc -l | tr -d ' '
+          }
+          direct=$(count direct.ofn)
+          roundtrip=$(count roundtrip.ofn)
+          echo "axioms: direct=$direct round-tripped=$roundtrip"
+          test "$direct" -gt 100
+          test "$direct" = "$roundtrip"
+
+      - name: A malformed document fails with a diagnostic, not a stack trace
+        run: |
+          set -uo pipefail
+          JAR=$(ls owltx/target/owltx-*.jar | grep -vE 'sources|javadoc' | head -1)
+          printf 'Animal \xe2\x8a\x91\n' > broken.dle
+          if java -jar "$JAR" broken.dle > out.txt 2>&1; then
+            echo "expected a non-zero exit for a malformed document"; cat out.txt; exit 1
+          fi
+          cat out.txt
+          grep -qi 'syntax error' out.txt
+          # A leaked internal exception is a reporting bug, not a diagnostic.
+          if grep -q 'IllegalStateException\|NullPointerException' out.txt; then
+            echo "internal exception leaked to the user"; exit 1
+          fi
