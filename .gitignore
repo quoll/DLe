@@ -29,3 +29,6 @@ target/
 
 # Avoid anyone's claude instructions
 CLAUDE.md
+
+# Local working notes, not part of the project
+CHANGES.md
