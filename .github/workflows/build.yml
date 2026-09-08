@@ -17,6 +17,7 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -48,7 +49,13 @@ jobs:
     # OWLAPI can discover the DLe parser and storer inside the fat jar — if that
     # merging breaks, every unit test still passes and the CLI silently stops
     # recognising its own format.
+    #
+    # It runs over every document in owltx/examples, which between them exercise
+    # far more of the language than any single file: predicate definitions,
+    # multi-role restrictions, datatype facets, keys, chains, parenthesised roles,
+    # ∃r.Self and the role-characteristic keywords.
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
 
@@ -61,50 +68,312 @@ jobs:
       - name: Package
         run: mvn -B -ntp clean package -DskipTests
 
-      - name: owltx reads DLe and writes it back
+      - name: Every example converts, and every document round-trips
         run: |
-          set -euo pipefail
+          # Deliberately fail-soft: every document is checked even if an earlier
+          # one fails. `set -e` cannot simply be omitted — the runner invokes this
+          # as `bash -e {0}` — so errexit is turned off explicitly.
+          set +e
+          set -uo pipefail
+          shopt -s nullglob
+
           JAR=$(ls owltx/target/owltx-*.jar | grep -vE 'sources|javadoc' | head -1)
-          DOC=parsers/src/test/resources/data/wildlife-reserve-test.dle
           echo "using $JAR"
 
-          # DLe in, OWL functional syntax out.
-          java -jar "$JAR" --format functional "$DOC" > direct.ofn
-          grep -q '^EquivalentClasses' direct.ofn
+          # Scratch files live outside the working tree, so that the cleanliness
+          # check at the end of this job needs no list of names to ignore.
+          WORK="${RUNNER_TEMP:-/tmp}/owltx-check"
+          rm -rf "$WORK"; mkdir -p "$WORK"
 
-          # DLe in, DLe out, then read that back. Proves the storer was
-          # discovered and that what it writes is valid input.
-          java -jar "$JAR" "$DOC" round.dle
-          java -jar "$JAR" --format functional round.dle > roundtrip.ofn
+          docs=(owltx/examples/*.dle owltx/examples/*.ttl)
+          if [ ${#docs[@]} -eq 0 ]; then
+            echo "::error::no example documents found — the glob matched nothing"
+            exit 1
+          fi
 
-          # Compare axiom counts rather than diffing the text. Annotation
-          # literals in DLe can span lines and section comments re-attach when
-          # entities are written in canonical order, so a text diff reports
-          # layout churn as failure. Logical axiom preservation itself is
-          # asserted properly, over Set<OWLLogicalAxiom>, in
-          # WildlifeReserveIntegrationTest.
-          count() {
-            grep -E '^[A-Za-z]+\(' "$1" \
-              | grep -vE '^(AnnotationAssertion|Declaration|Prefix|Ontology|Import)' \
-              | wc -l | tr -d ' '
+          # A per-keyword tally of logical axioms. A bare total cannot see a
+          # count-preserving corruption: rendering every `A ≡ B` as
+          # `SubClassOf(A B)` keeps the total identical, so the tally is compared
+          # instead. Restricted to the real OWL functional keywords, because a
+          # multi-line annotation literal can otherwise present a continuation
+          # line such as `Irref(connectsTo) above.")` as an axiom.
+          #
+          # sort/uniq rather than awk arrays: the runners have mawk, which has no
+          # asorti.
+          KEYWORDS='SubClassOf|EquivalentClasses|DisjointClasses|DisjointUnion'
+          KEYWORDS="$KEYWORDS|SubObjectPropertyOf|EquivalentObjectProperties"
+          KEYWORDS="$KEYWORDS|DisjointObjectProperties|InverseObjectProperties"
+          KEYWORDS="$KEYWORDS|ObjectPropertyDomain|ObjectPropertyRange"
+          KEYWORDS="$KEYWORDS|FunctionalObjectProperty|InverseFunctionalObjectProperty"
+          KEYWORDS="$KEYWORDS|ReflexiveObjectProperty|IrreflexiveObjectProperty"
+          KEYWORDS="$KEYWORDS|SymmetricObjectProperty|AsymmetricObjectProperty"
+          KEYWORDS="$KEYWORDS|TransitiveObjectProperty|SubDataPropertyOf"
+          KEYWORDS="$KEYWORDS|EquivalentDataProperties|DisjointDataProperties"
+          KEYWORDS="$KEYWORDS|DataPropertyDomain|DataPropertyRange|FunctionalDataProperty"
+          KEYWORDS="$KEYWORDS|DatatypeDefinition|HasKey|SameIndividual|DifferentIndividuals"
+          KEYWORDS="$KEYWORDS|ClassAssertion|ObjectPropertyAssertion"
+          KEYWORDS="$KEYWORDS|NegativeObjectPropertyAssertion|DataPropertyAssertion"
+          KEYWORDS="$KEYWORDS|NegativeDataPropertyAssertion|SubAnnotationPropertyOf"
+          KEYWORDS="$KEYWORDS|AnnotationPropertyDomain|AnnotationPropertyRange"
+
+          signature() {
+            grep -oE "^($KEYWORDS)\(" "$1" 2>/dev/null \
+              | tr -d '(' | sort | uniq -c | awk '{ print $2, $1 }'
           }
-          direct=$(count direct.ofn)
-          roundtrip=$(count roundtrip.ofn)
-          echo "axioms: direct=$direct round-tripped=$roundtrip"
-          test "$direct" -gt 100
-          test "$direct" = "$roundtrip"
+          total() { signature "$1" | awk '{ sum += $2 } END { print sum + 0 }'; }
+          annotations() { grep -c '^AnnotationAssertion(' "$1" || true; }
+
+          # Minimum axioms per document, so a parser that silently stops early is
+          # caught. A uniform floor of a handful would let wildlife-reserve-test
+          # fall from 242 to 6 and still pass.
+          floor_for() {
+            case "$1" in
+              wildlife-reserve-test.dle|w.ttl) echo 200 ;;
+              syntax-coverage.dle)             echo 70 ;;
+              bc-example.dle|bc-example.ttl|breast-cancer-example.ttl) echo 45 ;;
+              *)                               echo 5 ;;
+            esac
+          }
+
+          failed=0
+          for doc in "${docs[@]}"; do
+            name=$(basename "$doc")
+
+            if ! java -jar "$JAR" --format functional "$doc" > "$WORK/direct-$name.ofn" 2> "$WORK/err-$name.txt"; then
+              echo "::error file=$doc::$name failed to convert"
+              sed 's/^/    /' "$WORK/err-$name.txt"
+              failed=1; continue
+            fi
+
+            direct=$(total "$WORK/direct-$name.ofn")
+            floor=$(floor_for "$name")
+            if [ "$direct" -lt "$floor" ]; then
+              echo "::error file=$doc::$name produced $direct axioms, expected at least $floor"
+              failed=1; continue
+            fi
+
+            # Write it as DLe and read that back. Proves the storer was discovered
+            # and that what it emits is valid input.
+            if ! java -jar "$JAR" "$doc" "$WORK/round-$name.dle" 2> "$WORK/err-$name.txt"; then
+              echo "::error file=$doc::$name failed to write as DLe"
+              sed 's/^/    /' "$WORK/err-$name.txt"
+              failed=1; continue
+            fi
+            if ! java -jar "$JAR" --format functional "$WORK/round-$name.dle" > "$WORK/rt-$name.ofn" 2> "$WORK/err-$name.txt"; then
+              echo "::error file=$doc::the DLe written for $name does not parse"
+              sed 's/^/    /' "$WORK/err-$name.txt"
+              # The generated document is the evidence, and it is the only place
+              # the defect is visible; the annotation above can only point at the
+              # source example.
+              echo "    --- first 40 lines of round-$name.dle ---"
+              sed -n '1,40p' "$WORK/round-$name.dle" | sed 's/^/    /'
+              failed=1; continue
+            fi
+
+            # Round-trip fidelity is reported, not asserted, and the reason is
+            # worth stating: it does not hold today. Two pre-existing defects show
+            # up here — `#` comments are lost rather than merely re-attached, and
+            # some class subsumptions come back as sub-property axioms because the
+            # writer emits `a ⊑ b` for both and the reader's classifier has to
+            # guess. Failing on either would red the build on existing content and
+            # teach everyone to ignore it.
+            #
+            # What catches a *new* regression is the `regression` job, which
+            # compares this branch's output against the base's. This job's
+            # assertions are that every document converts, produces a plausible
+            # number of axioms, and that what the storer writes parses back.
+            notes=""
+            if ! diff -u <(signature "$WORK/direct-$name.ofn") <(signature "$WORK/rt-$name.ofn") \
+                 > "$WORK/sig-$name.diff" 2>/dev/null; then
+              notes="$notes  [logical axioms differ, see below]"
+            fi
+            before=$(annotations "$WORK/direct-$name.ofn")
+            after=$(annotations "$WORK/rt-$name.ofn")
+            if [ "$before" != "$after" ]; then
+              notes="$notes  [annotations $before -> $after]"
+            fi
+            printf '  ok  %-30s %s axioms%s\n' "$name" "$direct" "$notes"
+            if [ -s "$WORK/sig-$name.diff" ]; then
+              sed 's/^/        /' "$WORK/sig-$name.diff"
+            fi
+          done
+          exit $failed
 
       - name: A malformed document fails with a diagnostic, not a stack trace
         run: |
           set -uo pipefail
           JAR=$(ls owltx/target/owltx-*.jar | grep -vE 'sources|javadoc' | head -1)
-          printf 'Animal \xe2\x8a\x91\n' > broken.dle
-          if java -jar "$JAR" broken.dle > out.txt 2>&1; then
-            echo "expected a non-zero exit for a malformed document"; cat out.txt; exit 1
+          WORK="${RUNNER_TEMP:-/tmp}/owltx-check"; mkdir -p "$WORK"
+          printf 'Animal \xe2\x8a\x91\n' > "$WORK/broken.dle"
+          if java -jar "$JAR" "$WORK/broken.dle" > "$WORK/out.txt" 2>&1; then
+            echo "expected a non-zero exit for a malformed document"
+            cat "$WORK/out.txt"; exit 1
           fi
-          cat out.txt
-          grep -qi 'syntax error' out.txt
+          cat "$WORK/out.txt"
+          grep -qi 'syntax error' "$WORK/out.txt"
           # A leaked internal exception is a reporting bug, not a diagnostic.
-          if grep -q 'IllegalStateException\|NullPointerException' out.txt; then
+          if grep -q 'IllegalStateException\|NullPointerException' "$WORK/out.txt"; then
             echo "internal exception leaked to the user"; exit 1
           fi
+
+      # The build regenerates owltx/VERSION, which is tracked. If the committed
+      # value drifts from the POM version, every build leaves a dirty tree and the
+      # owltx launch script points at a JAR that was never built.
+      #
+      # `git status --porcelain` rather than `git diff`: the latter sees only
+      # modifications to tracked files, so a file the build *creates* in a module
+      # directory would slip past. The steps above keep their scratch files outside
+      # the working tree, so nothing needs excluding here.
+      #
+      # Placed last, and `if: always()`, so a stale generated file cannot mask the
+      # functional checks above by aborting the job before they run.
+      - name: The build leaves the working tree clean
+        if: always()
+        run: |
+          set -uo pipefail
+          dirty=$(git status --porcelain)
+          if [ -n "$dirty" ]; then
+            echo "::error::the build left the working tree dirty:"
+            echo "$dirty"
+            exit 1
+          fi
+          echo "working tree clean"
+
+  # Compares the parser's output before and after the change, over every example
+  # document, in both directions. This is the check that gave confidence in the
+  # last two parser PRs, run by hand each time.
+  #
+  # Advisory on purpose: it reports rather than fails. A PR that changes output may
+  # be entirely correct — that is what a parser fix looks like — so a red X here
+  # would cry wolf. `continue-on-error` makes that explicit rather than relying on
+  # every command happening to succeed.
+  regression:
+    if: github.event_name == 'pull_request'
+    continue-on-error: true
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out the branch
+        uses: actions/checkout@v4
+        with:
+          # The pull_request event's default ref is refs/pull/N/merge, which is
+          # recomputed against whatever main is at the time. Comparing that
+          # against pull_request.base.sha would attribute anything merged since
+          # the PR opened to this PR. The head commit is the branch itself.
+          ref: ${{ github.event.pull_request.head.sha }}
+          path: head
+
+      - name: Check out the base of the pull request
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: base
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+          # Without this the cache key hashes the poms of both checkouts, giving
+          # this job a key no other job can match and a second parallel cache
+          # entry that nothing else can read.
+          cache-dependency-path: head/**/pom.xml
+
+      - name: Build both
+        run: |
+          set -euo pipefail
+          for side in base head; do
+            echo "building $side"
+            (cd "$side" && mvn -B -ntp -q clean package -DskipTests)
+          done
+
+      - name: Compare parser output
+        run: |
+          set +e
+          set -uo pipefail
+          shopt -s nullglob
+
+          WORK="${RUNNER_TEMP:-/tmp}/owltx-compare"
+          rm -rf "$WORK"; mkdir -p "$WORK"
+
+          base_jar=$(ls base/owltx/target/owltx-*.jar | grep -vE 'sources|javadoc' | head -1)
+          head_jar=$(ls head/owltx/target/owltx-*.jar | grep -vE 'sources|javadoc' | head -1)
+
+          docs=(head/owltx/examples/*.dle head/owltx/examples/*.ttl)
+          if [ ${#docs[@]} -eq 0 ]; then
+            echo "no example documents found" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          # Both directions. Only a .dle input reaches the DLe *parser*, and the
+          # DLe *writer* is not exercised at all by a functional-syntax comparison,
+          # so comparing only that would leave the writer uncovered and four of the
+          # seven documents exercising nothing from this repository.
+          convert() { # jar, doc, format, out
+            java -jar "$1" --format "$3" "$2" > "$4" 2> "$4.err"
+          }
+
+          changed=()
+          unchanged=0
+          broken=()
+          for doc in "${docs[@]}"; do
+            name=$(basename "$doc")
+            for fmt in functional dle; do
+              b="$WORK/before-$fmt-$name"; h="$WORK/after-$fmt-$name"
+              # Diagnostics are kept out of the compared artifact. Folding them in
+              # makes two identical failures compare equal and report "no change".
+              convert "$base_jar" "$doc" "$fmt" "$b"; b_ok=$?
+              convert "$head_jar" "$doc" "$fmt" "$h"; h_ok=$?
+              if [ $b_ok -ne 0 ] || [ $h_ok -ne 0 ]; then
+                broken+=("$name ($fmt): base exit $b_ok, branch exit $h_ok")
+                continue
+              fi
+              if diff -q "$b" "$h" > /dev/null 2>&1; then
+                unchanged=$((unchanged + 1))
+              else
+                changed+=("$fmt/$name")
+              fi
+            done
+          done
+
+          {
+            echo "## Parser output comparison"
+            echo
+            echo "Base \`${{ github.event.pull_request.base.sha }}\` vs this branch."
+            echo "Every document in \`owltx/examples\`, converted to OWL functional syntax"
+            echo "and to DLe, so both the reader and the writer are covered."
+            echo
+            if [ ${#broken[@]} -gt 0 ]; then
+              echo "**${#broken[@]} comparisons could not be made** — a conversion failed:"
+              echo
+              for b in "${broken[@]}"; do echo "- \`$b\`"; done
+              echo
+            fi
+            if [ ${#changed[@]} -eq 0 ]; then
+              echo "**No change** in $unchanged comparisons."
+            else
+              echo "**Output changed in ${#changed[@]} of $((unchanged + ${#changed[@]})) comparisons.**"
+              echo "This may well be intended — a parser fix is supposed to change output."
+              echo "Worth confirming the change is the one you meant."
+              echo
+              for key in "${changed[@]}"; do
+                fmt="${key%%/*}"; name="${key#*/}"
+                echo "<details><summary><code>$key</code></summary>"
+                echo
+                echo '````diff'
+                diff -u --label base --label branch \
+                  "$WORK/before-$fmt-$name" "$WORK/after-$fmt-$name" \
+                  > "$WORK/d.txt" 2>/dev/null
+                head -60 "$WORK/d.txt"
+                lines=$(wc -l < "$WORK/d.txt" | tr -d ' ')
+                if [ "$lines" -gt 60 ]; then
+                  echo "... $((lines - 60)) further lines omitted"
+                fi
+                echo '````'
+                echo
+                echo "</details>"
+              done
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          echo "unchanged=$unchanged changed=${#changed[@]} broken=${#broken[@]}"
