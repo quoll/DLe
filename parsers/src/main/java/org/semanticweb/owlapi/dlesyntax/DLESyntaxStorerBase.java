@@ -89,6 +89,34 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
         }
     }
 
+    /**
+     * Writes a subject's {@code dle:comment} annotations as {@code #} lines.
+     *
+     * <p>Shared by the per-entity path and the predicate-definition path, because a
+     * predicate IRI is not an OWL entity: it never appears in the signature, so
+     * {@code beginWritingAxioms} is never called for it and its comments would
+     * otherwise be dropped. Returns whether anything was written.
+     *
+     * @return true if at least one comment line was emitted
+     */
+    private boolean writeComments(IRI subject, OWLOntology ontology, PrintWriter writer) {
+        if (writtenAnnotations == null) return false;
+        boolean[] wrote = {false};
+        // Each annotation may hold a multi-line block, joined with \n by the parser.
+        ontology.annotationAssertionAxioms(subject)
+            .filter(ax -> DLESyntaxAxiomVisitor.DLE_COMMENT_IRI.equals(ax.getProperty().getIRI()))
+            .sorted()
+            .forEach(ax -> {
+                if (writtenAnnotations.add(ax) && ax.getValue() instanceof OWLLiteral) {
+                    for (String line : ((OWLLiteral) ax.getValue()).getLiteral().split("\n", -1)) {
+                        writer.println("# " + line);
+                    }
+                    wrote[0] = true;
+                }
+            });
+        return wrote[0];
+    }
+
     @Override
     protected void beginWritingAxioms(OWLEntity entity, PrintWriter writer) {
         entityHadContent = false;
@@ -104,18 +132,9 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
         if (currentOntology == null || writtenAnnotations == null) return;
 
         // Emit dle:comment annotations as # lines before the entity's logical axioms.
-        // Each annotation may contain a multi-line block (lines joined with \n).
-        currentOntology.annotationAssertionAxioms(entity.getIRI())
-            .filter(ax -> DLESyntaxAxiomVisitor.DLE_COMMENT_IRI.equals(ax.getProperty().getIRI()))
-            .sorted()
-            .forEach(ax -> {
-                if (writtenAnnotations.add(ax) && ax.getValue() instanceof OWLLiteral) {
-                    for (String line : ((OWLLiteral) ax.getValue()).getLiteral().split("\n", -1)) {
-                        writer.println("# " + line);
-                    }
-                    entityHadContent = true;
-                }
-            });
+        if (writeComments(entity.getIRI(), currentOntology, writer)) {
+            entityHadContent = true;
+        }
 
         // Emit dle:inlineComment annotations as # lines (same treatment as dle:comment).
         currentOntology.annotationAssertionAxioms(entity.getIRI())
@@ -231,6 +250,13 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
                     && ((OWLLiteral) ax.getValue()).getLiteral().contains("\u2192"))
                 .forEach(ax -> {
                     if (writtenAnnotations.add(ax)) {
+                        // A predicate's own comments, before its definition — the
+                        // position they occupied in the source. Nothing else will
+                        // emit them: a predicate IRI is not an OWL entity, so it is
+                        // never passed to beginWritingAxioms.
+                        if (ax.getSubject() instanceof IRI) {
+                            writeComments((IRI) ax.getSubject(), ontology, writer);
+                        }
                         beginWritingAxiom(writer);
                         writeAxiom(null, ax, writer);
                         endWritingAxiom(writer);
