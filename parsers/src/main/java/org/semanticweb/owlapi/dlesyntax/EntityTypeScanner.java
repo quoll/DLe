@@ -35,6 +35,14 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
     // these nodes, preventing the attribute hierarchy from bleeding into the concept hierarchy.
     private final Set<String> mustBeClass = new HashSet<>();
 
+    // Names an `X ⊑ ⊤` statement declares to be classes.  Unlike the rest of
+    // mustBeClass such a name may still be a property: the writer emits that statement
+    // exactly for a name the source declared owl:Class and also used as a property
+    // parent, and a DLe document carries no other record of the pun.  So the name keeps
+    // whatever role classification the document gives it, but it does not pass that
+    // classification on to its super-names.  See propagatePropertyTypes().
+    private final Set<String> declaredClass = new HashSet<>();
+
     // Where each name was first used as an inverse role (r⁻). Only needed to
     // report a location if that name also turns out to be a data property:
     // inverting a data property is not expressible in OWL. See validate().
@@ -254,6 +262,12 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
         if (lhs != null && singleInverseAtom(ctx.classExpr(1)) != null) {
             objectPropertyNames.add(lhs);
         }
+        // X ⊑ ⊤ — X is declared a class.  It still falls into mustBeClass below, because
+        // ⊤ is not a bare name, so phase-1 propagation marks its ancestors; declaredClass
+        // records that the declaration says nothing about X not also being a property.
+        if (lhs != null && isTopClassExpr(ctx.classExpr(1))) {
+            declaredClass.add(lhs);
+        }
         // A ⊑ (complex) → A is definitively a class; (complex) ⊑ B → B is a class.
         // Exclude inverse-atom RHS/LHS since those are property expressions.
         if (lhs != null && rhs == null && singleInverseAtom(ctx.classExpr(1)) == null)
@@ -309,15 +323,30 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
                         changed |= objectPropertyNames.remove(sub);
                     }
                     // Object property propagation is blocked at mustBeClass nodes.
-                    if (objectPropertyNames.contains(sub) && !dataPropertyNames.contains(sup)
-                            && !mustBeClass.contains(sup))
+                    // Upward (sub → sup) also stops at a declared class: that is the
+                    // node where the two hierarchies meet, and going on past it turns
+                    // the concepts above into properties.
+                    if (objectPropertyNames.contains(sub) && !declaredClass.contains(sub)
+                            && !dataPropertyNames.contains(sup) && mayBeRole(sup))
                         changed |= objectPropertyNames.add(sup);
+                    // Downward (sup → sub) crosses it, because being the parent of
+                    // properties is what makes the declared class a pun in the first
+                    // place: whatever else it is, its sub-names are properties.
                     if (objectPropertyNames.contains(sup) && !dataPropertyNames.contains(sub)
-                            && !mustBeClass.contains(sub))
+                            && mayBeRole(sub))
                         changed |= objectPropertyNames.add(sub);
                 }
             }
         }
+    }
+
+    /**
+     * Whether role classification may settle on a name.  A name established as a class
+     * by use is closed to it, but one merely declared a class is not: the declaration is
+     * the writer's record of a pun, so the document's own role evidence still applies.
+     */
+    private boolean mayBeRole(String name) {
+        return declaredClass.contains(name) || !mustBeClass.contains(name);
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────
@@ -528,6 +557,10 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
 
     private boolean isBottomClassExpr(DLESyntaxParser.ClassExprContext ctx) {
         return Parens.atomOf(ctx) instanceof DLESyntaxParser.BottomAtomContext;
+    }
+
+    private boolean isTopClassExpr(DLESyntaxParser.ClassExprContext ctx) {
+        return Parens.atomOf(ctx) instanceof DLESyntaxParser.TopAtomContext;
     }
 
     /** Returns the InversePropertyAtomContext if the classExpr is just a single name⁻, else null. */

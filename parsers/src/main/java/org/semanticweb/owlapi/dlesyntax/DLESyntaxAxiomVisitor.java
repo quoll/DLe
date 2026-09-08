@@ -300,6 +300,17 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
                 (OWLDataPropertyExpression) lhs, (OWLDataPropertyExpression) rhs));
             return null;
         }
+        // X ⊑ ⊤ where X is a property: the writer's record of a name the source
+        // declared owl:Class and also used as a property. It says only that X is a
+        // class — SubClassOf(X, owl:Thing) is a tautology — so it becomes the class
+        // declaration it stands for, and a round trip neither gains nor loses an
+        // axiom. Written by hand for an ordinary class, X is not a property, and the
+        // subsumption is kept as it always was.
+        if (lhs instanceof OWLProperty && isOWLThing(rhs)) {
+            axioms.add(df.getOWLDeclarationAxiom(df.getOWLClass(((OWLProperty) lhs).getIRI())));
+            return null;
+        }
+
         // Mixed: one side is a named object property and the other resolved as a class.
         // This occurs at the boundary of dual-use hierarchies (e.g. SNOMED-CT attribute root).
         // Coerce the property side to a class so the class node keeps its class identity.

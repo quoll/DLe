@@ -20,11 +20,14 @@ import org.semanticweb.owlapi.model.AxiomType;
 import org.semanticweb.owlapi.model.IRI;
 import org.semanticweb.owlapi.model.OWLAnnotationAssertionAxiom;
 import org.semanticweb.owlapi.model.OWLAxiom;
+import org.semanticweb.owlapi.model.OWLClass;
+import org.semanticweb.owlapi.model.OWLDataFactory;
 import org.semanticweb.owlapi.model.OWLDeclarationAxiom;
 import org.semanticweb.owlapi.model.OWLDocumentFormat;
 import org.semanticweb.owlapi.model.OWLEntity;
 import org.semanticweb.owlapi.model.OWLLiteral;
 import org.semanticweb.owlapi.model.OWLOntologyID;
+import org.semanticweb.owlapi.model.OWLSubClassOfAxiom;
 import org.semanticweb.owlapi.formats.PrefixDocumentFormat;
 import org.semanticweb.owlapi.model.OWLOntology;
 import org.semanticweb.owlapi.util.DefaultPrefixManager;
@@ -205,6 +208,39 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
                 endWritingAxiom(writer);
             }
         });
+
+        writeClassPunMarker(entity, writer);
+    }
+
+    /**
+     * Writes {@code X ⊑ ⊤} for a name that is both a class and a property.
+     *
+     * <p>Nothing else in the document records the pun. Declaration axioms are suppressed,
+     * and {@code Y ⊑ X} is written for a sub-class and a sub-property alike, so a reader
+     * seeing a chain of them has to guess which hierarchy it is looking at. It guesses by
+     * following the role classification it can establish — {@code X} is the parent of a
+     * property, so {@code X} is a property, so {@code X}'s own parent is a property too —
+     * and in SNOMED-CT that walks straight up out of the attribute hierarchy and turns a
+     * branch of the concept hierarchy into object properties.
+     *
+     * <p>{@code X ⊑ ⊤} is how a DLe document already says a name is a class, and it is
+     * enough to stop the walk: {@code X} keeps the role classification the document earns
+     * it, and the classes above it keep theirs. Where the ontology asserts that
+     * subsumption itself the ordinary axiom path writes the same line, so nothing is
+     * added.
+     */
+    private void writeClassPunMarker(OWLEntity entity, PrintWriter writer) {
+        if (currentOntology == null || !entity.isOWLClass()) return;
+        IRI iri = entity.getIRI();
+        if (!currentOntology.containsObjectPropertyInSignature(iri)
+                && !currentOntology.containsDataPropertyInSignature(iri)) return;
+        OWLDataFactory df = currentOntology.getOWLOntologyManager().getOWLDataFactory();
+        OWLClass cls = entity.asOWLClass();
+        OWLSubClassOfAxiom marker = df.getOWLSubClassOfAxiom(cls, df.getOWLThing());
+        if (currentOntology.containsAxiom(marker)) return;
+        beginWritingAxiom(writer);
+        writeAxiom(null, marker, writer);
+        endWritingAxiom(writer);
     }
 
     @Override
