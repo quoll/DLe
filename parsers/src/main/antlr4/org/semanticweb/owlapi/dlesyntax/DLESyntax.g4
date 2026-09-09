@@ -178,6 +178,22 @@ literal
     | BOOL     # BoolLiteral
     ;
 
+// The case of a name's local part carries meaning: a name whose local part begins
+// with a lower-case letter is a role, and one beginning upper-case is a class.
+// This is long-standing DL practice, and DLe relies on it because `a ⊑ b` alone
+// cannot say which hierarchy the pair belongs to.
+//
+// Identifiers that carry no case signal — SNOMED CT's numeric ones, for instance —
+// and identifiers that are punned as both a class and a role state their kind with
+// existing vocabulary rather than new syntax:
+//
+//     X ⊑ ⊤                      X is a class
+//     X ⊑ owl:topObjectProperty   X is an object property
+//     X ⊑ owl:topDataProperty     X is a data property
+//
+// Both forms are ordinary subsumptions that were always legal and always true, so
+// nothing here extends the grammar; a name carrying both is punned.
+//
 // A name is either a bare local name or a prefix:local CURIE.
 // DOMAIN, RANGE and role-axiom keywords are also valid as entity names.
 name

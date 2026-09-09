@@ -88,6 +88,84 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
     }
 
     /**
+     * States what kind of thing a name is, where the reader could not otherwise tell.
+     *
+     * <p>DL writes class subsumption and sub-property subsumption identically as
+     * {@code a ⊑ b}, so a reader has to infer which hierarchy a pair belongs to. It manages
+     * on structure where there is any, and otherwise on the convention that concepts are
+     * capitalised and roles are not. Two situations defeat both, and only those two are
+     * written down:
+     *
+     * <ul>
+     *   <li>a <b>pun</b> — a name that is a class <em>and</em> a property, as SNOMED CT's
+     *       attribute roots are. Both statements are written; the pair is what marks it.</li>
+     *   <li>a name whose <b>case contradicts its kind</b> — a lower-case class, or a
+     *       capitalised property.</li>
+     * </ul>
+     *
+     * <p>A numeric local name, which SNOMED CT uses throughout, contradicts nothing, so it
+     * gets a statement only when punned. That keeps this quiet: across the nine example
+     * documents it writes exactly one line, for one name.
+     *
+     * <p>Both forms are existing DL and OWL: {@code X ⊑ ⊤} and
+     * {@code X ⊑ owl:topObjectProperty}. Nothing is added to the syntax, and both are
+     * tautologies, so a reader that ignores them loses nothing but the disambiguation.
+     *
+     * @return true if anything was written
+     */
+    private boolean writeKindStatements(OWLEntity entity, PrintWriter writer) {
+        if (currentOntology == null) return false;
+        IRI iri = entity.getIRI();
+        boolean isClass = currentOntology.containsClassInSignature(iri);
+        boolean isObjectProperty = currentOntology.containsObjectPropertyInSignature(iri);
+        boolean isDataProperty = currentOntology.containsDataPropertyInSignature(iri);
+        boolean isProperty = isObjectProperty || isDataProperty;
+
+        // Write each statement once, from whichever pass reaches the entity first.
+        if (!entity.isOWLClass() && !isProperty) return false;
+        if (entity.isOWLClass() && !isClass) return false;
+
+        String name = renderer.shortForm(iri);
+        boolean punned = isClass && isProperty;
+        // A name contradicts the convention only if its case actively says the wrong
+        // thing. A numeric local name — SNOMED CT's, for instance — says nothing either
+        // way, so it needs a statement only when punned. Testing `!startsUpperCase`
+        // instead would write a statement for every numeric class in the document: 56
+        // lines for one where a single pun is the only ambiguity.
+        boolean classContradictsCase = isClass && startsLowerCase(name);
+        boolean propertyContradictsCase = isProperty && startsUpperCase(name);
+
+        boolean wrote = false;
+        if (entity.isOWLClass() && (punned || classContradictsCase)) {
+            writer.println(name + " ⊑ ⊤");
+            wrote = true;
+        }
+        if (!entity.isOWLClass() && (punned || propertyContradictsCase)) {
+            writer.println(name + " ⊑ "
+                + (isDataProperty ? "owl:topDataProperty" : "owl:topObjectProperty"));
+            wrote = true;
+        }
+        return wrote;
+    }
+
+    /** Whether a name's local part begins with an upper-case letter. */
+    private static boolean startsUpperCase(String name) {
+        String local = localPartOf(name);
+        return !local.isEmpty() && Character.isUpperCase(local.charAt(0));
+    }
+
+    /** Whether a name's local part begins with a lower-case letter. */
+    private static boolean startsLowerCase(String name) {
+        String local = localPartOf(name);
+        return !local.isEmpty() && Character.isLowerCase(local.charAt(0));
+    }
+
+    private static String localPartOf(String name) {
+        int colon = name.lastIndexOf(':');
+        return colon < 0 ? name : name.substring(colon + 1);
+    }
+
+    /**
      * Writes a subject's {@code dle:comment} annotations as {@code #} lines.
      *
      * <p>Shared by the per-entity path and the predicate-definition path, because a
@@ -183,6 +261,10 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
 
         // Emit dle:comment annotations as # lines before the entity's logical axioms.
         if (writeComments(entity.getIRI(), currentOntology, writer)) {
+            entityHadContent = true;
+        }
+
+        if (writeKindStatements(entity, writer)) {
             entityHadContent = true;
         }
 

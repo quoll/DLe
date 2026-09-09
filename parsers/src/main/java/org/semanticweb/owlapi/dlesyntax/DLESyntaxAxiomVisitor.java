@@ -11,6 +11,8 @@ import java.util.stream.Collectors;
 import org.antlr.v4.runtime.CommonTokenStream;
 import org.antlr.v4.runtime.Token;
 import org.semanticweb.owlapi.model.*;
+
+import javax.annotation.Nullable;
 import org.semanticweb.owlapi.vocab.OWLFacet;
 import org.semanticweb.owlapi.vocab.OWLRDFVocabulary;
 
@@ -37,6 +39,8 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
     private final Set<String> objectPropertyNames;
     private final Set<String> dataPropertyNames;
     private final Set<String> predicateNames;
+    /** Names stated to be roles by {@code X ⊑ owl:topObjectProperty}; see visitSubClassAxiom. */
+    private final Set<String> explicitRoleNames;
     /** Token stream used to retrieve hidden comment tokens; null means comments are not captured. */
     private final CommonTokenStream tokenStream;
 
@@ -65,11 +69,13 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
                           Set<String> objectPropertyNames,
                           Set<String> dataPropertyNames,
                           Set<String> predicateNames,
+                          Set<String> explicitRoleNames,
                           CommonTokenStream tokenStream) {
         this.df = df;
         this.objectPropertyNames = objectPropertyNames;
         this.dataPropertyNames   = dataPropertyNames;
         this.predicateNames      = predicateNames;
+        this.explicitRoleNames   = explicitRoleNames;
         this.tokenStream         = tokenStream;
     }
 
@@ -218,6 +224,19 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
 
     @Override
     public OWLObject visitSubClassAxiom(DLESyntaxParser.SubClassAxiomContext ctx) {
+        // The two kind statements, consumed rather than turned into axioms.
+        //
+        // `X ⊑ owl:topObjectProperty` and `X ⊑ owl:topDataProperty` say what kind of thing
+        // X is, for a name whose kind cannot be inferred: a pun, or one that breaks the
+        // convention that concepts are capitalised. Both are tautologies in OWL — every
+        // object property is a sub-property of owl:topObjectProperty — so emitting them as
+        // axioms would add nothing and accumulate on every round trip.
+        //
+        // `X ⊑ ⊤` is only consumed when X is *also* stated to be a role, i.e. when the pair
+        // marks a pun. On its own it stays the ordinary subsumption it has always been,
+        // which is what leaves untouched the corpus documents that open with it.
+        if (consumeKindStatement(ctx)) return null;
+
         // DisjointObjectProperties / DisjointDataProperties: p ⊓ q ⊑ ⊥
         // Must be detected from parse tree before visiting, to avoid asClass() failure.
         List<DLESyntaxParser.NameContext> disjointNames = allIntersectedNameCtxs(ctx.classExpr(0));
@@ -882,6 +901,19 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
     }
 
     /** Expands a name context to a full IRI using the prefix map. */
+    /** Expands a name given as text, for the kind statements. */
+    private IRI expandName(String text) {
+        int colon = text.indexOf(':');
+        if (colon >= 0) {
+            String base = prefixes.get(text.substring(0, colon + 1));
+            if (base == null) {
+                throw new DLESemanticException("unknown prefix in '" + text + "'", currentLine, 0);
+            }
+            return IRI.create(base + text.substring(colon + 1));
+        }
+        return IRI.create(prefixes.get(":") + text);
+    }
+
     private IRI expandName(DLESyntaxParser.NameContext ctx) {
         String text = ctx.getText();
         if (ctx.PREFIXED_NAME() != null) {
@@ -1040,6 +1072,57 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
 
     private DLESyntaxParser.NameContext propCtxName(DLESyntaxParser.PropertyExprContext ctx) {
         return PropertyExprs.coreName(ctx);
+    }
+
+    /**
+     * Consumes `X ⊑ owl:topObjectProperty`, `X ⊑ owl:topDataProperty` and — for a punned
+     * name only — `X ⊑ ⊤`, recording a declaration instead of a subsumption.
+     *
+     * @return true when the statement was handled and should produce no axiom
+     */
+    private boolean consumeKindStatement(DLESyntaxParser.SubClassAxiomContext ctx) {
+        String lhs = loneName(ctx.classExpr(0));
+        if (lhs == null) return false;
+        String rhs = loneName(ctx.classExpr(1));
+
+        if (TOP_OBJECT_PROPERTY.equals(rhs)) {
+            axioms.add(df.getOWLDeclarationAxiom(df.getOWLObjectProperty(expandName(lhs))));
+            return true;
+        }
+        if (TOP_DATA_PROPERTY.equals(rhs)) {
+            axioms.add(df.getOWLDeclarationAxiom(df.getOWLDataProperty(expandName(lhs))));
+            return true;
+        }
+        // `X ⊑ ⊤` is consumed as a class declaration in exactly two cases: a punned name,
+        // and a name whose local part does not begin with a capital, which is the writer's
+        // way of saying "a class, despite how this reads". For a capitalised name it stays
+        // the ordinary subsumption it has always been — which is what leaves untouched the
+        // corpus documents that open their blocks with it.
+        if (Parens.atomOf(ctx.classExpr(1)) instanceof DLESyntaxParser.TopAtomContext
+                && (explicitRoleNames.contains(lhs) || !startsUpperCase(lhs))) {
+            axioms.add(df.getOWLDeclarationAxiom(df.getOWLClass(expandName(lhs))));
+            return true;
+        }
+        return false;
+    }
+
+    /** Whether a name's local part begins with an upper-case letter. */
+    private static boolean startsUpperCase(String name) {
+        int colon = name.lastIndexOf(':');
+        String local = colon < 0 ? name : name.substring(colon + 1);
+        return !local.isEmpty() && Character.isUpperCase(local.charAt(0));
+    }
+
+    private static final String TOP_OBJECT_PROPERTY = "owl:topObjectProperty";
+    private static final String TOP_DATA_PROPERTY   = "owl:topDataProperty";
+
+    /** The text of a classExpr that is nothing but a single name, else null. */
+    @Nullable
+    private String loneName(DLESyntaxParser.ClassExprContext ctx) {
+        DLESyntaxParser.AtomContext atom = Parens.atomOf(ctx);
+        return atom instanceof DLESyntaxParser.NameAtomContext
+            ? ((DLESyntaxParser.NameAtomContext) atom).name().getText()
+            : null;
     }
 
     private OWLClassExpression asClass(OWLObject obj) {
