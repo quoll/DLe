@@ -151,6 +151,44 @@ class DigitInitialNameTest {
             () -> "the error should explain the restriction: " + thrown.getMessage());
     }
 
+    /**
+     * Only ASCII digits get the colon. {@code Character.isDigit} is true for the whole
+     * Unicode Nd category, while {@code DEFAULT_NAME : ':' [0-9] NameChar*} accepts only
+     * ASCII, so a name like {@code ٠x} was written {@code :٠x} — which the lexer rejects,
+     * although the bare form was legal and round-tripped before.
+     */
+    @Test
+    void aNonAsciiDigitKeepsItsBareForm() throws Exception {
+        String written = write(parse(PREFIX + "٤x ⊑ Dog\n０y ⊑ Dog\n"));
+        assertTrue(written.contains("٤x ⊑ Dog"), () -> "expected a bare name in\n" + written);
+        assertFalse(written.contains(":٤x"), () -> "that does not lex:\n" + written);
+        assertTrue(parse(written).ontology.containsClassInSignature(IRI.create(NS + "٤x")),
+            "and the written document must still parse");
+    }
+
+    /**
+     * The whole local part is checked, not just its first character. A dot is not a name
+     * character, so {@code 1.Dog} has no prefixed spelling either; writing {@code :1.Dog}
+     * produced a document that parsed as a restriction over a property {@code 1} — a
+     * different ontology, silently. Keeping the bare form fails loudly instead.
+     */
+    @Test
+    void aLocalPartWithNoLegalSpellingIsNotGivenAColon() throws Exception {
+        OWLOntologyManager manager = OWLManager.createOWLOntologyManager();
+        OWLOntology o = manager.createOntology(IRI.create("http://example.org/t"));
+        OWLDataFactory df = manager.getOWLDataFactory();
+        manager.addAxiom(o, df.getOWLSubClassOfAxiom(
+            df.getOWLClass(IRI.create(NS + "1.Dog")), df.getOWLClass(IRI.create(NS + "Cat"))));
+        DLESyntaxDocumentFormat format = new DLESyntaxDocumentFormat();
+        format.setDefaultPrefix(NS);
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        manager.saveOntology(o, format, new StreamDocumentTarget(out));
+        String written = new String(out.toByteArray(), StandardCharsets.UTF_8);
+
+        assertFalse(written.contains(":1.Dog"),
+            () -> "a colon here reads back as a restriction, not this class:\n" + written);
+    }
+
     // ── What must not change ────────────────────────────────────────────────
 
     @Test

@@ -277,11 +277,13 @@ PREFIXED_NAME : NameStart NameChar* ':' (NameStart | [0-9]) NameChar* ;
 // and PREFIXED_NAME requires a NameStart before the colon, so the prefix cannot be
 // empty. Turtle permits a digit-initial local part, so such names do arrive.
 //
-// Only digits are admitted after the colon. Anything a bare NAME can already spell
-// keeps its bare form, so this adds no second spelling for an existing name.
-// Longest-match keeps it apart from PNAME_NS: `:1` matches two characters here and
-// one there, while the `:` of an `@prefix :` declaration is followed by a space and
-// cannot match this at all.
+// A digit is required immediately after the colon; the rest is ordinary name characters.
+// A bare NAME must start with NameStart, which excludes digits, so the two token languages
+// are disjoint and this adds no second spelling for a name that already had one.
+//
+// It cannot collide with PNAME_NS, which appears in exactly one rule — prefixDecl — where
+// the colon is always followed by whitespace or `<`, never a digit. (Longest-match settles
+// it in any case: `:1` matches two characters here and one as PNAME_NS.)
 DEFAULT_NAME : ':' [0-9] NameChar* ;
 
 // Bare local name

@@ -164,8 +164,41 @@ public class DLESyntaxObjectRenderer extends DLSyntaxObjectRenderer {
     private static String stripDefaultPrefix(String curie) {
         if (!curie.startsWith(":")) return curie;
         String local = curie.substring(1);
-        if (!local.isEmpty() && Character.isDigit(local.charAt(0))) return curie;
-        return local;
+        return spellableOnlyWithPrefix(local) ? curie : local;
+    }
+
+    /**
+     * Whether a default-namespace local part needs its colon kept, i.e. it is a legal
+     * {@code DEFAULT_NAME} but not a legal bare {@code NAME}.
+     *
+     * <p>{@code DEFAULT_NAME : ':' [0-9] NameChar*} — an ASCII digit, then name characters.
+     * {@code Character.isDigit} is not the right test: it is true for the whole Unicode Nd
+     * category, so a name like {@code ٠x} (Arabic-Indic zero) was written {@code :٠x}, which
+     * the lexer rejects, even though the bare form was legal and round-tripped before.
+     *
+     * <p>The rest of the local part is checked too. Only {@code charAt(0)} was, so
+     * {@code 1.Dog} was written {@code :1.Dog} — a dot is not a name character — and read
+     * back as a restriction over a property {@code 1}, silently becoming a different
+     * ontology. Returning false here keeps the bare form, which fails loudly instead.
+     */
+    private static boolean spellableOnlyWithPrefix(String local) {
+        if (local.isEmpty() || local.charAt(0) < '0' || local.charAt(0) > '9') return false;
+        for (int i = 1; i < local.length(); i++) {
+            if (!isNameChar(local.charAt(i))) return false;
+        }
+        return true;
+    }
+
+    /** {@code NameChar} from the grammar: {@code NameStart | [0-9] | '-'}. */
+    private static boolean isNameChar(char c) {
+        if (c >= '0' && c <= '9') return true;
+        if (c == '-' || c == '_') return true;
+        if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')) return true;
+        return (c >= '\u00C0' && c <= '\u02FF') || (c >= '\u0370' && c <= '\u037D')
+            || (c >= '\u037F' && c <= '\u1FFF') || (c >= '\u200C' && c <= '\u200D')
+            || (c >= '\u2070' && c <= '\u207A') || (c >= '\u207C' && c <= '\u218F')
+            || (c >= '\u2C00' && c <= '\u2FEF') || (c >= '\u3001' && c <= '\uD7FF')
+            || (c >= '\uF900' && c <= '\uFDCF') || (c >= '\uFDF0' && c <= '\uFFFD');
     }
 
     /**
