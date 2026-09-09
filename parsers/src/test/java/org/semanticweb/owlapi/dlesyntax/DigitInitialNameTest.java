@@ -138,6 +138,19 @@ class DigitInitialNameTest {
                    () -> "the written document must parse:\n" + written);
     }
 
+    /**
+     * {@code :1} parses but {@code :A} does not, because only a digit-initial local part
+     * has no bare spelling. ANTLR reports an unexpected ':' and lists the token names,
+     * which does not explain the asymmetry, so the message says so.
+     */
+    @Test
+    void aLeadingColonOnANonDigitNameExplainsItself() {
+        Exception thrown = assertThrows(Exception.class,
+            () -> parse(PREFIX + ":A ⊑ ⊤\n"));
+        assertTrue(thrown.getMessage().contains("begins with a digit"),
+            () -> "the error should explain the restriction: " + thrown.getMessage());
+    }
+
     // ── What must not change ────────────────────────────────────────────────
 
     @Test
