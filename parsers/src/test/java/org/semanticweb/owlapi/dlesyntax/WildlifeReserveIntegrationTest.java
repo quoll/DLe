@@ -75,28 +75,11 @@ class WildlifeReserveIntegrationTest {
         Set<OWLLogicalAxiom> reloadedAxioms = reloaded.getLogicalAxioms();
         assertFalse(reloadedAxioms.isEmpty(), "Reloaded ontology must contain logical axioms");
 
-        // Nothing may be lost. This is the assertion that matters.
-        Set<OWLLogicalAxiom> lost = new HashSet<>(originalAxioms);
-        lost.removeAll(reloadedAxioms);
-        assertEquals(Set.of(), lost, "Round-tripping must not lose a logical axiom");
-
-        // Anything gained must be a `SubClassOf(X, owl:Thing)`, and nothing else.
-        //
-        // A class whose name is not capitalised is written `X ⊑ ⊤`, without which the
-        // reader would take it for a role — two lower-case names either side of a `⊑` are
-        // otherwise read as a sub-property pair. On the way back in that line becomes the
-        // subsumption it literally is, so the ontology gains a tautology that is already
-        // entailed by the declaration beside it. The alternative was to consume the line
-        // as a declaration, which reads identically but destroys the same axiom when an
-        // author wrote it deliberately, and makes writing non-idempotent. Gaining a
-        // vacuous axiom is the cheaper of the two.
-        Set<OWLLogicalAxiom> gained = new HashSet<>(reloadedAxioms);
-        gained.removeAll(originalAxioms);
-        Set<OWLLogicalAxiom> unexpected = gained.stream()
-            .filter(ax -> !(ax instanceof OWLSubClassOfAxiom
-                && ((OWLSubClassOfAxiom) ax).getSuperClass().isOWLThing()))
-            .collect(Collectors.toSet());
-        assertEquals(Set.of(), unexpected,
-            "the only axioms a round trip may add are ⊤ subsumptions");
+        // Strict equality. This was relaxed for a while to tolerate `SubClassOf(X, owl:Thing)`
+        // axioms the writer's own class markers turned into real ones on the way back in.
+        // The markers are now emitted only where a reader would actually misread the name,
+        // so the round trip gains nothing and the strong assertion holds again.
+        assertEquals(originalAxioms, reloadedAxioms,
+            "Round-tripped ontology must have the same logical axioms as the original");
     }
 }

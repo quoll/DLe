@@ -25,8 +25,8 @@ import org.semanticweb.owlapi.model.OWLSubObjectPropertyOfAxiom;
  * annotated and some are not, only the unannotated ones are pushed; X stays dual-declared
  * because the annotated children still reference it as an object property.
  *
- * <p>A name whose kind the document <em>stated</em> — {@code X ⊑ ⊤} together with
- * {@code X ⊑ owl:topObjectProperty} — is left alone. Those statements exist precisely to
+ * <p>A name whose kind the document <em>stated</em> — with {@code X ⊑ owl:topObjectProperty}
+ * or {@code X ⊑ owl:topDataProperty}, at either end of the axiom — is left alone. Those statements exist precisely to
  * say "this name is punned, here", and pushing the pun down to the children would undo
  * them. Without this exemption the disambiguation only survives for children that happen
  * to carry an annotation, which made the whole mechanism work on labelled documents such
@@ -71,6 +71,11 @@ class DualDeclarationResolver {
                     .filter(a -> a.getSubProperty().isNamed())
                     .filter(a -> !ontology.annotationAssertionAxioms(
                         a.getSubProperty().getNamedProperty().getIRI()).findAny().isPresent())
+                    // A child whose own kind the document stated is not guessed at either.
+                    // Exempting only the parent left the annotation heuristic deciding
+                    // whether an explicit statement was honoured.
+                    .filter(a -> !statedKinds.contains(
+                        a.getSubProperty().getNamedProperty().getIRI()))
                     .collect(Collectors.toList());
 
                 for (OWLSubObjectPropertyOfAxiom axiom : toSwap) {

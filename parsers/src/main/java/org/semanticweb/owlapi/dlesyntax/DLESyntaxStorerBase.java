@@ -16,6 +16,12 @@ import java.util.Set;
 import javax.annotation.Nullable;
 
 import org.semanticweb.owlapi.dlsyntax.renderer.DLSyntaxStorerBase;
+import org.semanticweb.owlapi.model.OWLDataFactory;
+import org.semanticweb.owlapi.model.OWLSubClassOfAxiom;
+import org.semanticweb.owlapi.vocab.OWLRDFVocabulary;
+import java.util.stream.Stream;
+
+import org.semanticweb.owlapi.model.OWLClass;
 import org.semanticweb.owlapi.model.AxiomType;
 import org.semanticweb.owlapi.model.IRI;
 import org.semanticweb.owlapi.model.OWLAnnotationAssertionAxiom;
@@ -104,8 +110,8 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
      * </ul>
      *
      * <p>A numeric local name, which SNOMED CT uses throughout, contradicts nothing, so it
-     * gets a statement only when punned. That keeps this quiet: across the nine example
-     * documents it writes exactly one line, for one name.
+     * gets a statement only when punned. That keeps this quiet: across the seven example
+     * documents it writes two lines, both for the one punned SNOMED CT identifier.
      *
      * <p>Both forms are existing DL and OWL: {@code X ⊑ ⊤} and
      * {@code X ⊑ owl:topObjectProperty}. Nothing is added to the syntax, and both are
@@ -132,25 +138,114 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
 
         String name = renderer.shortForm(iri);
         boolean punned = isClass && isProperty;
+        // A class directly beneath a pun needs marking too. Role classification crosses a
+        // pun downward — that is what makes SNOMED CT's attribute children roles — so a
+        // child meant as a concept is read as a role unless the document says otherwise.
+        // `Child ⊑ ⊤` puts it beyond reach, using the same mechanism as everything else here.
+        boolean classUnderPun = isClass && !punned && subsumedByAPun(iri);
         // A name contradicts the convention only if its case actively says the wrong
         // thing. A numeric local name — SNOMED CT's, for instance — says nothing either
         // way, so it needs a statement only when punned. Testing `!startsUpperCase`
         // instead would write a statement for every numeric class in the document: 56
         // lines for one where a single pun is the only ambiguity.
-        boolean classContradictsCase = isClass && startsLowerCase(name);
+        // A lower-case class only needs marking when a reader would actually get it wrong.
+        // What gets it wrong is the sub-property heuristic: two lower-case names either side
+        // of a `⊑` are read as a role pair. Anywhere else the name is already pinned as a
+        // class by its own axioms, and marking it added a vacuous `SubClassOf(X, owl:Thing)`
+        // on the way back in for nothing — which is the whole of the round-trip cost this
+        // mechanism used to carry.
+        boolean classContradictsCase = isClass && startsLowerCase(name) && inALowerCasePair(iri);
         boolean propertyContradictsCase = isProperty && startsUpperCase(name);
 
         boolean wrote = false;
-        if (entity.isOWLClass() && (punned || classContradictsCase) && !thingSubsumptionExists(iri)) {
+        if (entity.isOWLClass() && (punned || classContradictsCase || classUnderPun)
+                && !thingSubsumptionExists(iri)) {
             writer.println(name + " ⊑ ⊤");
             wrote = true;
         }
+        // The kind is taken from the entity being written, not from the signature. Reading
+        // it from the signature meant an IRI that is both an object and a data property had
+        // `owl:topDataProperty` written by both passes — twice, with the object statement
+        // never written at all, and the result did not parse.
         if (isPropertyEntity && (punned || propertyContradictsCase)) {
-            writer.println(name + " ⊑ "
-                + (isDataProperty ? "owl:topDataProperty" : "owl:topObjectProperty"));
-            wrote = true;
+            boolean data = entity.isOWLDataProperty();
+            String top = topPropertyName(data);
+            if (top != null && !topSubPropertyExists(iri, data)) {
+                writer.println(name + " ⊑ " + top);
+                wrote = true;
+            }
         }
         return wrote;
+    }
+
+    /**
+     * The name to write for a top property, or null if this document cannot spell it.
+     *
+     * <p>Rendered through the prefix manager rather than hard-coded as {@code "owl:…"}. The
+     * reader resolves these to IRIs precisely because a document may bind {@code owl:} to
+     * some other namespace; writing the literal text in such a document produced a line that
+     * meant a different entity, and the round trip both lost axioms and gained invented ones.
+     *
+     * <p>Null when no declared prefix maps to the OWL namespace — the statement is then
+     * inexpressible, and writing something that resolves elsewhere would be worse than
+     * writing nothing.
+     */
+    @Nullable
+    private String topPropertyName(boolean data) {
+        IRI iri = data ? OWLRDFVocabulary.OWL_TOP_DATA_PROPERTY.getIRI()
+                       : OWLRDFVocabulary.OWL_TOP_OBJECT_PROPERTY.getIRI();
+        String rendered = renderer.shortForm(iri);
+        // shortForm falls back to the bare local part when nothing matches, and a bare name
+        // resolves into the default namespace on the way back in.
+        return rendered != null && rendered.indexOf(':') > 0 ? rendered : null;
+    }
+
+    /**
+     * Whether the ontology already states {@code X ⊑ owl:top…Property}, which the ordinary
+     * axiom renderer writes as the identical line — the property-side counterpart of
+     * {@link #thingSubsumptionExists}. Without it the statement was written twice, and the
+     * duplicate collapsed on the next write, so writing was not idempotent.
+     */
+    private boolean topSubPropertyExists(IRI iri, boolean data) {
+        if (data) {
+            return currentOntology.axioms(AxiomType.SUB_DATA_PROPERTY)
+                .anyMatch(ax -> !ax.getSubProperty().isAnonymous()
+                    && iri.equals(ax.getSubProperty().asOWLDataProperty().getIRI())
+                    && ax.getSuperProperty().isOWLTopDataProperty());
+        }
+        return currentOntology.axioms(AxiomType.SUB_OBJECT_PROPERTY)
+            .anyMatch(ax -> !ax.getSubProperty().isAnonymous()
+                && iri.equals(ax.getSubProperty().getNamedProperty().getIRI())
+                && ax.getSuperProperty().isOWLTopObjectProperty());
+    }
+
+    /**
+     * Whether this class sits either side of a name-to-name subsumption whose other side
+     * also lacks an upper-case signal — the shape the reader's sub-property heuristic
+     * claims. Only then does a lower-case class need to say it is one.
+     */
+    private boolean inALowerCasePair(IRI iri) {
+        OWLDataFactory df = currentOntology.getOWLOntologyManager().getOWLDataFactory();
+        OWLClass cls = df.getOWLClass(iri);
+        return Stream.concat(
+                currentOntology.subClassAxiomsForSubClass(cls)
+                    .map(OWLSubClassOfAxiom::getSuperClass),
+                currentOntology.subClassAxiomsForSuperClass(cls)
+                    .map(OWLSubClassOfAxiom::getSubClass))
+            .filter(other -> !other.isAnonymous())
+            .anyMatch(other -> !startsUpperCase(
+                renderer.shortForm(other.asOWLClass().getIRI())));
+    }
+
+    /** Whether this class is a direct sub-class of a name that is both a class and a property. */
+    private boolean subsumedByAPun(IRI iri) {
+        OWLDataFactory df = currentOntology.getOWLOntologyManager().getOWLDataFactory();
+        return currentOntology.subClassAxiomsForSubClass(df.getOWLClass(iri))
+            .map(OWLSubClassOfAxiom::getSuperClass)
+            .filter(sup -> !sup.isAnonymous())
+            .map(sup -> sup.asOWLClass().getIRI())
+            .anyMatch(sup -> currentOntology.containsObjectPropertyInSignature(sup)
+                || currentOntology.containsDataPropertyInSignature(sup));
     }
 
     /**
@@ -159,10 +254,11 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
      * check both sources fire and the statement is written twice.
      */
     private boolean thingSubsumptionExists(IRI iri) {
-        return currentOntology.axioms(AxiomType.SUBCLASS_OF)
-            .anyMatch(ax -> !ax.getSubClass().isAnonymous()
-                && iri.equals(ax.getSubClass().asOWLClass().getIRI())
-                && ax.getSuperClass().isOWLThing());
+        // Indexed by sub-class. Streaming every SUBCLASS_OF axiom per candidate made writing
+        // quadratic — 190s for 100 000 lower-case-named classes against 2s before.
+        OWLDataFactory df = currentOntology.getOWLOntologyManager().getOWLDataFactory();
+        return currentOntology.subClassAxiomsForSubClass(df.getOWLClass(iri))
+            .anyMatch(ax -> ax.getSuperClass().isOWLThing());
     }
 
     /** Whether a name's local part begins with an upper-case letter. */

@@ -79,6 +79,186 @@ class PunnedNameTest {
         + "n:7 ⊑ n:8\n"
         + "n:8 ⊑ n:9\n";
 
+    // ── A pun must be usable, not merely declarable ─────────────────────────
+
+    /**
+     * The pun's class side must work in a class position.
+     *
+     * <p>This is the whole point and it did not work: a name resolves to one kind, so once
+     * {@code X ⊑ owl:topObjectProperty} classified it a role it was a role everywhere, and
+     * {@code ∃r.X} — the ordinary way a class gets used — rejected the entire document.
+     * Stating the pun was the thing that broke the pun. The writer emitted such documents,
+     * so the tool produced DLe it could not read.
+     */
+    @Test
+    void aPunWorksAsAClassFiller() throws Exception {
+        OWLOntology o = parse(PREFIX
+            + "Attr ⊑ ⊤\n"
+            + "Attr ⊑ owl:topObjectProperty\n"
+            + "A ⊑ ∃rel.Attr\n");
+        OWLDataFactory df = OWLManager.getOWLDataFactory();
+        assertTrue(o.containsAxiom(df.getOWLSubClassOfAxiom(
+                df.getOWLClass(IRI.create(NS + "A")),
+                df.getOWLObjectSomeValuesFrom(
+                    df.getOWLObjectProperty(IRI.create(NS + "rel")),
+                    df.getOWLClass(IRI.create(NS + "Attr"))))),
+            () -> "the pun must be usable as a filler: " + o.getLogicalAxioms());
+        assertTrue(o.containsObjectPropertyInSignature(IRI.create(NS + "Attr")),
+            "and must still be a role");
+    }
+
+    /** Every complex class expression, not just restrictions. */
+    @Test
+    void aPunWorksInEveryClassExpression() throws Exception {
+        for (String rhs : new String[] {"{Q}", "A ⊓ B", "A ⊔ B", "¬A", "∀rel.A", "≥2 rel.A"}) {
+            String doc = PREFIX + "p ⊑ owl:topObjectProperty\np ⊑ " + rhs + "\n";
+            OWLOntology o = parse(doc);
+            assertFalse(o.getLogicalAxioms().isEmpty(), () -> "no axioms for: p ⊑ " + rhs);
+        }
+    }
+
+    /** A punned ontology must survive the writer, which is where this was discovered. */
+    @Test
+    void aPunWithAClassAxiomRoundTrips() throws Exception {
+        String written = rewrite(PREFIX
+            + "p ⊑ owl:topObjectProperty\n"
+            + "p ⊑ ∃hasPart.Leg\n"
+            + "sub1 ⊑ p\n");
+        OWLOntology back = parse(written);
+        assertTrue(back.containsClassInSignature(IRI.create(NS + "p"))
+                && back.containsObjectPropertyInSignature(IRI.create(NS + "p")),
+            () -> "the pun must survive: " + written);
+        assertEquals(written, rewrite(written), "and writing must be idempotent");
+    }
+
+    /** A concept child of a pun must not be dragged into the role hierarchy. */
+    @Test
+    void aClassBeneathAPunStaysAClass() throws Exception {
+        String written = rewrite(PREFIX
+            + "Attr ⊑ ⊤\n"
+            + "Attr ⊑ owl:topObjectProperty\n"
+            + "Finding ⊑ Attr\n"
+            + "A ⊑ ∃Attr.B\n");
+        OWLOntology back = parse(written);
+        assertTrue(back.containsClassInSignature(IRI.create(NS + "Finding")),
+            () -> "the writer must mark it, so the reader keeps it a class:\n" + written);
+        assertFalse(back.containsObjectPropertyInSignature(IRI.create(NS + "Finding")),
+            () -> "it was never a role:\n" + written);
+    }
+
+    // ── Classification must not override direct evidence ────────────────────
+
+    /**
+     * A capitalised name used as a role is a role. An earlier revision treated the case of
+     * the name as a barrier, which invented a pun and refiled the sub-property axiom.
+     */
+    @Test
+    void aCapitalisedRoleStaysARole() throws Exception {
+        OWLOntology o = parse(PREFIX + "HasPart ⊑ TopRel\nDog ⊑ ∃HasPart.Leg\n");
+        OWLDataFactory df = OWLManager.getOWLDataFactory();
+        assertTrue(o.containsAxiom(df.getOWLSubObjectPropertyOfAxiom(
+                df.getOWLObjectProperty(IRI.create(NS + "HasPart")),
+                df.getOWLObjectProperty(IRI.create(NS + "TopRel")))),
+            () -> "a capitalised role pair must stay a role pair: " + o.getLogicalAxioms());
+        assertFalse(o.containsClassInSignature(IRI.create(NS + "TopRel")),
+            "and must not become a class");
+    }
+
+    /** Data-ness must respect the same barriers object-ness does. */
+    @Test
+    void dataPropagationStopsAtAClass() throws Exception {
+        OWLOntology o = parse(PREFIX
+            + "E ⊑ ∃hasName.xsd:string\n"
+            + "hasName ⊑ Descriptor\n"
+            + "A ⊑ ∃rel.Descriptor\n");
+        assertTrue(o.containsClassInSignature(IRI.create(NS + "Descriptor")),
+            "Descriptor is a restriction filler, so it is a class");
+        assertFalse(o.containsDataPropertyInSignature(IRI.create(NS + "Descriptor")),
+            () -> "data-ness must not cross it: " + o.getLogicalAxioms());
+    }
+
+    /** A data property under an object property cannot be built; say so clearly. */
+    @Test
+    void mixingPropertyKindsIsRejectedWithAUsefulMessage() {
+        Exception thrown = assertThrows(Exception.class, () -> parse(PREFIX
+            + "parentRole ⊑ owl:topObjectProperty\n"
+            + "childProp ⊑ parentRole\n"
+            + "childProp ⊑ owl:topDataProperty\n"));
+        assertTrue(thrown.getMessage().contains("separate hierarchies"),
+            () -> "should name the conflict, not blame a datatype: " + thrown.getMessage());
+    }
+
+    /** Parentheses are transparent for kind statements, in both passes. */
+    @Test
+    void aParenthesisedKindStatementIsStillAKindStatement() throws Exception {
+        OWLOntology o = parse(PREFIX
+            + "Attr ⊑ ⊤\n"
+            + "Attr ⊑ (owl:topObjectProperty)\n"
+            + "finding ⊑ Attr\n");
+        OWLDataFactory df = OWLManager.getOWLDataFactory();
+        assertTrue(o.containsAxiom(df.getOWLSubObjectPropertyOfAxiom(
+                df.getOWLObjectProperty(IRI.create(NS + "finding")),
+                df.getOWLObjectProperty(IRI.create(NS + "Attr")))),
+            () -> "the scanner and the visitor must agree: " + o.getLogicalAxioms());
+    }
+
+    // ── The writer must mean what it writes ─────────────────────────────────
+
+    /**
+     * The top property is rendered through the prefix manager, not hard-coded as "owl:…".
+     * The reader resolves it to an IRI for exactly this reason; the writer emitting literal
+     * text in a document that binds {@code owl:} elsewhere lost three axioms and invented two.
+     */
+    @Test
+    void aReboundOwlPrefixDoesNotCorruptWhatIsWritten() throws Exception {
+        String doc = PREFIX
+            + "@prefix owl: <http://evil.example/#>\n"
+            + "@prefix o: <http://www.w3.org/2002/07/owl#>\n"
+            + "r ⊑ o:topObjectProperty\n"
+            + "r ⊑ ⊤\n"
+            + "Dog ⊑ ∃r.Cat\n";
+        String written = rewrite(doc);
+        assertFalse(statementsOnly(written).contains("owl:topObjectProperty"),
+            () -> "that spelling means <http://evil.example/#topObjectProperty> here:\n" + written);
+        assertEquals(parse(doc).getLogicalAxioms(), parse(written).getLogicalAxioms(),
+            () -> "the round trip must be lossless:\n" + written);
+    }
+
+    /** An IRI that is both kinds of property states both, once each. */
+    @Test
+    void anObjectAndDataPropertyStatesBothKinds() throws Exception {
+        OWLOntologyManager manager = OWLManager.createOWLOntologyManager();
+        OWLOntology o = manager.createOntology(IRI.create("http://example.org/t"));
+        OWLDataFactory df = manager.getOWLDataFactory();
+        IRI x = IRI.create(NS + "X");
+        manager.addAxiom(o, df.getOWLDeclarationAxiom(df.getOWLClass(x)));
+        manager.addAxiom(o, df.getOWLDeclarationAxiom(df.getOWLObjectProperty(x)));
+        manager.addAxiom(o, df.getOWLDeclarationAxiom(df.getOWLDataProperty(x)));
+
+        DLESyntaxDocumentFormat format = new DLESyntaxDocumentFormat();
+        format.setDefaultPrefix(NS);
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        manager.saveOntology(o, format, new StreamDocumentTarget(out));
+        String written = new String(out.toByteArray(), StandardCharsets.UTF_8);
+
+        assertEquals(1, countOccurrences(statementsOnly(written), "X ⊑ owl:topObjectProperty"),
+            () -> "the object kind must be stated exactly once:\n" + written);
+        assertEquals(1, countOccurrences(statementsOnly(written), "X ⊑ owl:topDataProperty"),
+            () -> "and so must the data kind:\n" + written);
+    }
+
+    /** An authored `X ⊑ owl:topObjectProperty` must not be written twice. */
+    @Test
+    void anAuthoredTopPropertySubsumptionIsWrittenOnce() throws Exception {
+        String written = rewrite(PREFIX
+            + "Attr ⊑ ⊤\n"
+            + "Attr ⊑ owl:topObjectProperty\n"
+            + "finding ⊑ Attr\n");
+        assertEquals(1, countOccurrences(statementsOnly(written), "Attr ⊑ owl:topObjectProperty"),
+            () -> "written twice, from two sources:\n" + written);
+        assertEquals(written, rewrite(written), "writing must be idempotent");
+    }
+
     // ── Review findings, each of these failed a first time ──────────────────
 
     /**
@@ -145,7 +325,7 @@ class PunnedNameTest {
             df.getOWLClass(IRI.create(NS + "lowerCase")), df.getOWLThing());
 
         String written = rewrite(PREFIX + "lowerCase ⊑ ⊤\nlowerCase ⊑ Other\n");
-        assertEquals(1, countOccurrences(written, "lowerCase ⊑ ⊤"),
+        assertEquals(1, countOccurrences(statementsOnly(written), "lowerCase ⊑ ⊤"),
             () -> "the kind statement and the axiom must not both be written:\n" + written);
         OWLOntology back = parse(written);
         assertTrue(back.containsAxiom(authored),
@@ -171,8 +351,22 @@ class PunnedNameTest {
         manager.saveOntology(o, format, new StreamDocumentTarget(out));
         String written = new String(out.toByteArray(), StandardCharsets.UTF_8);
 
-        assertEquals(1, countOccurrences(written, "Studies ⊑ owl:topObjectProperty"),
+        assertEquals(1, countOccurrences(statementsOnly(written), "Studies ⊑ owl:topObjectProperty"),
             () -> "the property pass and the individual pass both wrote it:\n" + written);
+    }
+
+    /**
+     * The document with its {@code #} comment lines removed.
+     *
+     * <p>Necessary because the explanatory header now documents the kind statements using
+     * their own syntax, so a naive search of the output finds the documentation.
+     */
+    private static String statementsOnly(String document) {
+        StringBuilder out = new StringBuilder();
+        for (String line : document.split("\n", -1)) {
+            if (!line.trim().startsWith("#")) out.append(line).append('\n');
+        }
+        return out.toString();
     }
 
     private static int countOccurrences(String haystack, String needle) {
@@ -278,13 +472,14 @@ class PunnedNameTest {
     @Test
     void theWriterStatesAPunAndNothingElse() throws Exception {
         String written = rewrite(PUN);
-        assertTrue(written.contains("n:7 ⊑ owl:topObjectProperty"),
+        assertTrue(statementsOnly(written).contains("n:7 ⊑ owl:topObjectProperty"),
             "the pun's role kind must be stated:\n" + written);
-        assertTrue(written.contains("n:7 ⊑ ⊤"),
+        assertTrue(statementsOnly(written).contains("n:7 ⊑ ⊤"),
             "the pun's class kind must be stated:\n" + written);
         // n8 and n9 are unambiguous classes; n1 an unambiguous role.
         for (String quiet : new String[] {"n:8 ⊑ owl:top", "n:9 ⊑ owl:top", "n:1 ⊑ owl:top"}) {
-            assertFalse(written.contains(quiet), quiet + " should not be stated:\n" + written);
+            assertFalse(statementsOnly(written).contains(quiet),
+                quiet + " should not be stated:\n" + written);
         }
     }
 
@@ -294,8 +489,8 @@ class PunnedNameTest {
             + "Station ⊑ ⊤\n"
             + "∃connectsTo.⊤ ⊑ Station\n"
             + "⊤ ⊑ ∀connectsTo.Station\n");
-        assertFalse(written.contains("owl:topObjectProperty"), written);
-        assertFalse(written.contains("owl:topDataProperty"), written);
+        assertFalse(statementsOnly(written).contains("owl:topObjectProperty"), written);
+        assertFalse(statementsOnly(written).contains("owl:topDataProperty"), written);
     }
 
     @Test

@@ -5,6 +5,7 @@ import java.io.Reader;
 import java.util.Collections;
 import java.util.List;
 
+import org.antlr.v4.runtime.Token;
 import org.antlr.v4.runtime.BaseErrorListener;
 import org.antlr.v4.runtime.CharStreams;
 import org.antlr.v4.runtime.CommonTokenStream;
@@ -82,6 +83,7 @@ public class DLEOntologyParser extends AbstractOWLParser {
                 scanner.getDataPropertyNames(),
                 scanner.getPredicateNames(),
                 scanner.getExplicitRoleNames(),
+                scanner.getPunnedNames(),
                 tokens);
             visitor.visit(tree);
 
@@ -128,7 +130,23 @@ public class DLEOntologyParser extends AbstractOWLParser {
         public void syntaxError(Recognizer<?, ?> recognizer, Object offendingSymbol,
                                 int line, int charPositionInLine,
                                 String msg, RecognitionException e) {
-            throw new OWLParserException("DLE syntax error at " + line + ":" + charPositionInLine + " — " + msg);
+            throw new OWLParserException("DLE syntax error at " + line + ":" + charPositionInLine
+                + " — " + msg + hintFor(offendingSymbol));
+        }
+
+        /**
+         * A leading colon is a name only for a digit-initial local part, so {@code :Dog}
+         * fails where {@code :762705008} parses. ANTLR reports it as an unexpected ':' and
+         * lists the token names, which does not explain the asymmetry.
+         */
+        private String hintFor(Object offendingSymbol) {
+            if (offendingSymbol instanceof Token && ":".equals(((Token) offendingSymbol).getText())) {
+                return ". A leading ':' names the default namespace only when the local part"
+                    + " begins with a digit, as in ':762705008' — a digit-initial name has no"
+                    + " other spelling. Write any other name in the default namespace bare,"
+                    + " without the colon";
+            }
+            return "";
         }
     }
 }

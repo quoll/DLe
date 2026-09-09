@@ -43,6 +43,14 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
     /** Names stated to be roles by {@code X ⊑ owl:topObjectProperty}; see visitSubClassAxiom. */
     private final Set<String> explicitRoleNames;
     /**
+     * Names that are both a role and a class. A name resolves to a single kind, so without
+     * this a punned name is a property everywhere and every class position it appears in is
+     * rejected — which made stating a pun the thing that broke it.
+     */
+    private final Set<String> punnedNames;
+    /** IRIs of {@link #punnedNames}, resolved on first use; see {@link #isPunned(IRI)}. */
+    private Set<IRI> punnedIRIs;
+    /**
      * IRIs whose kind the document stated outright. The dual-declaration resolver must not
      * second-guess these: a document that says a name is punned is the only authority on the
      * matter, and pushing the pun down to the name's children is exactly what the statements
@@ -78,12 +86,14 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
                           Set<String> dataPropertyNames,
                           Set<String> predicateNames,
                           Set<String> explicitRoleNames,
+                          Set<String> punnedNames,
                           CommonTokenStream tokenStream) {
         this.df = df;
         this.objectPropertyNames = objectPropertyNames;
         this.dataPropertyNames   = dataPropertyNames;
         this.predicateNames      = predicateNames;
         this.explicitRoleNames   = explicitRoleNames;
+        this.punnedNames         = punnedNames;
         this.tokenStream         = tokenStream;
     }
 
@@ -241,7 +251,9 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
         // X is, for a name whose kind cannot be inferred: a pun, or one that breaks the
         // convention that concepts are capitalised. Both are tautologies in OWL — every
         // object property is a sub-property of owl:topObjectProperty — so emitting them as
-        // axioms would add nothing and accumulate on every round trip.
+        // axioms would add nothing. The writer re-emits the kind from the entity's own
+        // declarations, and suppresses its statement when the axiom is already there, so
+        // consuming here costs the tautology and nothing else.
         //
         // `X ⊑ ⊤` is only consumed when X is *also* stated to be a role, i.e. when the pair
         // marks a pun. On its own it stays the ordinary subsumption it has always been,
@@ -330,19 +342,39 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
                 (OWLDataPropertyExpression) lhs, (OWLDataPropertyExpression) rhs));
             return null;
         }
-        // Mixed: one side is a named object property and the other resolved as a class.
+        // A data property under an object property, or the reverse. OWL has no such axiom —
+        // the two hierarchies are disjoint — so this cannot be built. Say that, rather than
+        // falling through to the class backstop and blaming a datatype for it.
+        if ((lhs instanceof OWLDataPropertyExpression && rhs instanceof OWLObjectPropertyExpression)
+                || (lhs instanceof OWLObjectPropertyExpression
+                    && rhs instanceof OWLDataPropertyExpression)) {
+            throw new DLESemanticException(
+                "cannot subsume " + describeKind(lhs) + " " + describe(lhs) + " under "
+                    + describeKind(rhs) + " " + describe(rhs)
+                    + ". OWL keeps object and data properties in separate hierarchies, so one"
+                    + " cannot be a sub-property of the other. State the intended kind with"
+                    + " ⊑ owl:topObjectProperty or ⊑ owl:topDataProperty.",
+                currentLine, 0);
+        }
+
+        // Mixed: one side is a named property and the other resolved as a class.
         // This occurs at the boundary of dual-use hierarchies (e.g. SNOMED-CT attribute root).
         // Coerce the property side to a class so the class node keeps its class identity.
-        if (lhs instanceof OWLObjectProperty && rhs instanceof OWLClass) {
+        //
+        // Written against OWLProperty rather than OWLObjectProperty: the object-only version
+        // left the data case with no path but the asClass backstop, so a data property under
+        // a class name — including a SNOMED CT concrete-domain attribute under a punned root
+        // — rejected the whole document.
+        if (lhs instanceof OWLProperty && rhs instanceof OWLClass) {
             axioms.add(df.getOWLSubClassOfAxiom(
-                df.getOWLClass(((OWLObjectProperty) lhs).getIRI()),
+                df.getOWLClass(((OWLProperty) lhs).getIRI()),
                 (OWLClass) rhs));
             return null;
         }
-        if (lhs instanceof OWLClass && rhs instanceof OWLObjectProperty) {
+        if (lhs instanceof OWLClass && rhs instanceof OWLProperty) {
             axioms.add(df.getOWLSubClassOfAxiom(
                 (OWLClass) lhs,
-                df.getOWLClass(((OWLObjectProperty) rhs).getIRI())));
+                df.getOWLClass(((OWLProperty) rhs).getIRI())));
             return null;
         }
 
@@ -872,7 +904,7 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
         return result;
     }
 
-    /** Returns the IRI of the first NAME or PREFIXED_NAME token in the statement, or null. */
+    /** Returns the IRI of the first name token in the statement, or null. */
     private IRI findFirstNameIRI(DLESyntaxParser.StatementContext ctx) {
         int start = ctx.start.getTokenIndex();
         int stop  = ctx.stop != null ? ctx.stop.getTokenIndex() : start;
@@ -889,6 +921,12 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
     /** Resolves a raw name token text (bare or prefixed) to a full IRI using the prefix map. */
     private IRI expandNameText(String text) {
         int colon = text.indexOf(':');
+        if (colon == 0) {
+            // ":1" — the default prefix stated explicitly. Without this the name
+            // falls through to the bare branch below and expands to ns + ":1".
+            String base = prefixes.get(":");
+            return base == null ? null : IRI.create(base + text.substring(1));
+        }
         if (colon > 0) {
             String prefix = text.substring(0, colon + 1);
             String local  = text.substring(colon + 1);
@@ -1147,8 +1185,43 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
             : null;
     }
 
+    /**
+     * Whether an IRI belongs to a punned name.
+     *
+     * <p>Resolved on first use rather than in the constructor: expanding a name needs the
+     * prefix map, and that is filled while visiting. The grammar puts every {@code @prefix}
+     * ahead of the first axiom, so the map is complete before any coercion can be asked for.
+     */
+    private boolean isPunned(IRI iri) {
+        if (punnedIRIs == null) {
+            punnedIRIs = new HashSet<>();
+            for (String name : punnedNames) {
+                IRI resolved = expandNameText(name);
+                if (resolved != null) punnedIRIs.add(resolved);
+            }
+        }
+        return punnedIRIs.contains(iri);
+    }
+
+    /** "the data property" / "the object property" / "the class", for a diagnostic. */
+    private static String describeKind(OWLObject obj) {
+        if (obj instanceof OWLDataPropertyExpression)   return "the data property";
+        if (obj instanceof OWLObjectPropertyExpression) return "the object property";
+        if (obj instanceof OWLClassExpression)          return "the class";
+        return "";
+    }
+
     private OWLClassExpression asClass(OWLObject obj) {
         if (obj instanceof OWLClassExpression) return (OWLClassExpression) obj;
+        // A punned name reaching a class position is the pun being used, not an error.
+        //
+        // Names resolve to one kind, so a punned name arrives here as the property it also
+        // is. The position is unambiguous — only a class can go here — so take the class
+        // reading. Restricted to names with class evidence, so that a genuine modelling
+        // mistake (a pure property as a restriction filler) still gets the diagnostic below.
+        if (obj instanceof OWLEntity && isPunned(((OWLEntity) obj).getIRI())) {
+            return df.getOWLClass(((OWLEntity) obj).getIRI());
+        }
         // Reached when a well-formed expression puts something in a class
         // position that cannot be a class — most often a datatype, e.g. an
         // object-property restriction whose filler is xsd:integer. The scanner

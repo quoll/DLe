@@ -37,15 +37,10 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
     // these nodes, preventing the attribute hierarchy from bleeding into the concept hierarchy.
     private final Set<String> mustBeClass = new HashSet<>();
 
-    // Kinds a document states outright, for the cases inference cannot reach: a punned
-    // name, or one that breaks the case convention.  `X ⊑ ⊤` states a class and
-    // `X ⊑ owl:topObjectProperty` a role; a name carrying both is punned.
-    //
-    // The two do different jobs, and keeping them apart is the whole point.  A stated class
-    // stops role classification travelling further up the hierarchy.  Only a stated *role*
-    // may override mustBeClass — an earlier attempt let a stated class do that, and since
-    // every ordinary class opens its block with `X ⊑ ⊤`, that rejected valid documents.
-    private final Set<String> explicitClass = new HashSet<>();
+    // Roles the document states outright, via `X ⊑ owl:topObjectProperty` or
+    // `X ⊑ owl:topDataProperty`, for the case inference cannot reach: a name whose kind
+    // nothing in the document implies. Paired with `X ⊑ ⊤` — which lands in mustBeClass
+    // like any other class use — it marks a pun.
     private final Set<String> explicitRole  = new HashSet<>();
 
     // Prefix map, needed only to resolve the kind statements.  Recognising them by
@@ -87,6 +82,28 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
     Set<String> getPredicateNames()      { return predicateNames; }
     /** Names the document states are roles, via {@code X ⊑ owl:topObjectProperty}. */
     Set<String> getExplicitRoleNames()   { return explicitRole; }
+
+    /**
+     * Names that are a role <em>and</em> a class — the puns.
+     *
+     * <p>Must be called after {@link #propagatePropertyTypes()}. A name qualifies when it is
+     * classified as a role and there is class evidence for it: either the document said so
+     * with {@code X ⊑ ⊤}, or it was used somewhere only a class can go.
+     *
+     * <p>The axiom visitor needs this because a name resolves to one kind, while a pun is one
+     * kind in one position and the other in another. Knowing which names are punned lets a
+     * class position take the class reading instead of failing.
+     */
+    Set<String> getPunnedNames() {
+        Set<String> punned = new HashSet<>();
+        for (String name : objectPropertyNames) {
+            if (mustBeClass.contains(name)) punned.add(name);
+        }
+        for (String name : dataPropertyNames) {
+            if (mustBeClass.contains(name)) punned.add(name);
+        }
+        return punned;
+    }
 
     // ── Restriction contexts ─────────────────────────────────────────────────
 
@@ -274,12 +291,10 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
         String lhs = singleBareName(ctx.classExpr(0));
         String rhs = singleBareName(ctx.classExpr(1));
 
-        // X ⊑ ⊤ — states that X is a class.  Recorded as a barrier only; it does not
-        // exempt X from mustBeClass, and it stays an ordinary subsumption otherwise, which
-        // is what keeps the nine corpus documents that open with it unaffected.
-        if (lhs != null && isTopClassExpr(ctx.classExpr(1))) {
-            explicitClass.add(lhs);
-        }
+        // X ⊑ ⊤ needs no special handling here: ⊤ is not a name, so the `rhs == null`
+        // branch at the end of this method already puts X in mustBeClass, which is the
+        // barrier. It stays an ordinary subsumption otherwise, which is what keeps the
+        // corpus documents that open their blocks with it unaffected.
 
         // X ⊑ owl:topObjectProperty — a declaration that X is a role, not a subsumption
         // to record.  Written by the storer for a name whose kind the reader could not
@@ -370,21 +385,28 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
                     // them; wrong for a pun with concept children, which DLe cannot express.
                     //
                     // Data classification is definitive — maintain mutual exclusivity.
-                    if (dataPropertyNames.contains(sub) && !isClassBarrier(sub)) {
+                    // The guards match the object-property rules below. They used not to,
+                    // and data-ness crossed every barrier: a name the document had stated
+                    // to be an object property, or had used where only a class can go, was
+                    // overwritten and the document then failed to parse.
+                    if (dataPropertyNames.contains(sub) && !mustBeClass.contains(sup)
+                            && !explicitRole.contains(sup)) {
                         changed |= dataPropertyNames.add(sup);
                         changed |= objectPropertyNames.remove(sup);
                     }
-                    if (dataPropertyNames.contains(sup)) {
+                    if (dataPropertyNames.contains(sup) && !mustBeClass.contains(sub)
+                            && !explicitRole.contains(sub)) {
                         changed |= dataPropertyNames.add(sub);
                         changed |= objectPropertyNames.remove(sub);
                     }
                     // Object property propagation is blocked at mustBeClass nodes.
-                    if (objectPropertyNames.contains(sub) && !isClassBarrier(sub)
+                    if (objectPropertyNames.contains(sub)
                             && !dataPropertyNames.contains(sup)
-                            && (!mustBeClass.contains(sup) || mayBeRoleDespiteClassUse(sup)))
+                            && !mustBeClass.contains(sup))
                         changed |= objectPropertyNames.add(sup);
                     if (objectPropertyNames.contains(sup) && !dataPropertyNames.contains(sub)
-                            && (!mustBeClass.contains(sub) || mayBeRoleDespiteClassUse(sub)))
+                            && !mustBeClass.contains(sub)
+                            && !looksLikeAClass(sub))
                         changed |= objectPropertyNames.add(sub);
                 }
             }
@@ -429,51 +451,45 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
     }
 
     /**
-     * Whether role classification stops at this name on its way up the hierarchy.
+     * Whether a name's local part begins with an upper-case letter, as a guess of last resort.
      *
-     * <p>{@code a ⊑ b} is written the same for a sub-class and a sub-property, so something
-     * has to say which hierarchy a pair belongs to.  Three things can, in order: a stated
-     * role, a stated class, and otherwise the case of the name's local part.  A name that
-     * names a class is where the two hierarchies meet, and carrying role classification past
-     * it turns the concepts above into properties.
+     * <p>Long-standing DL practice: concepts are capitalised, roles are not. It is consulted
+     * in exactly one place — the downward edge of role propagation, where a name is being
+     * classified with <em>no evidence of its own</em>, purely because something above it in a
+     * {@code ⊑} chain is a role. Crossing a pun downward is what makes SNOMED CT's attribute
+     * children roles, and their numeric identifiers carry no case signal, so they still cross.
+     * A capitalised child does not, because a concept below a pun is otherwise silently
+     * converted into a role and leaves the class signature.
      *
-     * <p>This does not stop the name itself being a role — that is exactly what a pun is —
-     * and it deliberately leaves {@code mustBeClass} alone.  Exempting a name from
-     * {@code mustBeClass} would let a name used in a class position become a property, and a
-     * document naming it as a class would then fail to parse.
+     * <p>It must never override evidence. An earlier revision used it as a barrier on the
+     * <em>upward</em> edge as well, where a capitalised object property already used in a
+     * restriction was definitively a role, and the guess invented a pun and refiled its
+     * sub-property axiom as a subsumption.
      */
-    private boolean isClassBarrier(String name) {
-        if (explicitClass.contains(name)) return true;
-        if (explicitRole.contains(name)) return false;
-        return namesAClassByConvention(name);
-    }
-
-    /**
-     * Whether role classification may settle on a name that use has established as a class.
-     *
-     * <p>Normally it may not: {@code mustBeClass} is what stops the role hierarchy bleeding
-     * into the concept hierarchy. A name explicitly declared a role is the exception, and
-     * only such a name — the declaration is the document saying it is punned, which is
-     * information no inference can recover. Widening this to any name that merely *looks*
-     * like a class is what made an earlier attempt reject valid documents.
-     */
-    private boolean mayBeRoleDespiteClassUse(String name) {
-        return explicitRole.contains(name);
-    }
-
-    /**
-     * Whether a name's local part begins with an upper-case letter.
-     *
-     * <p>Long-standing DL practice, which DLe relies on: concepts are capitalised, roles are
-     * not.  It says nothing about a numeric local part — SNOMED CT's identifiers, for
-     * instance — which is why such a name has to state its kind instead.
-     */
-    static boolean namesAClassByConvention(String name) {
+    private static boolean looksLikeAClass(String name) {
         int colon = name.lastIndexOf(':');
         String local = colon < 0 ? name : name.substring(colon + 1);
         return !local.isEmpty() && Character.isUpperCase(local.charAt(0));
     }
 
+    /**
+     * Whether the class hierarchy is where this name belongs, blocking role classification
+     * from travelling further up.
+     *
+     * <p>{@code mustBeClass} is the barrier, and it is populated by ordinary use: a name in a
+     * position only a class can occupy, including the {@code X ⊑ ⊤} that states a class.
+     * That is what stops a punned name dragging the concepts above it into the role
+     * hierarchy, and it predates the kind statements.
+     *
+     * <p>The case of the name is deliberately <em>not</em> consulted here. An earlier revision
+     * treated a capitalised name as a barrier, which overrode direct evidence: a capitalised
+     * object property used in a restriction — {@code HasPart}, {@code Broader} — was
+     * definitively a role, and the convention invented a pun and refiled its sub-property
+     * axiom as a subsumption. It also bought nothing: removing it leaves the SNOMED CT
+     * classification byte-identical, because {@code mustBeClass} was already doing the work.
+     * The convention still governs what the <em>writer</em> must state, which is where a
+     * guess is appropriate, and nothing downstream has to trust it.
+     */
     // ── Helpers ──────────────────────────────────────────────────────────────
 
     /**
@@ -635,12 +651,11 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
      * intersection/restriction), returns that name text; otherwise null.
      */
     private String singleBareName(DLESyntaxParser.ClassExprContext ctx) {
-        if (!(ctx instanceof DLESyntaxParser.IntersectionWrapContext)) return null;
-        var inter = ((DLESyntaxParser.IntersectionWrapContext) ctx).intersectionExpr();
-        if (!(inter instanceof DLESyntaxParser.PrimaryWrapContext)) return null;
-        var prim = ((DLESyntaxParser.PrimaryWrapContext) inter).primary();
-        if (!(prim instanceof DLESyntaxParser.AtomWrapContext)) return null;
-        var atom = ((DLESyntaxParser.AtomWrapContext) prim).atom();
+        // Parens.atomOf, not a hand-rolled unwrap: the axiom visitor's loneName uses it, and
+        // the two must agree. They did not, so `X ⊑ (owl:topObjectProperty)` was consumed as
+        // a kind statement by the visitor while staying invisible here — the classifier and
+        // the axiom builder then disagreed about the same name.
+        var atom = Parens.atomOf(ctx);
         if (!(atom instanceof DLESyntaxParser.NameAtomContext)) return null;
         return ((DLESyntaxParser.NameAtomContext) atom).name().getText();
     }
@@ -682,11 +697,6 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
 
     private boolean isBottomClassExpr(DLESyntaxParser.ClassExprContext ctx) {
         return Parens.atomOf(ctx) instanceof DLESyntaxParser.BottomAtomContext;
-    }
-
-    /** Whether a classExpr is just {@code ⊤}. */
-    private boolean isTopClassExpr(DLESyntaxParser.ClassExprContext ctx) {
-        return Parens.atomOf(ctx) instanceof DLESyntaxParser.TopAtomContext;
     }
 
     /** Returns the InversePropertyAtomContext if the classExpr is just a single name⁻, else null. */
