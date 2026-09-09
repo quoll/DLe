@@ -155,9 +155,17 @@ public class DLESyntaxObjectRenderer extends DLSyntaxObjectRenderer {
      * Strips the leading colon from a CURIE that belongs to the default (empty)
      * namespace prefix, e.g. {@code ":Dog"} becomes {@code "Dog"}.
      * Prefixed names with an explicit prefix (e.g. {@code "xsd:boolean"}) are unchanged.
+     *
+     * <p>A local part beginning with a digit keeps its colon. The bare form has no
+     * spelling for it — {@code NAME} requires a NameStart, so {@code 762705008}
+     * would lex as a number and the document would not parse. {@code :762705008} is
+     * the {@code DEFAULT_NAME} form and reads back to the same IRI.
      */
     private static String stripDefaultPrefix(String curie) {
-        return curie.startsWith(":") ? curie.substring(1) : curie;
+        if (!curie.startsWith(":")) return curie;
+        String local = curie.substring(1);
+        if (!local.isEmpty() && Character.isDigit(local.charAt(0))) return curie;
+        return local;
     }
 
     /**

@@ -192,6 +192,7 @@ literal
 name
     : NAME
     | PREFIXED_NAME
+    | DEFAULT_NAME
     | DOMAIN
     | RANGE
     | TRANS | FUNC | REF | IRREF | SYM | ASYM | DISJ
@@ -267,6 +268,21 @@ NUMBER : '-'? [0-9]+ ('.' [0-9]+)? ;
 // Prefixed name (xsd:integer, owl:Thing, sct:116676008, …) — longer than PNAME_NS so wins.
 // The local part follows Turtle CURIE rules: may start with a digit (unlike XML NCName).
 PREFIXED_NAME : NameStart NameChar* ':' (NameStart | [0-9]) NameChar* ;
+
+// A name in the default namespace whose local part begins with a digit, written
+// with the default prefix stated: :762705008
+//
+// It needs its own token because neither existing form can spell it. NAME requires
+// a NameStart, which excludes digits, so the bare `762705008` lexes as a NUMBER;
+// and PREFIXED_NAME requires a NameStart before the colon, so the prefix cannot be
+// empty. Turtle permits a digit-initial local part, so such names do arrive.
+//
+// Only digits are admitted after the colon. Anything a bare NAME can already spell
+// keeps its bare form, so this adds no second spelling for an existing name.
+// Longest-match keeps it apart from PNAME_NS: `:1` matches two characters here and
+// one there, while the `:` of an `@prefix :` declaration is followed by a space and
+// cannot match this at all.
+DEFAULT_NAME : ':' [0-9] NameChar* ;
 
 // Bare local name
 NAME : NameStart NameChar* ;

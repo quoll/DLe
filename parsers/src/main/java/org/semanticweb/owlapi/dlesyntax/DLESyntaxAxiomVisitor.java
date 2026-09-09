@@ -842,14 +842,15 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
         return result;
     }
 
-    /** Returns the IRI of the first NAME or PREFIXED_NAME token in the statement, or null. */
+    /** Returns the IRI of the first name token in the statement, or null. */
     private IRI findFirstNameIRI(DLESyntaxParser.StatementContext ctx) {
         int start = ctx.start.getTokenIndex();
         int stop  = ctx.stop != null ? ctx.stop.getTokenIndex() : start;
         for (int i = start; i <= stop; i++) {
             Token tok = tokenStream.get(i);
             int type = tok.getType();
-            if (type == DLESyntaxLexer.NAME || type == DLESyntaxLexer.PREFIXED_NAME) {
+            if (type == DLESyntaxLexer.NAME || type == DLESyntaxLexer.PREFIXED_NAME
+                    || type == DLESyntaxLexer.DEFAULT_NAME) {
                 return expandNameText(tok.getText());
             }
         }
@@ -859,6 +860,12 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
     /** Resolves a raw name token text (bare or prefixed) to a full IRI using the prefix map. */
     private IRI expandNameText(String text) {
         int colon = text.indexOf(':');
+        if (colon == 0) {
+            // ":1" — the default prefix stated explicitly. Without this the name
+            // falls through to the bare branch below and expands to ns + ":1".
+            String base = prefixes.get(":");
+            return base == null ? null : IRI.create(base + text.substring(1));
+        }
         if (colon > 0) {
             String prefix = text.substring(0, colon + 1);
             String local  = text.substring(colon + 1);
@@ -884,6 +891,11 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
     /** Expands a name context to a full IRI using the prefix map. */
     private IRI expandName(DLESyntaxParser.NameContext ctx) {
         String text = ctx.getText();
+        if (ctx.DEFAULT_NAME() != null) {
+            // ":1" — the default prefix, stated because a digit-initial local part
+            // has no bare form.
+            return IRI.create(prefixes.getOrDefault(":", "") + text.substring(1));
+        }
         if (ctx.PREFIXED_NAME() != null) {
             int colon = text.indexOf(':');
             String prefixLabel = text.substring(0, colon + 1); // "xsd:"
