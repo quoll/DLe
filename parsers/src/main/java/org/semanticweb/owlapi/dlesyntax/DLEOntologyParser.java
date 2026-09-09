@@ -88,7 +88,7 @@ public class DLEOntologyParser extends AbstractOWLParser {
             ontology.getOWLOntologyManager()
                 .addAxioms(ontology, new java.util.HashSet<>(visitor.getAxioms()));
 
-            DualDeclarationResolver.resolve(ontology);
+            DualDeclarationResolver.resolve(ontology, visitor.getStatedKindIRIs());
             DefaultLabelAdder.addDefaultLabels(ontology);
 
             // Apply ontology ID; fall back to the default IRI when none is declared.

@@ -24,12 +24,26 @@ import org.semanticweb.owlapi.model.OWLSubObjectPropertyOfAxiom;
  * <p>If all sub-properties of X are annotated, X remains dual-declared. If some are
  * annotated and some are not, only the unannotated ones are pushed; X stays dual-declared
  * because the annotated children still reference it as an object property.
+ *
+ * <p>A name whose kind the document <em>stated</em> — {@code X ⊑ ⊤} together with
+ * {@code X ⊑ owl:topObjectProperty} — is left alone. Those statements exist precisely to
+ * say "this name is punned, here", and pushing the pun down to the children would undo
+ * them. Without this exemption the disambiguation only survives for children that happen
+ * to carry an annotation, which made the whole mechanism work on labelled documents such
+ * as SNOMED CT extracts and fail silently on unlabelled ones.
  */
 class DualDeclarationResolver {
 
     private DualDeclarationResolver() {}
 
     static void resolve(OWLOntology ontology) {
+        resolve(ontology, java.util.Collections.emptySet());
+    }
+
+    /**
+     * @param statedKinds IRIs whose kind the document stated outright, which are not pushed
+     */
+    static void resolve(OWLOntology ontology, Set<IRI> statedKinds) {
         OWLOntologyManager manager = ontology.getOWLOntologyManager();
         OWLDataFactory df = manager.getOWLDataFactory();
 
@@ -46,6 +60,7 @@ class DualDeclarationResolver {
 
             for (IRI xIRI : propIRIs) {
                 if (!classIRIs.contains(xIRI)) continue;
+                if (statedKinds.contains(xIRI)) continue;   // the document said so
 
                 OWLObjectProperty xProp = df.getOWLObjectProperty(xIRI);
                 OWLClass xClass = df.getOWLClass(xIRI);

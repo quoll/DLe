@@ -1,6 +1,7 @@
 package org.semanticweb.owlapi.dlesyntax;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -41,6 +42,13 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
     private final Set<String> predicateNames;
     /** Names stated to be roles by {@code X ⊑ owl:topObjectProperty}; see visitSubClassAxiom. */
     private final Set<String> explicitRoleNames;
+    /**
+     * IRIs whose kind the document stated outright. The dual-declaration resolver must not
+     * second-guess these: a document that says a name is punned is the only authority on the
+     * matter, and pushing the pun down to the name's children is exactly what the statements
+     * exist to prevent.
+     */
+    private final Set<IRI> statedKindIRIs = new HashSet<>();
     /** Token stream used to retrieve hidden comment tokens; null means comments are not captured. */
     private final CommonTokenStream tokenStream;
 
@@ -81,6 +89,9 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
 
     List<OWLAxiom> getAxioms()        { return axioms; }
     Map<String, String> getPrefixes() { return prefixes; }
+
+    /** IRIs whose kind the document stated; see {@link #statedKindIRIs}. */
+    Set<IRI> getStatedKindIRIs() { return statedKindIRIs; }
     IRI getOntologyIRI()              { return ontologyIRI; }
     IRI getVersionIRI()               { return versionIRI; }
     List<IRI> getImports()            { return imports; }
@@ -901,19 +912,6 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
     }
 
     /** Expands a name context to a full IRI using the prefix map. */
-    /** Expands a name given as text, for the kind statements. */
-    private IRI expandName(String text) {
-        int colon = text.indexOf(':');
-        if (colon >= 0) {
-            String base = prefixes.get(text.substring(0, colon + 1));
-            if (base == null) {
-                throw new DLESemanticException("unknown prefix in '" + text + "'", currentLine, 0);
-            }
-            return IRI.create(base + text.substring(colon + 1));
-        }
-        return IRI.create(prefixes.get(":") + text);
-    }
-
     private IRI expandName(DLESyntaxParser.NameContext ctx) {
         String text = ctx.getText();
         if (ctx.PREFIXED_NAME() != null) {
@@ -1085,36 +1083,60 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
         if (lhs == null) return false;
         String rhs = loneName(ctx.classExpr(1));
 
-        if (TOP_OBJECT_PROPERTY.equals(rhs)) {
-            axioms.add(df.getOWLDeclarationAxiom(df.getOWLObjectProperty(expandName(lhs))));
+        IRI top = rhs == null ? null : topPropertyIri(rhs);
+        if (TOP_OBJECT_PROPERTY_IRI.equals(top)) {
+            IRI iri = expandNameText(lhs);
+            if (iri == null) return false;
+            axioms.add(df.getOWLDeclarationAxiom(df.getOWLObjectProperty(iri)));
+            statedKindIRIs.add(iri);
             return true;
         }
-        if (TOP_DATA_PROPERTY.equals(rhs)) {
-            axioms.add(df.getOWLDeclarationAxiom(df.getOWLDataProperty(expandName(lhs))));
+        if (TOP_DATA_PROPERTY_IRI.equals(top)) {
+            IRI iri = expandNameText(lhs);
+            if (iri == null) return false;
+            axioms.add(df.getOWLDeclarationAxiom(df.getOWLDataProperty(iri)));
+            statedKindIRIs.add(iri);
             return true;
         }
-        // `X ⊑ ⊤` is consumed as a class declaration in exactly two cases: a punned name,
-        // and a name whose local part does not begin with a capital, which is the writer's
-        // way of saying "a class, despite how this reads". For a capitalised name it stays
-        // the ordinary subsumption it has always been — which is what leaves untouched the
-        // corpus documents that open their blocks with it.
+        // `X ⊑ ⊤` is consumed only when the document has also stated that X is a role —
+        // that pair is what marks a pun, and the class side of a pun has to arrive as a
+        // declaration rather than a subsumption.
+        //
+        // Everywhere else it stays the ordinary subsumption it has always been. Consuming
+        // it more widely — for any name whose local part is not capitalised, which an
+        // earlier revision did — destroys a `SubClassOf(X, owl:Thing)` axiom the author
+        // wrote, and makes writing non-idempotent, because the writer then re-adds the
+        // line from a different source on the next pass.
         if (Parens.atomOf(ctx.classExpr(1)) instanceof DLESyntaxParser.TopAtomContext
-                && (explicitRoleNames.contains(lhs) || !startsUpperCase(lhs))) {
-            axioms.add(df.getOWLDeclarationAxiom(df.getOWLClass(expandName(lhs))));
+                && explicitRoleNames.contains(lhs)) {
+            IRI iri = expandNameText(lhs);
+            if (iri == null) return false;
+            axioms.add(df.getOWLDeclarationAxiom(df.getOWLClass(iri)));
+            statedKindIRIs.add(iri);
             return true;
         }
         return false;
     }
 
-    /** Whether a name's local part begins with an upper-case letter. */
-    private static boolean startsUpperCase(String name) {
-        int colon = name.lastIndexOf(':');
-        String local = colon < 0 ? name : name.substring(colon + 1);
-        return !local.isEmpty() && Character.isUpperCase(local.charAt(0));
-    }
+    private static final IRI TOP_OBJECT_PROPERTY_IRI =
+        OWLRDFVocabulary.OWL_TOP_OBJECT_PROPERTY.getIRI();
+    private static final IRI TOP_DATA_PROPERTY_IRI =
+        OWLRDFVocabulary.OWL_TOP_DATA_PROPERTY.getIRI();
 
-    private static final String TOP_OBJECT_PROPERTY = "owl:topObjectProperty";
-    private static final String TOP_DATA_PROPERTY   = "owl:topDataProperty";
+    /**
+     * The top-property IRI a name resolves to, or null if it is not one.
+     *
+     * <p>Resolved rather than compared as text: a document may bind the OWL namespace to
+     * another prefix, and may bind {@code owl:} to another namespace. Matching the spelling
+     * gets both wrong, the second silently.
+     */
+    @Nullable
+    private IRI topPropertyIri(String name) {
+        if (name.indexOf(':') < 0) return null;   // bare names are in the default namespace
+        IRI iri = expandNameText(name);
+        return TOP_OBJECT_PROPERTY_IRI.equals(iri) || TOP_DATA_PROPERTY_IRI.equals(iri)
+            ? iri : null;
+    }
 
     /** The text of a classExpr that is nothing but a single name, else null. */
     @Nullable

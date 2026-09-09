@@ -121,9 +121,14 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
         boolean isDataProperty = currentOntology.containsDataPropertyInSignature(iri);
         boolean isProperty = isObjectProperty || isDataProperty;
 
-        // Write each statement once, from whichever pass reaches the entity first.
-        if (!entity.isOWLClass() && !isProperty) return false;
+        // One statement per pass, and only from the pass for the kind it describes. Keying
+        // this on `!entity.isOWLClass()` is not enough: an IRI can be a property *and* a
+        // named individual, annotation property or datatype, and every one of those passes
+        // would then write the property statement again.
+        boolean isPropertyEntity = entity.isOWLObjectProperty() || entity.isOWLDataProperty();
+        if (!entity.isOWLClass() && !isPropertyEntity) return false;
         if (entity.isOWLClass() && !isClass) return false;
+        if (isPropertyEntity && !isProperty) return false;
 
         String name = renderer.shortForm(iri);
         boolean punned = isClass && isProperty;
@@ -136,16 +141,28 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
         boolean propertyContradictsCase = isProperty && startsUpperCase(name);
 
         boolean wrote = false;
-        if (entity.isOWLClass() && (punned || classContradictsCase)) {
+        if (entity.isOWLClass() && (punned || classContradictsCase) && !thingSubsumptionExists(iri)) {
             writer.println(name + " ⊑ ⊤");
             wrote = true;
         }
-        if (!entity.isOWLClass() && (punned || propertyContradictsCase)) {
+        if (isPropertyEntity && (punned || propertyContradictsCase)) {
             writer.println(name + " ⊑ "
                 + (isDataProperty ? "owl:topDataProperty" : "owl:topObjectProperty"));
             wrote = true;
         }
         return wrote;
+    }
+
+    /**
+     * Whether the ontology already states {@code SubClassOf(X, owl:Thing)}, which the
+     * ordinary axiom renderer writes as {@code X ⊑ ⊤} — the identical line. Without this
+     * check both sources fire and the statement is written twice.
+     */
+    private boolean thingSubsumptionExists(IRI iri) {
+        return currentOntology.axioms(AxiomType.SUBCLASS_OF)
+            .anyMatch(ax -> !ax.getSubClass().isAnonymous()
+                && iri.equals(ax.getSubClass().asOWLClass().getIRI())
+                && ax.getSuperClass().isOWLThing());
     }
 
     /** Whether a name's local part begins with an upper-case letter. */

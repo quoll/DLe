@@ -79,6 +79,115 @@ class PunnedNameTest {
         + "n:7 ⊑ n:8\n"
         + "n:8 ⊑ n:9\n";
 
+    // ── Review findings, each of these failed a first time ──────────────────
+
+    /**
+     * The pun's children must keep their sub-property axioms even with no annotations.
+     *
+     * <p>{@link DualDeclarationResolver} pushes a dual declaration down to any unannotated
+     * sub-property, rewriting {@code SubObjectPropertyOf(Y,X)} as {@code SubClassOf(Y,X)} —
+     * the exact corruption the kind statements exist to prevent. It is now told to leave a
+     * stated kind alone. Before that, the mechanism worked only on documents whose entities
+     * all carried labels, which every SNOMED CT extract does, so it looked correct.
+     */
+    @Test
+    void aStatedPunIsNotUndoneWhenItsChildIsUnannotated() throws Exception {
+        OWLOntology o = parse(PREFIX
+            + "@prefix n: <" + N + ">\n"
+            + "n:1 ⊑ owl:topObjectProperty\n"
+            + "n:1 ⊑ ⊤\n"
+            + "n:2 ⊑ n:1\n");
+        assertTrue(o.containsAxiom(subObjectPropertyOf("2", "1")),
+            () -> "the child must stay a sub-property: " + o.getLogicalAxioms());
+        assertFalse(o.containsAxiom(subClassOf("2", "1")),
+            "the pun must not be pushed down to the child");
+    }
+
+    /** The statement is recognised by IRI, so any prefix bound to the OWL namespace works. */
+    @Test
+    void theOwlNamespaceIsRecognisedUnderAnyPrefix() throws Exception {
+        OWLOntology o = parse(PREFIX
+            + "@prefix o: <http://www.w3.org/2002/07/owl#>\n"
+            + "@prefix n: <" + N + ">\n"
+            + "n:1 ⊑ o:topObjectProperty\n"
+            + "n:2 ⊑ n:1\n");
+        assertTrue(isRole(o, "1"), "o: is the OWL namespace, so this states a role");
+        assertTrue(o.containsAxiom(subObjectPropertyOf("2", "1")),
+            () -> o.getLogicalAxioms().toString());
+    }
+
+    /**
+     * And the converse: a document that binds {@code owl:} elsewhere means what it says.
+     *
+     * <p>Matching the spelling rather than the IRI consumed this line, destroying the
+     * subsumption and turning a class into a property, silently.
+     */
+    @Test
+    void aRebound0wlPrefixIsNotAKindStatement() throws Exception {
+        OWLOntology o = parse(PREFIX
+            + "@prefix owl: <http://example.org/fake#>\n"
+            + "MyClass ⊑ owl:topObjectProperty\n");
+        OWLDataFactory df = OWLManager.getOWLDataFactory();
+        assertTrue(o.containsAxiom(df.getOWLSubClassOfAxiom(
+                df.getOWLClass(IRI.create(NS + "MyClass")),
+                df.getOWLClass(IRI.create("http://example.org/fake#topObjectProperty")))),
+            () -> "the subsumption must survive against the bound namespace: "
+                + o.getLogicalAxioms());
+        assertFalse(o.containsObjectPropertyInSignature(IRI.create(NS + "MyClass")),
+            "MyClass must not be reclassified as a property");
+    }
+
+    /** A `⊤` subsumption an author wrote must not be eaten, nor written twice. */
+    @Test
+    void anAuthoredTopSubsumptionSurvivesAndIsWrittenOnce() throws Exception {
+        OWLDataFactory df = OWLManager.getOWLDataFactory();
+        OWLAxiom authored = df.getOWLSubClassOfAxiom(
+            df.getOWLClass(IRI.create(NS + "lowerCase")), df.getOWLThing());
+
+        String written = rewrite(PREFIX + "lowerCase ⊑ ⊤\nlowerCase ⊑ Other\n");
+        assertEquals(1, countOccurrences(written, "lowerCase ⊑ ⊤"),
+            () -> "the kind statement and the axiom must not both be written:\n" + written);
+        OWLOntology back = parse(written);
+        assertTrue(back.containsAxiom(authored),
+            () -> "the ⊤ subsumption must survive: " + back.getLogicalAxioms());
+        assertEquals(written, rewrite(written), "writing must be idempotent");
+    }
+
+    /** An IRI that is a property and also an individual must state its kind once, not twice. */
+    @Test
+    void aPropertyThatIsAlsoAnIndividualStatesItsKindOnce() throws Exception {
+        OWLOntologyManager manager = OWLManager.createOWLOntologyManager();
+        OWLOntology o = manager.createOntology(IRI.create("http://example.org/t"));
+        OWLDataFactory df = manager.getOWLDataFactory();
+        IRI iri = IRI.create(NS + "Studies");
+        manager.addAxiom(o, df.getOWLDeclarationAxiom(df.getOWLObjectProperty(iri)));
+        manager.addAxiom(o, df.getOWLDeclarationAxiom(df.getOWLNamedIndividual(iri)));
+        manager.addAxiom(o, df.getOWLSubObjectPropertyOfAxiom(
+            df.getOWLObjectProperty(iri), df.getOWLObjectProperty(IRI.create(NS + "rel"))));
+
+        DLESyntaxDocumentFormat format = new DLESyntaxDocumentFormat();
+        format.setDefaultPrefix(NS);
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        manager.saveOntology(o, format, new StreamDocumentTarget(out));
+        String written = new String(out.toByteArray(), StandardCharsets.UTF_8);
+
+        assertEquals(1, countOccurrences(written, "Studies ⊑ owl:topObjectProperty"),
+            () -> "the property pass and the individual pass both wrote it:\n" + written);
+    }
+
+    private static int countOccurrences(String haystack, String needle) {
+        int n = 0;
+        for (int i = haystack.indexOf(needle); i >= 0; i = haystack.indexOf(needle, i + 1)) n++;
+        return n;
+    }
+
+    private OWLAxiom subObjectPropertyOf(String sub, String sup) {
+        OWLDataFactory df = OWLManager.getOWLDataFactory();
+        return df.getOWLSubObjectPropertyOfAxiom(
+            df.getOWLObjectProperty(IRI.create(N + sub)),
+            df.getOWLObjectProperty(IRI.create(N + sup)));
+    }
+
     // ── The defect ──────────────────────────────────────────────────────────
 
     @Test

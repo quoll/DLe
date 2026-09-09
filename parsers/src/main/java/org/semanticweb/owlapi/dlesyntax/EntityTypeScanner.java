@@ -1,5 +1,7 @@
 package org.semanticweb.owlapi.dlesyntax;
 
+import javax.annotation.Nullable;
+
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -45,6 +47,28 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
     // every ordinary class opens its block with `X ⊑ ⊤`, that rejected valid documents.
     private final Set<String> explicitClass = new HashSet<>();
     private final Set<String> explicitRole  = new HashSet<>();
+
+    // Prefix map, needed only to resolve the kind statements.  Recognising them by
+    // spelling is not sound: a document may bind the OWL namespace to some other prefix,
+    // in which case the statement is missed, and it may bind `owl:` to some other
+    // namespace, in which case an ordinary subsumption is wrongly taken for a statement
+    // and the axiom destroyed.  Seeded with the same defaults as the axiom visitor.
+    private final Map<String, String> prefixes = new HashMap<String, String>() {{
+        put("owl:",  OWL_NS);
+        put("rdf:",  "http://www.w3.org/1999/02/22-rdf-syntax-ns#");
+        put("rdfs:", "http://www.w3.org/2000/01/rdf-schema#");
+        put("xsd:",  "http://www.w3.org/2001/XMLSchema#");
+        put("xml:",  "http://www.w3.org/XML/1998/namespace");
+    }};
+
+    @Override
+    public Void visitPrefixDecl(DLESyntaxParser.PrefixDeclContext ctx) {
+        String label = ctx.PNAME_NS().getText();
+        String iri   = ctx.IRI().getText();
+        prefixes.put(label.endsWith(":") ? label : label + ":",
+                     iri.substring(1, iri.length() - 1));
+        return null;
+    }
 
     // Where each name was first used as an inverse role (r⁻). Only needed to
     // report a location if that name also turns out to be a data property:
@@ -260,9 +284,10 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
         // X ⊑ owl:topObjectProperty — a declaration that X is a role, not a subsumption
         // to record.  Written by the storer for a name whose kind the reader could not
         // otherwise infer: a pun, or one that breaks the case convention.
-        if (lhs != null && rhs != null && isTopProperty(rhs)) {
+        String topProperty = rhs == null ? null : topPropertyIri(rhs);
+        if (lhs != null && topProperty != null) {
             explicitRole.add(lhs);
-            if (TOP_DATA_PROPERTY.equals(rhs)) {
+            if (TOP_DATA_PROPERTY_IRI.equals(topProperty)) {
                 dataPropertyNames.add(lhs);
                 objectPropertyNames.remove(lhs);
             } else if (!dataPropertyNames.contains(lhs)) {
@@ -339,6 +364,11 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
                     // (sup → sub) crosses it, because being the parent of roles is what makes
                     // such a name a pun — whatever else it is, its sub-names are roles.
                     //
+                    // The consequence, deliberate but worth knowing: *every* name below a
+                    // punned name becomes a role, including one that was meant as a class.
+                    // Right for SNOMED CT, whose punned roots have none but roles beneath
+                    // them; wrong for a pun with concept children, which DLe cannot express.
+                    //
                     // Data classification is definitive — maintain mutual exclusivity.
                     if (dataPropertyNames.contains(sub) && !isClassBarrier(sub)) {
                         changed |= dataPropertyNames.add(sup);
@@ -361,36 +391,57 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
         }
     }
 
+    static final String OWL_NS = "http://www.w3.org/2002/07/owl#";
+    private static final String TOP_OBJECT_PROPERTY_IRI = OWL_NS + "topObjectProperty";
+    private static final String TOP_DATA_PROPERTY_IRI   = OWL_NS + "topDataProperty";
+
+    /**
+     * Whether a name resolves to one of the OWL top properties, making {@code X ⊑ name} a
+     * declaration that X is a role rather than an ordinary sub-property axiom.
+     *
+     * <p>Unambiguous because no document says it for any other reason: every object property
+     * is a sub-property of {@code owl:topObjectProperty} already, so the statement carries no
+     * information except the one it is being used to carry.
+     *
+     * <p>Resolved to an IRI rather than compared as text.  Matching the spelling fails both
+     * ways round: it misses {@code o:topObjectProperty} where the document binds the OWL
+     * namespace to {@code o:}, and it wrongly claims {@code owl:topObjectProperty} where the
+     * document has bound {@code owl:} to something else — silently destroying a real axiom.
+     *
+     * @return the top property's IRI if it is one, else null
+     */
+    @Nullable
+    private String topPropertyIri(String name) {
+        String iri = resolve(name);
+        if (TOP_OBJECT_PROPERTY_IRI.equals(iri) || TOP_DATA_PROPERTY_IRI.equals(iri)) {
+            return iri;
+        }
+        return null;
+    }
+
+    /** Expands a name to an IRI, or null if its prefix is undeclared. */
+    @Nullable
+    private String resolve(String name) {
+        int colon = name.indexOf(':');
+        if (colon < 0) return null;   // a bare name is in the default namespace, never owl:
+        String base = prefixes.get(name.substring(0, colon + 1));
+        return base == null ? null : base + name.substring(colon + 1);
+    }
+
     /**
      * Whether role classification stops at this name on its way up the hierarchy.
      *
-     * <p>`a ⊑ b` is written the same for a sub-class and a sub-property, so something has
-     * to say which hierarchy a pair belongs to.  Three things can, in order: an explicit
-     * {@code @role}, an explicit {@code @class}, and otherwise the case of the name's local
-     * part.  A name that names a class is where the two hierarchies meet, and carrying role
-     * classification past it turns the concepts above into properties.
+     * <p>{@code a ⊑ b} is written the same for a sub-class and a sub-property, so something
+     * has to say which hierarchy a pair belongs to.  Three things can, in order: a stated
+     * role, a stated class, and otherwise the case of the name's local part.  A name that
+     * names a class is where the two hierarchies meet, and carrying role classification past
+     * it turns the concepts above into properties.
      *
      * <p>This does not stop the name itself being a role — that is exactly what a pun is —
      * and it deliberately leaves {@code mustBeClass} alone.  Exempting a name from
      * {@code mustBeClass} would let a name used in a class position become a property, and a
      * document naming it as a class would then fail to parse.
      */
-    /** The OWL top properties, whose only use in a DLe document is to declare a kind. */
-    private static final String TOP_OBJECT_PROPERTY = "owl:topObjectProperty";
-    private static final String TOP_DATA_PROPERTY   = "owl:topDataProperty";
-
-    /**
-     * Whether `sup` is one of the OWL top properties, making `X ⊑ sup` a declaration that X
-     * is a role rather than an ordinary sub-property axiom.
-     *
-     * <p>Unambiguous because no document says it for any other reason: every object property
-     * is a sub-property of {@code owl:topObjectProperty} already, so the statement carries no
-     * information except the one it is being used to carry.
-     */
-    private static boolean isTopProperty(String name) {
-        return TOP_OBJECT_PROPERTY.equals(name) || TOP_DATA_PROPERTY.equals(name);
-    }
-
     private boolean isClassBarrier(String name) {
         if (explicitClass.contains(name)) return true;
         if (explicitRole.contains(name)) return false;
@@ -415,7 +466,7 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
      *
      * <p>Long-standing DL practice, which DLe relies on: concepts are capitalised, roles are
      * not.  It says nothing about a numeric local part — SNOMED CT's identifiers, for
-     * instance — which is why {@code @class} and {@code @role} exist.
+     * instance — which is why such a name has to state its kind instead.
      */
     static boolean namesAClassByConvention(String name) {
         int colon = name.lastIndexOf(':');
