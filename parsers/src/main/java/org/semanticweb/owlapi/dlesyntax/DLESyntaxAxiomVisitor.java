@@ -763,6 +763,14 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
 
     // ── Comment capture ──────────────────────────────────────────────────────
 
+    /** Records one comment block, if it has any content. */
+    private void addComment(IRI subject, StringBuilder block) {
+        if (block.length() == 0) return;
+        axioms.add(df.getOWLAnnotationAssertionAxiom(
+            df.getOWLAnnotationProperty(DLE_COMMENT_IRI), subject,
+            df.getOWLLiteral(block.toString())));
+    }
+
     /**
      * For each statement, collect any hidden {@code #} comment tokens that immediately
      * precede it and attach them as {@code dle:comment} annotation assertions on the
@@ -801,20 +809,31 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
             if (!hidden.isEmpty()) {
                 subjectIRI = findFirstNameIRI(ctx);
                 if (subjectIRI != null) {
-                    // Store the block as a single multi-line literal to preserve order.
+                    // One annotation per block, where a blank line ends a block. Joining
+                    // everything before the statement into a single literal loses those
+                    // boundaries, and loses them asymmetrically: an entity named by three
+                    // commented statements reads as three annotations, and the writer emits
+                    // all three ahead of its first statement, where the next read merges
+                    // them into one. Blocks are the unit the syntax actually has.
+                    //
+                    // A blank line shows up as a gap in the line numbers, because
+                    // whitespace is skipped and never reaches the token stream — the same
+                    // signal the header-stripping above relies on.
                     StringBuilder sb = new StringBuilder();
+                    int prevLine = -1;
                     for (Token tok : hidden) {
+                        if (prevLine >= 0 && tok.getLine() != prevLine + 1) {
+                            addComment(subjectIRI, sb);
+                            sb.setLength(0);
+                        }
+                        prevLine = tok.getLine();
                         String text = tok.getText();
                         if (text.startsWith("#")) text = text.substring(1);
                         if (!text.isEmpty() && text.charAt(0) == ' ') text = text.substring(1);
                         if (sb.length() > 0) sb.append('\n');
                         sb.append(text);
                     }
-                    if (sb.length() > 0) {
-                        axioms.add(df.getOWLAnnotationAssertionAxiom(
-                            df.getOWLAnnotationProperty(DLE_COMMENT_IRI),
-                            subjectIRI, df.getOWLLiteral(sb.toString())));
-                    }
+                    addComment(subjectIRI, sb);
                 }
             }
         }

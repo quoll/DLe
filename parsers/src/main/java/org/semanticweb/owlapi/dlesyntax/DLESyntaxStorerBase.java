@@ -100,12 +100,15 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
     private boolean writeComments(IRI subject, OWLOntology ontology, PrintWriter writer) {
         if (writtenAnnotations == null) return false;
         boolean[] wrote = {false};
-        // Each annotation may hold a multi-line block, joined with \n by the parser.
+        // Each annotation holds one block, whose lines were joined with \n by the parser.
+        // Blocks are separated by a blank line, which is what makes them separate blocks
+        // again on the way back in — run together, several annotations read as one.
         ontology.annotationAssertionAxioms(subject)
             .filter(ax -> DLESyntaxAxiomVisitor.DLE_COMMENT_IRI.equals(ax.getProperty().getIRI()))
             .sorted()
             .forEach(ax -> {
                 if (writtenAnnotations.add(ax) && ax.getValue() instanceof OWLLiteral) {
+                    if (wrote[0]) writer.println();
                     for (String line : ((OWLLiteral) ax.getValue()).getLiteral().split("\n", -1)) {
                         writer.println("# " + line);
                     }
