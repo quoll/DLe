@@ -227,6 +227,48 @@ class PunnedNameTest {
     // ── The writer must mean what it writes ─────────────────────────────────
 
     /**
+     * A capitalised role is left alone when the document already shows it is a role.
+     *
+     * <p>The restriction settles what {@code hasPart} is, and the pair then settles
+     * {@code IsPartOf}, so no statement is needed. Writing one anyway put a line into every
+     * document that uses PascalCase role names, for nothing.
+     */
+    @Test
+    void aCapitalisedRoleWithRoleEvidenceNeedsNoStatement() throws Exception {
+        String written = rewrite(PREFIX + "A ⊑ ∃hasPart.B\nIsPartOf ⊑ hasPart\n");
+        assertFalse(statementsOnly(written).contains("IsPartOf ⊑ owl:"),
+            () -> "nothing here is ambiguous:\n" + written);
+        assertEquals(parse(PREFIX + "A ⊑ ∃hasPart.B\nIsPartOf ⊑ hasPart\n").getLogicalAxioms(),
+            parse(written).getLogicalAxioms(), () -> "and it must still round-trip:\n" + written);
+    }
+
+    /**
+     * But it is stated when nothing shows it. {@code Studies ⊑ rel} on its own gives the
+     * reader no reason to call either name a role, so without the statement the pair comes
+     * back as a class subsumption and the sub-property axiom is lost.
+     */
+    @Test
+    void aCapitalisedRoleWithNoRoleEvidenceIsStated() throws Exception {
+        OWLOntologyManager manager = OWLManager.createOWLOntologyManager();
+        OWLOntology o = manager.createOntology(IRI.create("http://example.org/t"));
+        OWLDataFactory df = manager.getOWLDataFactory();
+        manager.addAxiom(o, df.getOWLSubObjectPropertyOfAxiom(
+            df.getOWLObjectProperty(IRI.create(NS + "Studies")),
+            df.getOWLObjectProperty(IRI.create(NS + "rel"))));
+
+        DLESyntaxDocumentFormat format = new DLESyntaxDocumentFormat();
+        format.setDefaultPrefix(NS);
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        manager.saveOntology(o, format, new StreamDocumentTarget(out));
+        String written = new String(out.toByteArray(), StandardCharsets.UTF_8);
+
+        assertTrue(statementsOnly(written).contains("Studies ⊑ owl:topObjectProperty"),
+            () -> "without this the sub-property axiom is lost:\n" + written);
+        assertEquals(o.getLogicalAxioms(), parse(written).getLogicalAxioms(),
+            () -> "the axiom must survive:\n" + written);
+    }
+
+    /**
      * The top property is rendered through the prefix manager, not hard-coded as "owl:…".
      * The reader resolves it to an IRI for exactly this reason; the writer emitting literal
      * text in a document that binds {@code owl:} elsewhere lost three axioms and invented two.

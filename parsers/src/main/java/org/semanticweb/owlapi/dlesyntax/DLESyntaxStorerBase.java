@@ -22,6 +22,8 @@ import org.semanticweb.owlapi.vocab.OWLRDFVocabulary;
 import java.util.stream.Stream;
 
 import org.semanticweb.owlapi.model.OWLClass;
+import org.semanticweb.owlapi.model.OWLSubDataPropertyOfAxiom;
+import org.semanticweb.owlapi.model.OWLSubObjectPropertyOfAxiom;
 import org.semanticweb.owlapi.model.AxiomType;
 import org.semanticweb.owlapi.model.IRI;
 import org.semanticweb.owlapi.model.OWLAnnotationAssertionAxiom;
@@ -155,7 +157,20 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
         // on the way back in for nothing — which is the whole of the round-trip cost this
         // mechanism used to carry.
         boolean classContradictsCase = isClass && startsLowerCase(name) && inALowerCasePair(iri);
-        boolean propertyContradictsCase = isProperty && startsUpperCase(name);
+        // The property-side counterpart of the narrowing above: a capitalised role gets a
+        // statement only where a reader would actually misread it.
+        //
+        // What saves it otherwise is role evidence — the name, or a name directly above it,
+        // used somewhere only a role can go. `IsPartOf ⊑ hasPart` alongside `∃hasPart.B`
+        // needs nothing, because the restriction settles what hasPart is and the pair then
+        // settles IsPartOf. `Studies ⊑ rel` on its own needs the statement: nothing makes
+        // either name a role, so the pair reads as a class subsumption and the sub-property
+        // axiom is lost.
+        //
+        // Below a pun it is always needed, because the reader's last-resort case guess
+        // applies there and takes a capitalised child for a concept.
+        boolean propertyContradictsCase = isProperty && startsUpperCase(name)
+            && (propertySubsumedByAPun(entity) || !hasRoleEvidence(entity));
 
         boolean wrote = false;
         if (entity.isOWLClass() && (punned || classContradictsCase || classUnderPun)
@@ -235,6 +250,59 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
             .filter(other -> !other.isAnonymous())
             .anyMatch(other -> !startsUpperCase(
                 renderer.shortForm(other.asOWLClass().getIRI())));
+    }
+
+    /** Whether this property is a direct sub-property of a name that is also a class. */
+    private boolean propertySubsumedByAPun(OWLEntity entity) {
+        OWLDataFactory df = currentOntology.getOWLOntologyManager().getOWLDataFactory();
+        IRI iri = entity.getIRI();
+        Stream<IRI> supers = entity.isOWLDataProperty()
+            ? currentOntology.dataSubPropertyAxiomsForSubProperty(df.getOWLDataProperty(iri))
+                .map(OWLSubDataPropertyOfAxiom::getSuperProperty)
+                .filter(sup -> !sup.isAnonymous())
+                .map(sup -> sup.asOWLDataProperty().getIRI())
+            : currentOntology.objectSubPropertyAxiomsForSubProperty(df.getOWLObjectProperty(iri))
+                .map(OWLSubObjectPropertyOfAxiom::getSuperProperty)
+                .filter(sup -> !sup.isAnonymous())
+                .map(sup -> sup.getNamedProperty().getIRI());
+        return supers.anyMatch(currentOntology::containsClassInSignature);
+    }
+
+    /**
+     * Whether the document shows, somewhere a reader will see it, that this is a role.
+     *
+     * <p>Anything other than a declaration or a name-to-name sub-property axiom puts the name
+     * in a position only a role can occupy — a restriction, a domain or range, a
+     * characteristic, a chain. One hop up the hierarchy counts too, since the reader
+     * propagates a classification across a {@code ⊑} pair.
+     *
+     * <p>One hop rather than the transitive closure, deliberately. Getting this wrong in the
+     * direction of "no evidence" costs one redundant line; getting it wrong the other way
+     * loses a sub-property axiom. A deeper chain than one hop simply gets the line.
+     */
+    private boolean hasRoleEvidence(OWLEntity entity) {
+        if (usedAsARole(entity.getIRI())) return true;
+        OWLDataFactory df = currentOntology.getOWLOntologyManager().getOWLDataFactory();
+        IRI iri = entity.getIRI();
+        Stream<IRI> supers = entity.isOWLDataProperty()
+            ? currentOntology.dataSubPropertyAxiomsForSubProperty(df.getOWLDataProperty(iri))
+                .map(OWLSubDataPropertyOfAxiom::getSuperProperty)
+                .filter(sup -> !sup.isAnonymous())
+                .map(sup -> sup.asOWLDataProperty().getIRI())
+            : currentOntology.objectSubPropertyAxiomsForSubProperty(df.getOWLObjectProperty(iri))
+                .map(OWLSubObjectPropertyOfAxiom::getSuperProperty)
+                .filter(sup -> !sup.isAnonymous())
+                .map(sup -> sup.getNamedProperty().getIRI());
+        return supers.anyMatch(this::usedAsARole);
+    }
+
+    /** Whether any axiom puts this IRI where only a role can go. */
+    private boolean usedAsARole(IRI iri) {
+        return currentOntology.referencingAxioms(iri)
+            .anyMatch(ax -> !(ax instanceof OWLDeclarationAxiom)
+                && !(ax instanceof OWLSubObjectPropertyOfAxiom)
+                && !(ax instanceof OWLSubDataPropertyOfAxiom)
+                && !(ax instanceof OWLAnnotationAssertionAxiom));
     }
 
     /** Whether this class is a direct sub-class of a name that is both a class and a property. */
