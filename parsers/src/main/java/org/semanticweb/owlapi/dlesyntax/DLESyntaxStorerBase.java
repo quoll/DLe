@@ -26,6 +26,9 @@ import org.semanticweb.owlapi.model.OWLEntity;
 import org.semanticweb.owlapi.model.OWLLiteral;
 import org.semanticweb.owlapi.model.OWLOntologyID;
 import org.semanticweb.owlapi.formats.PrefixDocumentFormat;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
 import org.semanticweb.owlapi.io.OWLOntologyDocumentTarget;
 import org.semanticweb.owlapi.model.OWLOntologyStorageException;
 import org.semanticweb.owlapi.model.OWLOntology;
@@ -269,8 +272,45 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
         return iri.equals(DLE_DEFAULT_PREFIXES.get(prefix));
     }
 
+    /**
+     * The entity whose block is being written, and its axioms held back for ordering.
+     *
+     * <p>The base class fetches an entity's axioms itself and writes them in whatever order
+     * the ontology's indexes hand them over, which is not the same order twice: five runs
+     * over one document produced five different files, from four subsumptions on a single
+     * subject upward. Axiom hash codes and the signature order are both stable, so the
+     * variation is in the axiom index alone.
+     *
+     * <p>There is no hook for the order, so the axioms are collected as the base class
+     * offers them and written when the block ends, sorted. The sort is OWL API's own axiom
+     * order — the same {@code sorted()} the base class already applies to its general-axiom
+     * and usage sections, so the whole file is consistent about it.
+     */
+    @Nullable
+    private OWLEntity currentEntity;
+    private final List<OWLAxiom> heldAxioms = new ArrayList<>();
+    private boolean holdingAxioms;
+
+    @Override
+    protected void beginWritingAxiom(PrintWriter writer) {
+        if (holdingAxioms) return;
+        super.beginWritingAxiom(writer);
+    }
+
+    @Override
+    protected void writeAxiom(OWLEntity entity, OWLAxiom axiom, PrintWriter writer) {
+        if (holdingAxioms) {
+            heldAxioms.add(axiom);
+            return;
+        }
+        super.writeAxiom(entity, axiom, writer);
+    }
+
     @Override
     protected void beginWritingAxioms(OWLEntity entity, PrintWriter writer) {
+        currentEntity = entity;
+        heldAxioms.clear();
+        holdingAxioms = true;
         entityHadContent = false;
         // Suppress internal dle: entities — their labels are embedded inline in expressions.
         if (entity.getIRI().toString().startsWith(DLESyntaxAxiomVisitor.DLE_NS)) {
@@ -311,14 +351,69 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
 
     @Override
     protected void endWritingAxioms(PrintWriter writer) {
+        flushHeldAxioms(writer);
         if (entityHadContent) {
             writer.println();
             entityHadContent = false;
         }
     }
 
+    /**
+     * Writes the entity's axioms in a fixed order.
+     *
+     * <p>Two things decide the order, and the first matters more than it looks. A statement
+     * that <em>begins</em> with this entity's own name goes first, because the comments for
+     * the block have already been written above it and a comment is attached, on the way
+     * back in, to the first name of the statement it precedes. Head the block with anything
+     * else — a domain axiom rendering as {@code ∃r.⊤ ⊑ X}, an inverse as {@code p ⊑ q⁻} —
+     * and the comment silently becomes a comment on that other name. Sorting without this
+     * made that worse rather than better: the comment loss on one corpus document went from
+     * two annotations to ten, because reordering moved which statement came first.
+     *
+     * <p>Beyond that, the rendered text, so a diff between two versions of a document is
+     * readable. Ties fall back to OWL API's axiom order to stay total.
+     *
+     * <p>Each axiom is rendered once and the text kept, since rendering is what the base
+     * class's {@code writeAxiom} does with it anyway.
+     */
+    private void flushHeldAxioms(PrintWriter writer) {
+        if (!holdingAxioms) return;
+        holdingAxioms = false;
+        List<OWLAxiom> ordered = new ArrayList<>(heldAxioms);
+        heldAxioms.clear();
+
+        Map<OWLAxiom, String> rendered = new LinkedHashMap<>();
+        for (OWLAxiom axiom : ordered) {
+            rendered.put(axiom, getRendering(currentEntity, axiom));
+        }
+        String own = currentEntity == null ? null : renderer.shortForm(currentEntity.getIRI());
+        ordered.sort(Comparator
+            .comparingInt((OWLAxiom ax) -> startsWithName(rendered.get(ax), own) ? 0 : 1)
+            .thenComparing(ax -> rendered.getOrDefault(ax, ""))
+            .thenComparing(ax -> ax));
+
+        for (OWLAxiom axiom : ordered) {
+            String text = rendered.getOrDefault(axiom, "");
+            super.beginWritingAxiom(writer);
+            lastRenderingEmpty = text.isEmpty();
+            if (!text.isEmpty()) writer.write(text);
+            endWritingAxiom(writer);
+        }
+    }
+
+    /** Whether a rendering opens with this name as a whole token. */
+    private static boolean startsWithName(@Nullable String rendering, @Nullable String name) {
+        if (rendering == null || name == null || name.isEmpty()) return false;
+        return rendering.length() > name.length()
+            && rendering.startsWith(name)
+            && rendering.charAt(name.length()) == ' ';
+    }
+
     @Override
     protected void endWritingAxiom(PrintWriter writer) {
+        // While the block's axioms are held back nothing has been rendered yet, so there is
+        // no line to terminate; the flush calls this again for each one, in order.
+        if (holdingAxioms) return;
         if (!lastRenderingEmpty) {
             writer.println();
         }

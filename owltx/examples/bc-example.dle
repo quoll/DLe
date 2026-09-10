@@ -25,23 +25,6 @@
 # Database convention:
 # - Resources only appear explicitly in the database if they have an @db annotation
 #
-# Datatype facets:
-# A datatype may be narrowed by facets, each in its own brackets:
-#   [xsd:string ⊓ [minLength 2] ⊓ [maxLength 8]]
-# The value may be written with or without parentheses — `matches "[A-Z]{3}"` and
-# `matches("[A-Z]{3}")` are the same facet.
-# Numeric bounds have a compact form needing no keyword: xsd:integer[≥1 ⊓ ≤40]
-#   ≥ ≤ are inclusive, > < are exclusive
-# Facet keywords, and the OWL facet each one means:
-#   matches         → xsd:pattern          length          → xsd:length
-#   minLength       → xsd:minLength        maxLength       → xsd:maxLength
-#   min             → xsd:minInclusive     max             → xsd:maxInclusive
-#   minExclusive    → xsd:minExclusive     maxExclusive    → xsd:maxExclusive
-#   totalDigits     → xsd:totalDigits      fractionDigits  → xsd:fractionDigits
-#   langRange       → rdf:langRange
-# The IRI on the right may be used in place of its keyword, e.g. xsd:minLength for
-# minLength. Note langRange is in the rdf: namespace, not xsd:.
-#
 # DLe extensions:
 # ≝  — defines a symbol or predicate; right-hand side is not DL and is not required to be valid OWL
 # ∃r₁,…,rₙ.P  — predicate restriction: P(r₁,…,rₙ) holds over the role values
@@ -50,65 +33,64 @@
 @prefix sct: <http://snomed.info/id/>
 @prefix skos: <http://www.w3.org/2004/02/skos/core#>
 
-@label sct:116676008 "Associated morphology (attribute)"
+sct:116676008 ⊑ sct:762705008
 @ann sct:116676008 skos:altLabel "Morphology"
 @ann sct:116676008 skos:prefLabel "Associated morphology"
-sct:116676008 ⊑ sct:762705008
+@label sct:116676008 "Associated morphology (attribute)"
 sct:373080008 ≡ sct:64572001 ⊓ (∃sct:609096000.((∃sct:116676008.sct:1240414004) ⊓ (∃sct:363698007.sct:19100000)))
 
-@label sct:272741003 "Laterality (attribute)"
-@ann sct:272741003 skos:prefLabel "Laterality"
 sct:272741003 ⊑ sct:762705008
+@ann sct:272741003 skos:prefLabel "Laterality"
+@label sct:272741003 "Laterality (attribute)"
 sct:422614002 ≡ sct:51185008 ⊓ (∃sct:272741003.sct:182353008)
 
-@label sct:363698007 "Finding site (attribute)"
-@ann sct:363698007 skos:prefLabel "Finding site"
 sct:363698007 ⊑ sct:762705008
+@ann sct:363698007 skos:prefLabel "Finding site"
+@label sct:363698007 "Finding site (attribute)"
 
-@label sct:609096000 "Role group (attribute)"
-@ann sct:609096000 skos:prefLabel "Role group"
 sct:609096000 ⊑ sct:762705008
+@ann sct:609096000 skos:prefLabel "Role group"
+@label sct:609096000 "Role group (attribute)"
 
-@label sct:106237007 "Linkage concept (linkage concept)"
-@ann sct:106237007 skos:prefLabel "Linkage concept"
 sct:106237007 ⊑ sct:900000000000441003
+@ann sct:106237007 skos:prefLabel "Linkage concept"
+@label sct:106237007 "Linkage concept (linkage concept)"
 sct:246061005 ⊑ sct:106237007
 
-@label sct:108369006 "Neoplasm (morphologic abnormality)"
+sct:108369006 ⊑ sct:400177003
 @ann sct:108369006 skos:altLabel "Tumor"
 @ann sct:108369006 skos:altLabel "Tumour"
 @ann sct:108369006 skos:prefLabel "Neoplasm"
-sct:108369006 ⊑ sct:400177003
+@label sct:108369006 "Neoplasm (morphologic abnormality)"
 sct:1240414004 ⊑ sct:108369006
 
-@label sct:113343008 "Body organ structure (body structure)"
+sct:113343008 ⊑ sct:91723000
 @ann sct:113343008 skos:altLabel "Body organ"
 @ann sct:113343008 skos:definition "An anatomical structure that consists of the maximal set of organ parts so connected to one another that together they constitute a self-contained unit of macroscopic anatomy, distinct both morphologically and functionally from other such units. Together with other organs, an organ constitutes an organ system or a body part. An organ is divisible into organ parts but not organs (examples: femur, biceps, liver, heart, aorta, sciatic nerve, ovary)."
 @ann sct:113343008 skos:prefLabel "Body organ structure"
-sct:113343008 ⊑ sct:91723000
+@label sct:113343008 "Body organ structure (body structure)"
 sct:76752008 ⊑ sct:113343008 ⊓ sct:305072005 ⊓ sct:32655009
 sct:91717005 ⊑ sct:113343008
 
-@label sct:118956008 "Body structure, altered from its original anatomical structure (morphologic abnormality)"
+sct:118956008 ⊑ sct:123037004
 @ann sct:118956008 skos:altLabel "Body structure, altered from its original anatomical structure"
 @ann sct:118956008 skos:altLabel "Morphologic alteration"
 @ann sct:118956008 skos:altLabel "Morphologic change"
 @ann sct:118956008 skos:prefLabel "Morphologically altered structure"
-sct:118956008 ⊑ sct:123037004
+@label sct:118956008 "Body structure, altered from its original anatomical structure (morphologic abnormality)"
 sct:49755003 ⊑ sct:118956008
 
-@label sct:119184005 "Breast part (body structure)"
-@ann sct:119184005 skos:prefLabel "Breast part"
 sct:119184005 ⊑ sct:76752008 ⊓ sct:91717005
+@ann sct:119184005 skos:prefLabel "Breast part"
+@label sct:119184005 "Breast part (body structure)"
 sct:279005008 ⊑ sct:119184005
 
-@label sct:123037004 "Body structure (body structure)"
+sct:123037004 ⊑ sct:138875005
 @ann sct:123037004 skos:altLabel "Body structures"
 @ann sct:123037004 skos:prefLabel "Body structure"
-sct:123037004 ⊑ sct:138875005
+@label sct:123037004 "Body structure (body structure)"
 sct:442083009 ⊑ sct:123037004
 
-@label sct:1240414004 "Malignant neoplasm (morphologic abnormality)"
 @ann sct:1240414004 skos:altLabel "Blastoma"
 @ann sct:1240414004 skos:altLabel "Cancer"
 @ann sct:1240414004 skos:altLabel "Malignancy"
@@ -118,222 +100,223 @@ sct:442083009 ⊑ sct:123037004
 @ann sct:1240414004 skos:altLabel "Unclassified malignant tumor"
 @ann sct:1240414004 skos:altLabel "Unclassified malignant tumour"
 @ann sct:1240414004 skos:prefLabel "Malignant neoplasm"
+@label sct:1240414004 "Malignant neoplasm (morphologic abnormality)"
 
-@label sct:128262006 "Upper body structure (body structure)"
+sct:128262006 ⊑ sct:38866009
 @ann sct:128262006 skos:altLabel "Upper body"
 @ann sct:128262006 skos:prefLabel "Upper body structure"
-sct:128262006 ⊑ sct:38866009
+@label sct:128262006 "Upper body structure (body structure)"
 sct:70104002 ⊑ sct:128262006
 
-@label sct:138875005 "SNOMED CT Concept (SNOMED RT+CTV3)"
 @ann sct:138875005 skos:altLabel "SNOMED CT has been created by combining SNOMED RT and a computer-based nomenclature and classification known as Read Codes Version 3, which was created on behalf of the U.K. Department of Health."
 @ann sct:138875005 skos:altLabel "SNOMED Clinical Terms version: 20241001 [R] (October 2024 Release)"
 @ann sct:138875005 skos:altLabel "© 2002-2024 International Health Terminology Standards Development Organisation (IHTSDO). All rights reserved. SNOMED CT®, was originally created by The College of American Pathologists. \"SNOMED\" and \"SNOMED CT\" are registered trademarks of the IHTSDO."
 @ann sct:138875005 skos:prefLabel "SNOMED CT Concept"
+@label sct:138875005 "SNOMED CT Concept (SNOMED RT+CTV3)"
 sct:362981000 ⊑ sct:138875005
 sct:404684003 ⊑ sct:138875005
 sct:900000000000441003 ⊑ sct:138875005
 
-@label sct:182353008 "Side (qualifier value)"
-@ann sct:182353008 skos:prefLabel "Side"
 sct:182353008 ⊑ sct:272424004
+@ann sct:182353008 skos:prefLabel "Side"
+@label sct:182353008 "Side (qualifier value)"
 
-@label sct:19100000 "Structure of lower inner quadrant of breast (body structure)"
+sct:19100000 ⊑ sct:272670002
 @ann sct:19100000 skos:altLabel "Lower inner quadrant of breast"
 @ann sct:19100000 skos:prefLabel "Structure of lower inner quadrant of breast"
-sct:19100000 ⊑ sct:272670002
+@label sct:19100000 "Structure of lower inner quadrant of breast (body structure)"
 
-@label sct:22943007 "Trunk structure (body structure)"
+sct:22943007 ⊑ sct:38866009
 @ann sct:22943007 skos:altLabel "Torso"
 @ann sct:22943007 skos:altLabel "Trunk"
 @ann sct:22943007 skos:prefLabel "Trunk structure"
-sct:22943007 ⊑ sct:38866009
+@label sct:22943007 "Trunk structure (body structure)"
 sct:420473002 ⊑ sct:22943007
 
-@label sct:246061005 "Attribute (attribute)"
 @ann sct:246061005 skos:prefLabel "Attribute"
+@label sct:246061005 "Attribute (attribute)"
 sct:410662002 ⊑ sct:246061005
 
-@label sct:251007 "Pectoral region structure (body structure)"
+sct:251007 ⊑ sct:422614002
 @ann sct:251007 skos:altLabel "Pectoral region"
 @ann sct:251007 skos:prefLabel "Pectoral region structure"
-sct:251007 ⊑ sct:422614002
+@label sct:251007 "Pectoral region structure (body structure)"
 sct:32655009 ⊑ sct:251007
 
-@label sct:272424004 "Relative sites (qualifier value)"
-@ann sct:272424004 skos:prefLabel "Relative sites"
 sct:272424004 ⊑ sct:309825002
+@ann sct:272424004 skos:prefLabel "Relative sites"
+@label sct:272424004 "Relative sites (qualifier value)"
 
-@label sct:272670002 "Structure of breast quadrant (body structure)"
+sct:272670002 ⊑ sct:279005008
 @ann sct:272670002 skos:altLabel "Structure of breast quadrant"
 @ann sct:272670002 skos:prefLabel "Breast quadrant"
-sct:272670002 ⊑ sct:279005008
+@label sct:272670002 "Structure of breast quadrant (body structure)"
 
-@label sct:279005008 "Structure of region of breast (body structure)"
 @ann sct:279005008 skos:altLabel "Structure of region of breast"
 @ann sct:279005008 skos:prefLabel "Region of breast"
+@label sct:279005008 "Structure of region of breast (body structure)"
 
-@label sct:30217000 "Proliferation (morphologic abnormality)"
-@ann sct:30217000 skos:prefLabel "Proliferation"
 sct:30217000 ⊑ sct:57697001
+@ann sct:30217000 skos:prefLabel "Proliferation"
+@label sct:30217000 "Proliferation (morphologic abnormality)"
 sct:416939005 ⊑ sct:30217000 ⊓ sct:4147007
 
-@label sct:305072005 "Structure of breast and/or endocrine system (body structure)"
+sct:305072005 ⊑ sct:91689009
 @ann sct:305072005 skos:altLabel "Breast and endocrine structures"
 @ann sct:305072005 skos:altLabel "Breast and/or endocrine structures"
 @ann sct:305072005 skos:prefLabel "Structure of breast and/or endocrine system"
-sct:305072005 ⊑ sct:91689009
+@label sct:305072005 "Structure of breast and/or endocrine system (body structure)"
 
-@label sct:309825002 "Spatial and relational concepts (qualifier value)"
-@ann sct:309825002 skos:prefLabel "Spatial and relational concepts"
 sct:309825002 ⊑ sct:362981000
+@ann sct:309825002 skos:prefLabel "Spatial and relational concepts"
+@label sct:309825002 "Spatial and relational concepts (qualifier value)"
 
-@label sct:32655009 "Structure of mammary region (body structure)"
 @ann sct:32655009 skos:altLabel "Mammary region"
 @ann sct:32655009 skos:prefLabel "Structure of mammary region"
+@label sct:32655009 "Structure of mammary region (body structure)"
 
-@label sct:362981000 "Qualifier value (qualifier value)"
 @ann sct:362981000 skos:prefLabel "Qualifier value"
+@label sct:362981000 "Qualifier value (qualifier value)"
 
-@label sct:373080008 "Malignant neoplasm of lower inner quadrant of breast (disorder)"
 @ann sct:373080008 skos:altLabel "Malignant neoplasm of breast lower inner quadrant"
 @ann sct:373080008 skos:prefLabel "Malignant neoplasm of lower inner quadrant of breast"
+@label sct:373080008 "Malignant neoplasm of lower inner quadrant of breast (disorder)"
 
-@label sct:38866009 "Body part structure (body structure)"
+sct:38866009 ⊑ sct:52530000
 @ann sct:38866009 skos:altLabel "Anatomic part"
 @ann sct:38866009 skos:altLabel "Body part"
 @ann sct:38866009 skos:prefLabel "Body part structure"
-sct:38866009 ⊑ sct:52530000
+@label sct:38866009 "Body part structure (body structure)"
 
-@label sct:400177003 "Neoplasm and/or hamartoma (morphologic abnormality)"
-@ann sct:400177003 skos:prefLabel "Neoplasm and/or hamartoma"
 sct:400177003 ⊑ sct:416939005
+@ann sct:400177003 skos:prefLabel "Neoplasm and/or hamartoma"
+@label sct:400177003 "Neoplasm and/or hamartoma (morphologic abnormality)"
 
-@label sct:404684003 "Clinical finding (finding)"
 @ann sct:404684003 skos:prefLabel "Clinical finding"
+@label sct:404684003 "Clinical finding (finding)"
 sct:64572001 ⊑ sct:404684003
 
-@label sct:410662002 "Concept model attribute (attribute)"
 @ann sct:410662002 skos:prefLabel "Concept model attribute"
+@label sct:410662002 "Concept model attribute (attribute)"
 sct:762705008 ⊑ sct:410662002
 
-@label sct:4147007 "Mass (morphologic abnormality)"
+sct:4147007 ⊑ sct:52988006
 @ann sct:4147007 skos:altLabel "Localised mass"
 @ann sct:4147007 skos:altLabel "Localized mass"
 @ann sct:4147007 skos:altLabel "Lump"
 @ann sct:4147007 skos:prefLabel "Mass"
-sct:4147007 ⊑ sct:52988006
+@label sct:4147007 "Mass (morphologic abnormality)"
 
-@label sct:416152001 "Neck and/or chest and/or abdomen structure (body structure)"
+sct:416152001 ⊑ sct:416319003
 @ann sct:416152001 skos:altLabel "Neck and/or chest and/or abdomen structure"
 @ann sct:416152001 skos:prefLabel "Neck, chest and abdomen"
-sct:416152001 ⊑ sct:416319003
+@label sct:416152001 "Neck and/or chest and/or abdomen structure (body structure)"
 sct:416550000 ⊑ sct:416152001 ⊓ sct:416775004
 sct:417437006 ⊑ sct:416152001
 
-@label sct:416319003 "Structure of neck and/or chest and/or abdomen and/or pelvis (body structure)"
+sct:416319003 ⊑ sct:52530000
 @ann sct:416319003 skos:altLabel "Neck and/or chest and/or abdomen and/or pelvis"
 @ann sct:416319003 skos:altLabel "Structure of neck and/or chest and/or abdomen and/or pelvis"
 @ann sct:416319003 skos:prefLabel "Neck, chest, abdomen, and pelvis"
-sct:416319003 ⊑ sct:52530000
+@label sct:416319003 "Structure of neck and/or chest and/or abdomen and/or pelvis (body structure)"
 
-@label sct:416550000 "Chest and/or abdomen structure (body structure)"
 @ann sct:416550000 skos:altLabel "Chest and/or abdomen structure"
 @ann sct:416550000 skos:prefLabel "Chest and abdomen"
+@label sct:416550000 "Chest and/or abdomen structure (body structure)"
 sct:51185008 ⊑ sct:416550000 ⊓ sct:417437006 ⊓ sct:67734004
 
-@label sct:416775004 "Chest and/or abdomen and/or pelvis structure (body structure)"
+sct:416775004 ⊑ sct:52530000
 @ann sct:416775004 skos:altLabel "Chest and/or abdomen and/or pelvis structure"
 @ann sct:416775004 skos:prefLabel "Chest, abdomen, and pelvis"
-sct:416775004 ⊑ sct:52530000
+@label sct:416775004 "Chest and/or abdomen and/or pelvis structure (body structure)"
 
-@label sct:416939005 "Proliferative mass (morphologic abnormality)"
 @ann sct:416939005 skos:prefLabel "Proliferative mass"
+@label sct:416939005 "Proliferative mass (morphologic abnormality)"
 
-@label sct:417437006 "Neck and/or chest structure (body structure)"
 @ann sct:417437006 skos:altLabel "Neck and/or chest structure"
 @ann sct:417437006 skos:prefLabel "Neck and chest"
+@label sct:417437006 "Neck and/or chest structure (body structure)"
 
-@label sct:420473002 "Structure of subregion of trunk (body structure)"
 @ann sct:420473002 skos:prefLabel "Structure of subregion of trunk"
+@label sct:420473002 "Structure of subregion of trunk (body structure)"
 sct:816094009 ⊑ sct:420473002
 
-@label sct:422614002 "Structure of half of thorax lateral to midsagittal plane (body structure)"
 @ann sct:422614002 skos:altLabel "Hemithorax"
 @ann sct:422614002 skos:prefLabel "Structure of half of thorax lateral to midsagittal plane"
+@label sct:422614002 "Structure of half of thorax lateral to midsagittal plane (body structure)"
 
-@label sct:442083009 "Anatomical or acquired body structure (body structure)"
 @ann sct:442083009 skos:prefLabel "Anatomical or acquired body structure"
+@label sct:442083009 "Anatomical or acquired body structure (body structure)"
 sct:91723000 ⊑ sct:442083009
 
-@label sct:49755003 "Morphologically abnormal structure (morphologic abnormality)"
 @ann sct:49755003 skos:altLabel "Abnormal tissue appearance"
 @ann sct:49755003 skos:prefLabel "Morphologically abnormal structure"
+@label sct:49755003 "Morphologically abnormal structure (morphologic abnormality)"
 sct:52988006 ⊑ sct:49755003
 sct:57697001 ⊑ sct:49755003
 
-@label sct:51185008 "Thoracic structure (body structure)"
 @ann sct:51185008 skos:altLabel "Chest"
 @ann sct:51185008 skos:altLabel "Thorax"
 @ann sct:51185008 skos:prefLabel "Thoracic structure"
+@label sct:51185008 "Thoracic structure (body structure)"
 
-@label sct:52530000 "Body region structure (body structure)"
+sct:52530000 ⊑ sct:91723000
 @ann sct:52530000 skos:altLabel "Anatomic region"
 @ann sct:52530000 skos:altLabel "Body region"
 @ann sct:52530000 skos:altLabel "Topographic region"
 @ann sct:52530000 skos:prefLabel "Body region structure"
-sct:52530000 ⊑ sct:91723000
+@label sct:52530000 "Body region structure (body structure)"
 
-@label sct:52988006 "Lesion (morphologic abnormality)"
 @ann sct:52988006 skos:prefLabel "Lesion"
+@label sct:52988006 "Lesion (morphologic abnormality)"
 
-@label sct:57697001 "Growth alteration (morphologic abnormality)"
 @ann sct:57697001 skos:altLabel "Disturbance of growth"
 @ann sct:57697001 skos:prefLabel "Growth alteration"
+@label sct:57697001 "Growth alteration (morphologic abnormality)"
 
-@label sct:64572001 "Disease (disorder)"
 @ann sct:64572001 skos:altLabel "Clinical disease AND/OR syndrome"
 @ann sct:64572001 skos:altLabel "Diseases"
 @ann sct:64572001 skos:altLabel "Disorder"
 @ann sct:64572001 skos:altLabel "Disorders"
 @ann sct:64572001 skos:altLabel "Syndrome"
 @ann sct:64572001 skos:prefLabel "Disease"
+@label sct:64572001 "Disease (disorder)"
 
-@label sct:67734004 "Structure of thoracic segment of trunk (body structure)"
+sct:67734004 ⊑ sct:70104002 ⊓ sct:816094009
 @ann sct:67734004 skos:altLabel "Structure of thoracic segment of trunk"
-@ann sct:67734004 skos:altLabel "Upper trunk"
 @ann sct:67734004 skos:altLabel "Upper trunk structure"
+@ann sct:67734004 skos:altLabel "Upper trunk"
 @ann sct:67734004 skos:definition "This segment relates to the volume of the trunk that is bounded by and includes: superiorly the thoracic inlet; inferiorly the thoracic diaphragm; posteriorly the spinal column and back of the thorax; and laterally the chest wall: it contains the thoracic cavity and contents, and includes all the overlying muscles, skin and subcutaneous tissue."
 @ann sct:67734004 skos:prefLabel "Thoracic segment of trunk"
-sct:67734004 ⊑ sct:70104002 ⊓ sct:816094009
+@label sct:67734004 "Structure of thoracic segment of trunk (body structure)"
 
-@label sct:70104002 "Upper body part structure (body structure)"
 @ann sct:70104002 skos:altLabel "Upper body part"
 @ann sct:70104002 skos:prefLabel "Upper body part structure"
+@label sct:70104002 "Upper body part structure (body structure)"
 
-@label sct:76752008 "Breast structure (body structure)"
-@ann sct:76752008 skos:altLabel "Breast"
 @ann sct:76752008 skos:altLabel "Breast anatomy"
+@ann sct:76752008 skos:altLabel "Breast"
 @ann sct:76752008 skos:prefLabel "Breast structure"
+@label sct:76752008 "Breast structure (body structure)"
 
-@label sct:816094009 "Structure of thoracic cross-sectional segment of trunk (body structure)"
 @ann sct:816094009 skos:altLabel "Cross-sectional chest"
 @ann sct:816094009 skos:altLabel "Structure of thoracic cross-sectional segment of trunk"
 @ann sct:816094009 skos:altLabel "Thoracic cross-sectional segment of trunk"
 @ann sct:816094009 skos:definition "This cross-sectional segment is bounded superiorly by a virtual horizontal plane at the level of the thoracic inlet (upper boundary of first thoracic (T1) vertebra) and inferiorly by a virtual horizontal plane at the level of the lower boundary of the twelfth thoracic (T12) vertebra. The segment therefore includes the entire thoracic cavity but also part of the upper abdominal volume above the virtual plane at the T12 vertebra. The volume includes the entire transverse thickness of the body over the longitudinal extent between the superior (upper) and inferior (lower) boundaries including the skin and subcutaneous tissue. The segment relates to the cross-sectional or projectional volume as perceived by transmissive or emissive imaging."
 @ann sct:816094009 skos:prefLabel "Cross-sectional thorax"
+@label sct:816094009 "Structure of thoracic cross-sectional segment of trunk (body structure)"
 
-@label sct:900000000000441003 "SNOMED CT Model Component (metadata)"
 @ann sct:900000000000441003 skos:prefLabel "SNOMED CT Model Component"
+@label sct:900000000000441003 "SNOMED CT Model Component (metadata)"
 
-@label sct:91689009 "Body system structure (body structure)"
+sct:91689009 ⊑ sct:91723000
 @ann sct:91689009 skos:altLabel "Organ system"
 @ann sct:91689009 skos:prefLabel "Body system structure"
-sct:91689009 ⊑ sct:91723000
+@label sct:91689009 "Body system structure (body structure)"
 
-@label sct:91717005 "Organ part (body structure)"
 @ann sct:91717005 skos:prefLabel "Organ part"
+@label sct:91717005 "Organ part (body structure)"
 
-@label sct:91723000 "Anatomical structure (body structure)"
 @ann sct:91723000 skos:prefLabel "Anatomical structure"
+@label sct:91723000 "Anatomical structure (body structure)"
 
