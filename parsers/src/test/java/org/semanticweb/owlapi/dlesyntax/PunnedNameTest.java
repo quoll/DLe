@@ -149,6 +149,28 @@ class PunnedNameTest {
     // ── Classification must not override direct evidence ────────────────────
 
     /**
+     * A capitalised role below an ordinary role is still a role.
+     *
+     * <p>The case guess applies only below a <em>pun</em>, where both readings exist. Below a
+     * pure role there is no class reading to offer, so the child must be a role whatever its
+     * case. Applying the guess there turned this into a class subsumption, which is a
+     * regression against documents that simply use PascalCase role names — a normal choice
+     * that nothing should punish. It was found by asking whether any of this had disturbed
+     * documents with no punning in them.
+     */
+    @Test
+    void aCapitalisedRoleBelowAnOrdinaryRoleIsStillARole() throws Exception {
+        OWLOntology o = parse(PREFIX + "A ⊑ ∃hasPart.B\nIsPartOf ⊑ hasPart\n");
+        OWLDataFactory df = OWLManager.getOWLDataFactory();
+        assertTrue(o.containsAxiom(df.getOWLSubObjectPropertyOfAxiom(
+                df.getOWLObjectProperty(IRI.create(NS + "IsPartOf")),
+                df.getOWLObjectProperty(IRI.create(NS + "hasPart")))),
+            () -> "a pure role's child must stay a role: " + o.getLogicalAxioms());
+        assertFalse(o.containsClassInSignature(IRI.create(NS + "IsPartOf")),
+            "and must not gain a class reading");
+    }
+
+    /**
      * A capitalised name used as a role is a role. An earlier revision treated the case of
      * the name as a barrier, which invented a pun and refiled the sub-property axiom.
      */

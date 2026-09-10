@@ -406,7 +406,7 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
                         changed |= objectPropertyNames.add(sup);
                     if (objectPropertyNames.contains(sup) && !dataPropertyNames.contains(sub)
                             && !mustBeClass.contains(sub)
-                            && !looksLikeAClass(sub))
+                            && !(mustBeClass.contains(sup) && looksLikeAClass(sub)))
                         changed |= objectPropertyNames.add(sub);
                 }
             }
@@ -454,12 +454,18 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
      * Whether a name's local part begins with an upper-case letter, as a guess of last resort.
      *
      * <p>Long-standing DL practice: concepts are capitalised, roles are not. It is consulted
-     * in exactly one place — the downward edge of role propagation, where a name is being
-     * classified with <em>no evidence of its own</em>, purely because something above it in a
-     * {@code ⊑} chain is a role. Crossing a pun downward is what makes SNOMED CT's attribute
-     * children roles, and their numeric identifiers carry no case signal, so they still cross.
-     * A capitalised child does not, because a concept below a pun is otherwise silently
-     * converted into a role and leaves the class signature.
+     * in exactly one place — the downward edge of role propagation, and there only when the
+     * name above is <em>punned</em>, so that both readings are genuinely available.
+     *
+     * <p>That restriction matters. Below a punned name a capitalised child is ambiguous, and
+     * without the guess a concept there is silently converted into a role and leaves the
+     * class signature. Below an ordinary role there is no ambiguity — a pure role has no
+     * class reading to offer — so the child must be a role whatever its case, and applying
+     * the guess there turned {@code IsPartOf ⊑ hasPart} into a class subsumption. PascalCase
+     * role names are a normal choice and nothing should punish them.
+     *
+     * <p>SNOMED CT is unaffected either way: its identifiers are numeric and carry no case
+     * signal, so its attribute children cross downward as they must.
      *
      * <p>It must never override evidence. An earlier revision used it as a barrier on the
      * <em>upward</em> edge as well, where a capitalised object property already used in a
