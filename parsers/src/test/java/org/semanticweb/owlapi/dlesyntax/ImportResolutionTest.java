@@ -123,6 +123,28 @@ class ImportResolutionTest {
             "and must contribute axioms");
     }
 
+    /**
+     * Two documents that declare no {@code @ontology} must not collide.
+     *
+     * <p>Both used to be given the same made-up default IRI, which was harmless while
+     * imports were never followed. Once they are, the manager refuses the second with
+     * "Ontology already exists" — and most DLe documents declare no {@code @ontology}, so
+     * this is the common case rather than an edge one. An undeclared document is now left
+     * anonymous, which collides with nothing and, unlike naming it after its own file,
+     * puts no machine-specific location into it.
+     */
+    @Test
+    void twoDocumentsWithoutAnOntologyIriDoNotCollide(@TempDir Path dir) throws Exception {
+        write(dir, "vocab.dle", "@prefix : <http://example.org/v#>\nThing1 ⊑ ⊤\n");
+        Path main = write(dir, "main.dle",
+            "@prefix : <http://example.org/f#>\n@import \"vocab.dle\"\nA ⊑ B\n");
+        OWLOntology o = parseFile(main);
+        assertEquals(2, o.importsClosure().count(),
+            "neither document names itself, so neither can clash with the other");
+        assertTrue(o.getOntologyID().isAnonymous(),
+            "a document that declares no @ontology has no IRI to report");
+    }
+
     // ── Writing it back ─────────────────────────────────────────────────────
 
     /**

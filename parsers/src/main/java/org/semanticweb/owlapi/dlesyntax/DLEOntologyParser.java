@@ -94,14 +94,25 @@ public class DLEOntologyParser extends AbstractOWLParser {
             DualDeclarationResolver.resolve(ontology);
             DefaultLabelAdder.addDefaultLabels(ontology);
 
-            // Apply ontology ID; fall back to the default IRI when none is declared.
+            // Apply the ontology ID. A document that declares no @ontology is left
+            // anonymous rather than given a made-up IRI.
+            //
+            // It used to be handed a fixed default, which was harmless while imports were
+            // never followed. Now that they are, two documents that both omit @ontology —
+            // and most do — collided on that one IRI, and the manager refused the second
+            // with "Ontology already exists". Naming it after its own file would avoid the
+            // collision but stamp a machine-specific location into every such document,
+            // which is exactly the problem being avoided on the import side.
+            //
+            // Anonymous is also what the writer already assumed: it suppresses @ontology
+            // when the IRI is the default, so output is unchanged either way.
             IRI ontIRI = visitor.getOntologyIRI();
-            if (ontIRI == null) ontIRI = DLESyntaxAxiomVisitor.DLE_DEFAULT_ONTOLOGY_IRI;
             IRI verIRI = visitor.getVersionIRI();
-            OWLOntologyID id = new OWLOntologyID(
-                java.util.Optional.of(ontIRI),
-                java.util.Optional.ofNullable(verIRI));
-            ontology.getOWLOntologyManager().applyChange(new SetOntologyID(ontology, id));
+            if (ontIRI != null) {
+                ontology.getOWLOntologyManager().applyChange(new SetOntologyID(ontology,
+                    new OWLOntologyID(java.util.Optional.of(ontIRI),
+                                      java.util.Optional.ofNullable(verIRI))));
+            }
 
             // Apply import declarations, resolving relative references against this document
             for (String ref : visitor.getImportRefs()) {
