@@ -155,8 +155,17 @@ datatypeRestriction
 
 // A single facet constraint.  The keyword is either a bare name (e.g. matches,
 // length, min, max) or a prefixed IRI (e.g. xsd:pattern, xsd:maxLength).
+//
+// The value may be given with or without parentheses: `matches "[A-Z]{3}"` and
+// `matches("[A-Z]{3}")` mean the same thing.  A facet is a function of one argument, and
+// every other syntax that has them — XML Schema, SPARQL, SHACL — writes them that way, so
+// the call form is what people and generators reach for.
+//
+// Two spellings of one construct, not a second construct: a facet only ever appears inside
+// the brackets of a datatype restriction, so the parentheses here cannot be confused with a
+// grouped class expression or with a predicate definition's argument list.
 facet
-    : name literal
+    : name (literal | '(' literal ')')
     ;
 
 // Elements of a { … } enumeration are either individual/value names or
