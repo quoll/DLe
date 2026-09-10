@@ -59,7 +59,7 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
     /** Version IRI from {@code @version}, null if not declared. */
     private IRI versionIRI  = null;
     /** IRIs declared via {@code @import}. */
-    private final List<IRI> imports = new ArrayList<>();
+    private final List<String> importRefs = new ArrayList<>();
 
     DLESyntaxAxiomVisitor(OWLDataFactory df,
                           Set<String> objectPropertyNames,
@@ -77,7 +77,8 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
     Map<String, String> getPrefixes() { return prefixes; }
     IRI getOntologyIRI()              { return ontologyIRI; }
     IRI getVersionIRI()               { return versionIRI; }
-    List<IRI> getImports()            { return imports; }
+    /** Import references as written, absolute or relative; see visitImportDecl. */
+    List<String> getImportRefs()      { return importRefs; }
 
     // ── Prefix declarations ──────────────────────────────────────────────────
 
@@ -107,8 +108,36 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
 
     @Override
     public OWLObject visitImportDecl(DLESyntaxParser.ImportDeclContext ctx) {
-        imports.add(expandIriRef(ctx.iriRef()));
+        // The reference is kept as text, not turned into an IRI here. A relative one has to
+        // be resolved against the document being parsed, and only the caller knows where
+        // that is; an absolute one survives resolution untouched.
+        if (ctx.STRING() != null) {
+            importRefs.add(unquote(ctx.STRING().getText()));
+        } else {
+            importRefs.add(expandIriRef(ctx.iriRef()).toString());
+        }
         return null;
+    }
+
+    /** Strips the quotes from a STRING token and unescapes what the lexer allowed in. */
+    private static String unquote(String token) {
+        String inner = token.substring(1, token.length() - 1);
+        StringBuilder out = new StringBuilder(inner.length());
+        for (int i = 0; i < inner.length(); i++) {
+            char c = inner.charAt(i);
+            if (c == '\\' && i + 1 < inner.length()) {
+                char next = inner.charAt(++i);
+                switch (next) {
+                    case 'n': out.append('\n'); break;
+                    case 't': out.append('\t'); break;
+                    case 'r': out.append('\r'); break;
+                    default:  out.append(next);
+                }
+            } else {
+                out.append(c);
+            }
+        }
+        return out.toString();
     }
 
     // ── Predicate definitions ────────────────────────────────────────────────

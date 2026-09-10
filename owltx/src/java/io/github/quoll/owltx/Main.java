@@ -5,6 +5,8 @@ import org.semanticweb.owlapi.dlesyntax.DLESyntaxStorer;
 import org.semanticweb.owlapi.formats.*;
 import org.semanticweb.owlapi.model.*;
 import org.semanticweb.owlapi.io.StreamDocumentTarget;
+import org.semanticweb.owlapi.model.OWLOntologyLoaderConfiguration;
+import org.semanticweb.owlapi.model.MissingImportHandlingStrategy;
 import org.semanticweb.owlapi.io.FileDocumentTarget;
 
 import java.io.File;
@@ -148,13 +150,23 @@ public class Main {
         // would otherwise claim the file by matching its @prefix lines).
         OWLOntology ontology;
         String inputExt = extension(inputFile);
+        // An import that cannot be loaded is reported, not fatal. A conversion tool should
+        // convert what it was given: the alternative is that an unreachable remote import,
+        // or one file in a set that does not parse, takes the whole document down.
+        manager.addMissingImportListener(event ->
+            System.err.println("warning: could not load import <"
+                + event.getImportedOntologyURI() + ">"));
+        OWLOntologyLoaderConfiguration loaderConfig = manager.getOntologyLoaderConfiguration()
+            .setMissingImportHandlingStrategy(MissingImportHandlingStrategy.SILENT);
+        manager.setOntologyLoaderConfiguration(loaderConfig);
+
         if ("dle".equalsIgnoreCase(inputExt)) {
             try {
                 ontology = manager.createOntology();
                 OWLDocumentFormat dleFormat = new org.semanticweb.owlapi.dlesyntax.DLEOntologyParser().parse(
                     new org.semanticweb.owlapi.io.FileDocumentSource(input),
                     ontology,
-                    manager.getOntologyLoaderConfiguration());
+                    loaderConfig);
                 manager.setOntologyFormat(ontology, dleFormat);
             } catch (Exception e) {
                 die("parsing DLE file: " + e.getMessage());
@@ -176,8 +188,11 @@ public class Main {
 
         // Write output
         if (outputFile != null) {
-            try (OutputStream out = new FileOutputStream(outputFile)) {
-                manager.saveOntology(ontology, outputFormat, new StreamDocumentTarget(out));
+            // FileDocumentTarget rather than a bare stream: it carries the document's IRI,
+            // which the DLe storer needs to write an import back as the relative path it
+            // came in as instead of an absolute local one.
+            try {
+                manager.saveOntology(ontology, outputFormat, new FileDocumentTarget(new java.io.File(outputFile)));
             } catch (Exception e) {
                 die("writing to " + outputFile + ": " + e.getMessage());
             }

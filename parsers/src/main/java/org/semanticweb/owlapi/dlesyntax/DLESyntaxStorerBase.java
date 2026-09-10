@@ -26,6 +26,8 @@ import org.semanticweb.owlapi.model.OWLEntity;
 import org.semanticweb.owlapi.model.OWLLiteral;
 import org.semanticweb.owlapi.model.OWLOntologyID;
 import org.semanticweb.owlapi.formats.PrefixDocumentFormat;
+import org.semanticweb.owlapi.io.OWLOntologyDocumentTarget;
+import org.semanticweb.owlapi.model.OWLOntologyStorageException;
 import org.semanticweb.owlapi.model.OWLOntology;
 import org.semanticweb.owlapi.util.DefaultPrefixManager;
 
@@ -54,6 +56,68 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
 
     /** Renderer used to produce DLE syntax strings for axioms. */
     private final DLESyntaxObjectRenderer renderer = new DLESyntaxObjectRenderer();
+
+    /**
+     * Where this document is being written, when that is known.
+     *
+     * <p>Only needed to write an import back the way it came. A relative reference is
+     * resolved to an absolute IRI on the way in — it has to be, because a relative path
+     * cannot be carried inside a {@code file:} IRI — and writing that absolute path back
+     * would put a machine-specific location into a document that is likely under version
+     * control. With the target known it can be made relative again.
+     */
+    @Nullable
+    private IRI targetDocumentIRI;
+
+    @Override
+    public void storeOntology(OWLOntology o, IRI documentIRI, OWLDocumentFormat format)
+            throws OWLOntologyStorageException {
+        targetDocumentIRI = documentIRI;
+        try {
+            super.storeOntology(o, documentIRI, format);
+        } finally {
+            targetDocumentIRI = null;
+        }
+    }
+
+    @Override
+    public void storeOntology(OWLOntology o, OWLOntologyDocumentTarget target,
+                              OWLDocumentFormat format)
+            throws OWLOntologyStorageException {
+        targetDocumentIRI = target.getDocumentIRI().orElse(null);
+        try {
+            super.storeOntology(o, target, format);
+        } finally {
+            targetDocumentIRI = null;
+        }
+    }
+
+    /**
+     * Renders an import target: a quoted relative path when it sits beside this document or
+     * below it, and an absolute IRI otherwise.
+     *
+     * <p>Relativised only downward. {@link java.net.URI#relativize} declines to produce
+     * {@code ../} chains, which is the behaviour wanted here — a path that climbs out of the
+     * document's own directory is more fragile than an absolute one.
+     */
+    private String renderImport(IRI importIRI) {
+        if (targetDocumentIRI != null) {
+            try {
+                java.net.URI target = new java.net.URI(targetDocumentIRI.toString());
+                java.net.URI imported = new java.net.URI(importIRI.toString());
+                if ("file".equals(target.getScheme()) && "file".equals(imported.getScheme())
+                        && !target.isOpaque() && !imported.isOpaque()) {
+                    java.net.URI relative = target.resolve(".").relativize(imported);
+                    if (!relative.isAbsolute()) {
+                        return "\"" + relative + "\"";
+                    }
+                }
+            } catch (java.net.URISyntaxException e) {
+                // fall through to the absolute form
+            }
+        }
+        return "<" + importIRI + ">";
+    }
 
     /** Current ontology being stored; set for the duration of {@code storeOntology}. */
     @Nullable private OWLOntology currentOntology;
@@ -270,7 +334,7 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
             writer.println();
         }
         ontology.importsDeclarations().sorted().forEach(decl ->
-            writer.println("@import <" + decl.getIRI() + ">"));
+            writer.println("@import " + renderImport(decl.getIRI())));
         if (ontology.importsDeclarations().findAny().isPresent()) {
             writer.println();
         }

@@ -1,5 +1,6 @@
 package org.semanticweb.owlapi.dlesyntax;
 
+import javax.annotation.Nullable;
 import java.io.IOException;
 import java.io.Reader;
 import java.util.Collections;
@@ -18,6 +19,8 @@ import org.semanticweb.owlapi.io.OWLOntologyDocumentSource;
 import org.semanticweb.owlapi.io.OWLOntologyInputSourceException;
 import org.semanticweb.owlapi.io.OWLParserException;
 import org.semanticweb.owlapi.model.AddImport;
+import org.semanticweb.owlapi.model.OWLOntologyManager;
+import org.semanticweb.owlapi.model.OWLImportsDeclaration;
 import org.semanticweb.owlapi.model.IRI;
 import org.semanticweb.owlapi.model.OWLDocumentFormat;
 import org.semanticweb.owlapi.model.OWLDocumentFormatFactory;
@@ -100,12 +103,19 @@ public class DLEOntologyParser extends AbstractOWLParser {
                 java.util.Optional.ofNullable(verIRI));
             ontology.getOWLOntologyManager().applyChange(new SetOntologyID(ontology, id));
 
-            // Apply import declarations
-            for (IRI importIRI : visitor.getImports()) {
-                ontology.getOWLOntologyManager().applyChange(
-                    new AddImport(ontology,
-                        ontology.getOWLOntologyManager().getOWLDataFactory()
-                            .getOWLImportsDeclaration(importIRI)));
+            // Apply import declarations, resolving relative references against this document
+            for (String ref : visitor.getImportRefs()) {
+                IRI importIRI = resolveImport(source.getDocumentIRI(), ref);
+                OWLOntologyManager manager = ontology.getOWLOntologyManager();
+                OWLImportsDeclaration declaration =
+                    manager.getOWLDataFactory().getOWLImportsDeclaration(importIRI);
+                manager.applyChange(new AddImport(ontology, declaration));
+                // Recording the declaration does not fetch anything — imports were declared
+                // and then never followed, so the closure of a document with an @import was
+                // always just the document itself. Asking the manager to load it is what a
+                // parser is expected to do, and it honours the caller's configuration for a
+                // missing import rather than deciding here.
+                manager.makeLoadImportRequest(declaration, configuration);
             }
 
             DLESyntaxDocumentFormat format = new DLESyntaxDocumentFormat();
@@ -120,6 +130,42 @@ public class DLEOntologyParser extends AbstractOWLParser {
     @Override
     public OWLDocumentFormatFactory getSupportedFormat() {
         return new org.semanticweb.owlapi.formats.DLESyntaxDocumentFormatFactory();
+    }
+
+    /**
+     * Resolves an import reference against the document that declared it.
+     *
+     * <p>A relative reference — {@code "ardoqvocab.dle"}, the file beside this one — cannot
+     * be carried as an IRI on its own. Under RFC 3986 a scheme must be followed by a slash
+     * for the path to be hierarchical, so {@code file:ardoqvocab.dle} is an <em>opaque</em>
+     * URI with no path at all: {@code new File(uri)} on it throws "URI is not hierarchical",
+     * and nothing can open it. The reference has to become absolute, and the only sensible
+     * base is the location of the document being parsed.
+     *
+     * <p>An absolute reference is returned untouched, so {@code @import <http://…>} and
+     * {@code @import "http://…"} behave identically and neither changes meaning.
+     *
+     * <p>Where no usable base exists — a document parsed from a string or a stream, whose
+     * document IRI is opaque — a relative reference is left as it stands rather than being
+     * resolved against something arbitrary like the working directory. OWL API then reports
+     * it, which is more use than silently loading the wrong file.
+     */
+    static IRI resolveImport(@Nullable IRI documentIRI, String ref) {
+        java.net.URI reference;
+        try {
+            reference = new java.net.URI(ref);
+        } catch (java.net.URISyntaxException e) {
+            return IRI.create(ref);   // not a URI at all; let OWLAPI report it
+        }
+        if (reference.isAbsolute()) return IRI.create(reference.toString());
+        if (documentIRI == null) return IRI.create(ref);
+        try {
+            java.net.URI base = new java.net.URI(documentIRI.toString());
+            if (!base.isAbsolute() || base.isOpaque()) return IRI.create(ref);
+            return IRI.create(base.resolve(reference).toString());
+        } catch (java.net.URISyntaxException e) {
+            return IRI.create(ref);
+        }
     }
 
     /** Converts any ANTLR syntax error into an OWLParserException. */

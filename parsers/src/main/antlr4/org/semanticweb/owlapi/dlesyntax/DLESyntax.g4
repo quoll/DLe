@@ -10,7 +10,12 @@ ontology
 prefixDecl   : AT_PREFIX   PNAME_NS IRI ;
 ontologyDecl : AT_ONTOLOGY iriRef       ;
 versionDecl  : AT_VERSION  iriRef       ;
-importDecl   : AT_IMPORT   iriRef       ;
+// An import may name its target as an IRI, a prefixed name, or a double-quoted string.
+// The string form exists because a relative path is the natural way to refer to a file
+// beside this one, and it cannot be written as an IRI: `file:x.dle` is opaque under
+// RFC 3986 — no leading slash after the scheme — so it has no path and cannot be opened.
+// A relative reference in either form is resolved against the document being parsed.
+importDecl   : AT_IMPORT   (iriRef | STRING) ;
 
 // An IRI reference: either a full angle-bracket IRI or a prefixed/bare name.
 iriRef : IRI | name ;
