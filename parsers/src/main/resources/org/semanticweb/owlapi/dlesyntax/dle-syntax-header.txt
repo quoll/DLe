@@ -20,6 +20,15 @@
 # - Concept/class identifiers conventionally begin with an upper-case letter
 # - Role/reference/field identifiers conventionally begin with a lower-case letter
 #
+# Kind statements:
+# - `X ⊑ ⊤` states that X is a concept; `X ⊑ owl:topObjectProperty` and
+#   `X ⊑ owl:topDataProperty` state that X is a role. All three are ordinary subsumptions
+#   that are always true, so they add no information beyond the kind itself.
+# - They are written only where the text would otherwise be ambiguous: an identifier whose
+#   case contradicts the convention above, or one that is used as BOTH a concept and a role.
+# - A name carrying both a concept and a role statement is punned — it is both, and the pair
+#   is what says so. The two lines may be far apart, since each is written with its own kind.
+#
 # Database convention:
 # - Resources only appear explicitly in the database if they have an @db annotation
 #

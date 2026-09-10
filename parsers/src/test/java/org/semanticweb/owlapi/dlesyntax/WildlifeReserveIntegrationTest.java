@@ -8,6 +8,7 @@ import org.semanticweb.owlapi.io.StreamDocumentSource;
 import org.semanticweb.owlapi.io.StreamDocumentTarget;
 import org.semanticweb.owlapi.model.OWLDocumentFormat;
 import org.semanticweb.owlapi.model.OWLLogicalAxiom;
+import org.semanticweb.owlapi.model.OWLSubClassOfAxiom;
 import org.semanticweb.owlapi.model.OWLOntology;
 import org.semanticweb.owlapi.model.OWLOntologyManager;
 
@@ -15,7 +16,9 @@ import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.net.URL;
+import java.util.HashSet;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -71,6 +74,11 @@ class WildlifeReserveIntegrationTest {
 
         Set<OWLLogicalAxiom> reloadedAxioms = reloaded.getLogicalAxioms();
         assertFalse(reloadedAxioms.isEmpty(), "Reloaded ontology must contain logical axioms");
+
+        // Strict equality. This was relaxed for a while to tolerate `SubClassOf(X, owl:Thing)`
+        // axioms the writer's own class markers turned into real ones on the way back in.
+        // The markers are now emitted only where a reader would actually misread the name,
+        // so the round trip gains nothing and the strong assertion holds again.
         assertEquals(originalAxioms, reloadedAxioms,
             "Round-tripped ontology must have the same logical axioms as the original");
     }

@@ -1,5 +1,7 @@
 package org.semanticweb.owlapi.dlesyntax;
 
+import javax.annotation.Nullable;
+
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -35,6 +37,34 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
     // these nodes, preventing the attribute hierarchy from bleeding into the concept hierarchy.
     private final Set<String> mustBeClass = new HashSet<>();
 
+    // Roles the document states outright, via `X ⊑ owl:topObjectProperty` or
+    // `X ⊑ owl:topDataProperty`, for the case inference cannot reach: a name whose kind
+    // nothing in the document implies. Paired with `X ⊑ ⊤` — which lands in mustBeClass
+    // like any other class use — it marks a pun.
+    private final Set<String> explicitRole  = new HashSet<>();
+
+    // Prefix map, needed only to resolve the kind statements.  Recognising them by
+    // spelling is not sound: a document may bind the OWL namespace to some other prefix,
+    // in which case the statement is missed, and it may bind `owl:` to some other
+    // namespace, in which case an ordinary subsumption is wrongly taken for a statement
+    // and the axiom destroyed.  Seeded with the same defaults as the axiom visitor.
+    private final Map<String, String> prefixes = new HashMap<String, String>() {{
+        put("owl:",  OWL_NS);
+        put("rdf:",  "http://www.w3.org/1999/02/22-rdf-syntax-ns#");
+        put("rdfs:", "http://www.w3.org/2000/01/rdf-schema#");
+        put("xsd:",  "http://www.w3.org/2001/XMLSchema#");
+        put("xml:",  "http://www.w3.org/XML/1998/namespace");
+    }};
+
+    @Override
+    public Void visitPrefixDecl(DLESyntaxParser.PrefixDeclContext ctx) {
+        String label = ctx.PNAME_NS().getText();
+        String iri   = ctx.IRI().getText();
+        prefixes.put(label.endsWith(":") ? label : label + ":",
+                     iri.substring(1, iri.length() - 1));
+        return null;
+    }
+
     // Where each name was first used as an inverse role (r⁻). Only needed to
     // report a location if that name also turns out to be a data property:
     // inverting a data property is not expressible in OWL. See validate().
@@ -50,6 +80,30 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
     Set<String> getObjectPropertyNames() { return objectPropertyNames; }
     Set<String> getDataPropertyNames()   { return dataPropertyNames; }
     Set<String> getPredicateNames()      { return predicateNames; }
+    /** Names the document states are roles, via {@code X ⊑ owl:topObjectProperty}. */
+    Set<String> getExplicitRoleNames()   { return explicitRole; }
+
+    /**
+     * Names that are a role <em>and</em> a class — the puns.
+     *
+     * <p>Must be called after {@link #propagatePropertyTypes()}. A name qualifies when it is
+     * classified as a role and there is class evidence for it: either the document said so
+     * with {@code X ⊑ ⊤}, or it was used somewhere only a class can go.
+     *
+     * <p>The axiom visitor needs this because a name resolves to one kind, while a pun is one
+     * kind in one position and the other in another. Knowing which names are punned lets a
+     * class position take the class reading instead of failing.
+     */
+    Set<String> getPunnedNames() {
+        Set<String> punned = new HashSet<>();
+        for (String name : objectPropertyNames) {
+            if (mustBeClass.contains(name)) punned.add(name);
+        }
+        for (String name : dataPropertyNames) {
+            if (mustBeClass.contains(name)) punned.add(name);
+        }
+        return punned;
+    }
 
     // ── Restriction contexts ─────────────────────────────────────────────────
 
@@ -236,6 +290,27 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
 
         String lhs = singleBareName(ctx.classExpr(0));
         String rhs = singleBareName(ctx.classExpr(1));
+
+        // X ⊑ ⊤ needs no special handling here: ⊤ is not a name, so the `rhs == null`
+        // branch at the end of this method already puts X in mustBeClass, which is the
+        // barrier. It stays an ordinary subsumption otherwise, which is what keeps the
+        // corpus documents that open their blocks with it unaffected.
+
+        // X ⊑ owl:topObjectProperty — a declaration that X is a role, not a subsumption
+        // to record.  Written by the storer for a name whose kind the reader could not
+        // otherwise infer: a pun, or one that breaks the case convention.
+        String topProperty = rhs == null ? null : topPropertyIri(rhs);
+        if (lhs != null && topProperty != null) {
+            explicitRole.add(lhs);
+            if (TOP_DATA_PROPERTY_IRI.equals(topProperty)) {
+                dataPropertyNames.add(lhs);
+                objectPropertyNames.remove(lhs);
+            } else if (!dataPropertyNames.contains(lhs)) {
+                objectPropertyNames.add(lhs);
+            }
+            return null;
+        }
+
         if (lhs != null && rhs != null) {
             subPropertyPairs.computeIfAbsent(lhs, k -> new HashSet<>()).add(rhs);
             // Heuristic: bare camelCase names (lowercase start, no prefix) are almost
@@ -299,27 +374,128 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
             for (Map.Entry<String, Set<String>> e : subPropertyPairs.entrySet()) {
                 String sub = e.getKey();
                 for (String sup : e.getValue()) {
+                    // Upward (sub → sup) stops at a name that names a class: that is where
+                    // the role hierarchy ends and the concept hierarchy begins.  Downward
+                    // (sup → sub) crosses it, because being the parent of roles is what makes
+                    // such a name a pun — whatever else it is, its sub-names are roles.
+                    //
+                    // The consequence, deliberate but worth knowing: *every* name below a
+                    // punned name becomes a role, including one that was meant as a class.
+                    // Right for SNOMED CT, whose punned roots have none but roles beneath
+                    // them; wrong for a pun with concept children, which DLe cannot express.
+                    //
                     // Data classification is definitive — maintain mutual exclusivity.
-                    if (dataPropertyNames.contains(sub)) {
+                    // The guards match the object-property rules below. They used not to,
+                    // and data-ness crossed every barrier: a name the document had stated
+                    // to be an object property, or had used where only a class can go, was
+                    // overwritten and the document then failed to parse.
+                    if (dataPropertyNames.contains(sub) && !mustBeClass.contains(sup)
+                            && !explicitRole.contains(sup)) {
                         changed |= dataPropertyNames.add(sup);
                         changed |= objectPropertyNames.remove(sup);
                     }
-                    if (dataPropertyNames.contains(sup)) {
+                    if (dataPropertyNames.contains(sup) && !mustBeClass.contains(sub)
+                            && !explicitRole.contains(sub)) {
                         changed |= dataPropertyNames.add(sub);
                         changed |= objectPropertyNames.remove(sub);
                     }
                     // Object property propagation is blocked at mustBeClass nodes.
-                    if (objectPropertyNames.contains(sub) && !dataPropertyNames.contains(sup)
+                    if (objectPropertyNames.contains(sub)
+                            && !dataPropertyNames.contains(sup)
                             && !mustBeClass.contains(sup))
                         changed |= objectPropertyNames.add(sup);
                     if (objectPropertyNames.contains(sup) && !dataPropertyNames.contains(sub)
-                            && !mustBeClass.contains(sub))
+                            && !mustBeClass.contains(sub)
+                            && !(mustBeClass.contains(sup) && looksLikeAClass(sub)))
                         changed |= objectPropertyNames.add(sub);
                 }
             }
         }
     }
 
+    static final String OWL_NS = "http://www.w3.org/2002/07/owl#";
+    private static final String TOP_OBJECT_PROPERTY_IRI = OWL_NS + "topObjectProperty";
+    private static final String TOP_DATA_PROPERTY_IRI   = OWL_NS + "topDataProperty";
+
+    /**
+     * Whether a name resolves to one of the OWL top properties, making {@code X ⊑ name} a
+     * declaration that X is a role rather than an ordinary sub-property axiom.
+     *
+     * <p>Unambiguous because no document says it for any other reason: every object property
+     * is a sub-property of {@code owl:topObjectProperty} already, so the statement carries no
+     * information except the one it is being used to carry.
+     *
+     * <p>Resolved to an IRI rather than compared as text.  Matching the spelling fails both
+     * ways round: it misses {@code o:topObjectProperty} where the document binds the OWL
+     * namespace to {@code o:}, and it wrongly claims {@code owl:topObjectProperty} where the
+     * document has bound {@code owl:} to something else — silently destroying a real axiom.
+     *
+     * @return the top property's IRI if it is one, else null
+     */
+    @Nullable
+    private String topPropertyIri(String name) {
+        String iri = resolve(name);
+        if (TOP_OBJECT_PROPERTY_IRI.equals(iri) || TOP_DATA_PROPERTY_IRI.equals(iri)) {
+            return iri;
+        }
+        return null;
+    }
+
+    /** Expands a name to an IRI, or null if its prefix is undeclared. */
+    @Nullable
+    private String resolve(String name) {
+        int colon = name.indexOf(':');
+        if (colon < 0) return null;   // a bare name is in the default namespace, never owl:
+        String base = prefixes.get(name.substring(0, colon + 1));
+        return base == null ? null : base + name.substring(colon + 1);
+    }
+
+    /**
+     * Whether a name's local part begins with an upper-case letter, as a guess of last resort.
+     *
+     * <p>Long-standing DL practice: concepts are capitalised, roles are not. It is consulted
+     * in exactly one place — the downward edge of role propagation, and there only when the
+     * name above is <em>punned</em>, so that both readings are genuinely available.
+     *
+     * <p>That restriction matters. Below a punned name a capitalised child is ambiguous, and
+     * without the guess a concept there is silently converted into a role and leaves the
+     * class signature. Below an ordinary role there is no ambiguity — a pure role has no
+     * class reading to offer — so the child must be a role whatever its case, and applying
+     * the guess there turned {@code IsPartOf ⊑ hasPart} into a class subsumption. PascalCase
+     * role names are a normal choice and nothing should punish them.
+     *
+     * <p>SNOMED CT is unaffected either way: its identifiers are numeric and carry no case
+     * signal, so its attribute children cross downward as they must.
+     *
+     * <p>It must never override evidence. An earlier revision used it as a barrier on the
+     * <em>upward</em> edge as well, where a capitalised object property already used in a
+     * restriction was definitively a role, and the guess invented a pun and refiled its
+     * sub-property axiom as a subsumption.
+     */
+    private static boolean looksLikeAClass(String name) {
+        int colon = name.lastIndexOf(':');
+        String local = colon < 0 ? name : name.substring(colon + 1);
+        return !local.isEmpty() && Character.isUpperCase(local.charAt(0));
+    }
+
+    /**
+     * Whether the class hierarchy is where this name belongs, blocking role classification
+     * from travelling further up.
+     *
+     * <p>{@code mustBeClass} is the barrier, and it is populated by ordinary use: a name in a
+     * position only a class can occupy, including the {@code X ⊑ ⊤} that states a class.
+     * That is what stops a punned name dragging the concepts above it into the role
+     * hierarchy, and it predates the kind statements.
+     *
+     * <p>The case of the name is deliberately <em>not</em> consulted here. An earlier revision
+     * treated a capitalised name as a barrier, which overrode direct evidence: a capitalised
+     * object property used in a restriction — {@code HasPart}, {@code Broader} — was
+     * definitively a role, and the convention invented a pun and refiled its sub-property
+     * axiom as a subsumption. It also bought nothing: removing it leaves the SNOMED CT
+     * classification byte-identical, because {@code mustBeClass} was already doing the work.
+     * The convention still governs what the <em>writer</em> must state, which is where a
+     * guess is appropriate, and nothing downstream has to trust it.
+     */
     // ── Helpers ──────────────────────────────────────────────────────────────
 
     /**
@@ -481,12 +657,11 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
      * intersection/restriction), returns that name text; otherwise null.
      */
     private String singleBareName(DLESyntaxParser.ClassExprContext ctx) {
-        if (!(ctx instanceof DLESyntaxParser.IntersectionWrapContext)) return null;
-        var inter = ((DLESyntaxParser.IntersectionWrapContext) ctx).intersectionExpr();
-        if (!(inter instanceof DLESyntaxParser.PrimaryWrapContext)) return null;
-        var prim = ((DLESyntaxParser.PrimaryWrapContext) inter).primary();
-        if (!(prim instanceof DLESyntaxParser.AtomWrapContext)) return null;
-        var atom = ((DLESyntaxParser.AtomWrapContext) prim).atom();
+        // Parens.atomOf, not a hand-rolled unwrap: the axiom visitor's loneName uses it, and
+        // the two must agree. They did not, so `X ⊑ (owl:topObjectProperty)` was consumed as
+        // a kind statement by the visitor while staying invisible here — the classifier and
+        // the axiom builder then disagreed about the same name.
+        var atom = Parens.atomOf(ctx);
         if (!(atom instanceof DLESyntaxParser.NameAtomContext)) return null;
         return ((DLESyntaxParser.NameAtomContext) atom).name().getText();
     }

@@ -151,10 +151,12 @@ public class Main {
         if ("dle".equalsIgnoreCase(inputExt)) {
             try {
                 ontology = manager.createOntology();
-                OWLDocumentFormat dleFormat = new org.semanticweb.owlapi.dlesyntax.DLEOntologyParser().parse(
+                var dleParser = new org.semanticweb.owlapi.dlesyntax.DLEOntologyParser();
+                OWLDocumentFormat dleFormat = dleParser.parse(
                     new org.semanticweb.owlapi.io.FileDocumentSource(input),
                     ontology,
                     manager.getOntologyLoaderConfiguration());
+                dleParser.getWarnings().forEach(w -> System.err.println("warning: " + w));
                 manager.setOntologyFormat(ontology, dleFormat);
             } catch (Exception e) {
                 die("parsing DLE file: " + e.getMessage());
