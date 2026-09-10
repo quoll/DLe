@@ -11,6 +11,8 @@ import java.util.stream.Collectors;
 
 import org.antlr.v4.runtime.CommonTokenStream;
 import org.antlr.v4.runtime.Token;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.semanticweb.owlapi.model.*;
 
 import javax.annotation.Nullable;
@@ -98,6 +100,9 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
     }
 
     List<OWLAxiom> getAxioms()        { return axioms; }
+
+    /** Problems that did not stop the parse; see {@link #warnings}. */
+    List<String> getWarnings()        { return warnings; }
     Map<String, String> getPrefixes() { return prefixes; }
 
     /** IRIs whose kind the document stated; see {@link #statedKindIRIs}. */
@@ -108,6 +113,57 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
 
     // ── Prefix declarations ──────────────────────────────────────────────────
 
+    private static final Logger LOGGER = LoggerFactory.getLogger(DLESyntaxAxiomVisitor.class);
+
+    /** Prefix labels this document declared, as opposed to the standard pre-seeded ones. */
+    private final Set<String> declaredPrefixes = new HashSet<>();
+
+    /**
+     * Problems that do not stop the parse.
+     *
+     * <p>Collected as well as logged. A log line needs an slf4j binding to go anywhere, and
+     * there is none in this module's tests or in a plain embedding, so a warning that only
+     * logged would be neither visible to a caller nor testable here.
+     */
+    private final List<String> warnings = new ArrayList<>();
+
+    /**
+     * Warns when two prefixes are declared for one namespace.
+     *
+     * <p>Nothing goes wrong until the same entity is written both ways, and then it goes
+     * wrong quietly. Classification is keyed on the name as written, so {@code Attr} and
+     * {@code a:Attr} are two unrelated names to it while resolving to one IRI for everything
+     * downstream. A kind stated under one spelling and used under the other therefore never
+     * pairs up: the name is not seen as punned, a sub-property axiom below it is refiled as
+     * a class subsumption, and its {@code X ⊑ ⊤} survives as a real subsumption instead of
+     * being read as the declaration it was written as.
+     *
+     * <p>Keying classification on resolved IRIs is the actual fix, and is a change across
+     * the whole of it. This is not that: the writer renders each IRI through one prefix, so
+     * the situation cannot arise from a round trip and needs an authored document to reach.
+     * The warning is here so that if one ever does, it is visible rather than a silently
+     * mis-typed hierarchy.
+     */
+    private void warnOnDuplicateNamespace(String label, String namespace) {
+        for (Map.Entry<String, String> existing : prefixes.entrySet()) {
+            // Only against prefixes this document declared. The map is pre-seeded with the
+            // standard ones, and binding a second prefix to a seeded namespace is a
+            // supported thing to do — `@prefix o: <…owl#>` works and is tested. Comparing
+            // against the seeds would warn about that, and about a document redeclaring the
+            // default prefix, neither of which is the hazard here.
+            if (!declaredPrefixes.contains(existing.getKey())) continue;
+            if (existing.getValue().equals(namespace) && !existing.getKey().equals(label)) {
+                String message = "prefixes " + existing.getKey() + " and " + label
+                    + " are both declared for <" + namespace + ">. Entity kinds are tracked"
+                    + " per spelling, so writing one entity both ways can misclassify it;"
+                    + " use one prefix per namespace";
+                warnings.add(message);
+                LOGGER.warn("{}", message);
+                return;
+            }
+        }
+    }
+
     @Override
     public OWLObject visitPrefixDecl(DLESyntaxParser.PrefixDeclContext ctx) {
         // PNAME_NS token text includes the trailing colon, e.g. "xsd:" or ":"
@@ -116,6 +172,8 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
         // IRI token includes the angle brackets — strip them
         String iri = ctx.IRI().getText();
         iri = iri.substring(1, iri.length() - 1);
+        warnOnDuplicateNamespace(prefixName, iri);
+        declaredPrefixes.add(prefixName);
         prefixes.put(prefixName, iri);
         return null;
     }

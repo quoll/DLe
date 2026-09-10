@@ -39,6 +39,9 @@ import org.semanticweb.owlapi.model.SetOntologyID;
  */
 public class DLEOntologyParser extends AbstractOWLParser {
 
+    /** Warnings from the last parse; see {@link #getWarnings()}. */
+    private final List<String> warnings = new java.util.ArrayList<>();
+
     private static final long serialVersionUID = 1L;
 
     /** Creates a new instance of this parser. */
@@ -110,6 +113,9 @@ public class DLEOntologyParser extends AbstractOWLParser {
                             .getOWLImportsDeclaration(importIRI)));
             }
 
+            warnings.clear();
+            warnings.addAll(visitor.getWarnings());
+
             DLESyntaxDocumentFormat format = new DLESyntaxDocumentFormat();
             visitor.getPrefixes().forEach(format::setPrefix);
             return format;
@@ -117,6 +123,17 @@ public class DLEOntologyParser extends AbstractOWLParser {
         } catch (OWLOntologyInputSourceException | IOException e) {
             throw new OWLParserException(e);
         }
+    }
+
+    /**
+     * Problems from the last parse that did not stop it.
+     *
+     * <p>Only reachable by a caller that holds the parser, which is how {@code owltx} uses
+     * it. Through OWL API's ServiceLoader the instance is not visible, so the same messages
+     * also go to slf4j.
+     */
+    public List<String> getWarnings() {
+        return java.util.Collections.unmodifiableList(warnings);
     }
 
     @Override

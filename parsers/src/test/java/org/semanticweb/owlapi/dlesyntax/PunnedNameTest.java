@@ -8,6 +8,8 @@ import org.semanticweb.owlapi.io.StreamDocumentTarget;
 import org.semanticweb.owlapi.io.StringDocumentSource;
 import org.semanticweb.owlapi.model.*;
 
+import java.util.List;
+
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
@@ -222,6 +224,56 @@ class PunnedNameTest {
                 df.getOWLObjectProperty(IRI.create(NS + "finding")),
                 df.getOWLObjectProperty(IRI.create(NS + "Attr")))),
             () -> "the scanner and the visitor must agree: " + o.getLogicalAxioms());
+    }
+
+    // ── Two prefixes for one namespace ──────────────────────────────────────
+
+    /**
+     * Classification is keyed on the name as written, so two prefixes for one namespace can
+     * misclassify an entity written both ways: the kind stated under one spelling never
+     * pairs with the use under the other, and a sub-property axiom below it is refiled as a
+     * class subsumption. Keying classification on resolved IRIs is the real fix and is a
+     * change across the whole of it; the writer renders each IRI through one prefix, so this
+     * cannot arise from a round trip and needs an authored document to reach. The warning
+     * exists so that if one ever does, it is visible rather than a quietly wrong hierarchy.
+     */
+    @Test
+    void twoPrefixesForOneNamespaceAreReported() throws Exception {
+        OWLOntologyManager manager = OWLManager.createOWLOntologyManager();
+        OWLOntology ontology = manager.createOntology();
+        DLEOntologyParser parser = new DLEOntologyParser();
+        parser.parse(new StringDocumentSource(
+                "@prefix : <" + NS + ">\n@prefix a: <" + NS + ">\nA ⊑ B\n"),
+            ontology, manager.getOntologyLoaderConfiguration());
+        assertEquals(1, parser.getWarnings().size(),
+            () -> "expected one warning, got " + parser.getWarnings());
+        assertTrue(parser.getWarnings().get(0).contains("one prefix per namespace"),
+            () -> parser.getWarnings().get(0));
+    }
+
+    /** A second prefix for a standard namespace is supported, and must stay quiet. */
+    @Test
+    void aSecondPrefixForAStandardNamespaceIsNotReported() throws Exception {
+        OWLOntologyManager manager = OWLManager.createOWLOntologyManager();
+        OWLOntology ontology = manager.createOntology();
+        DLEOntologyParser parser = new DLEOntologyParser();
+        parser.parse(new StringDocumentSource(PREFIX
+                + "@prefix o: <http://www.w3.org/2002/07/owl#>\n"
+                + "r ⊑ o:topObjectProperty\nA ⊑ ∃r.B\n"),
+            ontology, manager.getOntologyLoaderConfiguration());
+        assertEquals(List.of(), parser.getWarnings(),
+            "binding another prefix to the OWL namespace is a supported thing to do");
+    }
+
+    @Test
+    void anOrdinaryDocumentReportsNothing() throws Exception {
+        OWLOntologyManager manager = OWLManager.createOWLOntologyManager();
+        OWLOntology ontology = manager.createOntology();
+        DLEOntologyParser parser = new DLEOntologyParser();
+        parser.parse(new StringDocumentSource(PREFIX
+                + "@prefix ex: <http://other.example/x#>\nA ⊑ ex:B\n"),
+            ontology, manager.getOntologyLoaderConfiguration());
+        assertEquals(List.of(), parser.getWarnings());
     }
 
     // ── The writer must mean what it writes ─────────────────────────────────
