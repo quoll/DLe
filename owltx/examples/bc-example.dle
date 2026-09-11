@@ -25,6 +25,23 @@
 # Database convention:
 # - Resources only appear explicitly in the database if they have an @db annotation
 #
+# Datatype facets:
+# A datatype may be narrowed by facets, each in its own brackets:
+#   [xsd:string ⊓ [minLength 2] ⊓ [maxLength 8]]
+# The value may be written with or without parentheses — `matches "[A-Z]{3}"` and
+# `matches("[A-Z]{3}")` are the same facet.
+# Numeric bounds have a compact form needing no keyword: xsd:integer[≥1 ⊓ ≤40]
+#   ≥ ≤ are inclusive, > < are exclusive
+# Facet keywords, and the OWL facet each one means:
+#   matches         → xsd:pattern          length          → xsd:length
+#   minLength       → xsd:minLength        maxLength       → xsd:maxLength
+#   min             → xsd:minInclusive     max             → xsd:maxInclusive
+#   minExclusive    → xsd:minExclusive     maxExclusive    → xsd:maxExclusive
+#   totalDigits     → xsd:totalDigits      fractionDigits  → xsd:fractionDigits
+#   langRange       → rdf:langRange
+# The IRI on the right may be used in place of its keyword, e.g. xsd:minLength for
+# minLength. Note langRange is in the rdf: namespace, not xsd:.
+#
 # DLe extensions:
 # ≝  — defines a symbol or predicate; right-hand side is not DL and is not required to be valid OWL
 # ∃r₁,…,rₙ.P  — predicate restriction: P(r₁,…,rₙ) holds over the role values
