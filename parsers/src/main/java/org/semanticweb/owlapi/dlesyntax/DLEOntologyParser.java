@@ -113,13 +113,15 @@ public class DLEOntologyParser extends AbstractOWLParser {
                 scanner.getObjectPropertyNames(),
                 scanner.getDataPropertyNames(),
                 scanner.getPredicateNames(),
+                scanner.getExplicitRoleNames(),
+                scanner.getPunnedNames(),
                 tokens);
             visitor.visit(tree);
 
             ontology.getOWLOntologyManager()
                 .addAxioms(ontology, new java.util.HashSet<>(visitor.getAxioms()));
 
-            DualDeclarationResolver.resolve(ontology);
+            DualDeclarationResolver.resolve(ontology, visitor.getStatedKindIRIs());
             DefaultLabelAdder.addDefaultLabels(ontology);
 
             // Apply the ontology ID. A document that declares no @ontology is anonymous —
@@ -156,6 +158,12 @@ public class DLEOntologyParser extends AbstractOWLParser {
                 declareAndLoad(manager, ontology,
                     resolveQuotedImport(source.getDocumentIRI(), ref), configuration);
             }
+
+            // The visitor's own diagnostics join the shared sink rather than being assigned
+            // to `warnings` directly. `warnings` is published immutably by the outermost
+            // parse, so clearing it would throw; and routing through the sink is what makes
+            // a diagnostic raised inside an imported document reach the top-level caller.
+            visitor.getWarnings().forEach(DLEOntologyParser::warn);
 
             DLESyntaxDocumentFormat format = new DLESyntaxDocumentFormat();
             visitor.getPrefixes().forEach(format::setPrefix);
