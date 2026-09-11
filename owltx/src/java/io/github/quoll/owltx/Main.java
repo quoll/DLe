@@ -154,7 +154,8 @@ public class Main {
         // or one file in a set that does not parse, takes the whole document down.
         manager.addMissingImportListener(event ->
             System.err.println("warning: could not load import <"
-                + event.getImportedOntologyURI() + ">"));
+                + event.getImportedOntologyURI() + ">: "
+                + rootMessage(event.getCreationException())));
         OWLOntologyLoaderConfiguration loaderConfig = manager.getOntologyLoaderConfiguration()
             .setMissingImportHandlingStrategy(MissingImportHandlingStrategy.SILENT);
         manager.setOntologyLoaderConfiguration(loaderConfig);
@@ -169,6 +170,11 @@ public class Main {
                     loaderConfig);
                 dleParser.getWarnings().forEach(w -> System.err.println("warning: " + w));
                 manager.setOntologyFormat(ontology, dleFormat);
+                // Tell the manager where this came from. It is true, and it is what lets the
+                // storer keep a relative @import relative when the output has no location of
+                // its own — writing to stdout, where otherwise an absolute local path would
+                // appear and `owltx in.dle > out.dle` would disagree with `owltx in.dle out.dle`.
+                manager.setOntologyDocumentIRI(ontology, IRI.create(input));
             } catch (Exception e) {
                 die("parsing DLE file: " + e.getMessage());
                 return; // unreachable, but satisfies compiler
@@ -192,11 +198,25 @@ public class Main {
             try {
                 writeToFile(manager, ontology, outputFormat, outputFile);
             } catch (Exception e) {
-                die("writing to " + outputFile + ": " + e.getMessage());
+                die("writing to " + outputFile + ": " + rootMessage(e));
             }
         } else {
             manager.saveOntology(ontology, outputFormat, new StreamDocumentTarget(System.out));
         }
+    }
+
+    /**
+     * The innermost message, for a diagnostic a person will read.
+     *
+     * <p>{@code OWLOntologyStorageException.getMessage()} returns its cause's
+     * {@code toString()}, which put {@code java.io.FileNotFoundException:} in front of
+     * perfectly good text like "Permission denied".
+     */
+    static String rootMessage(Throwable t) {
+        Throwable root = t;
+        while (root.getCause() != null && root.getCause() != root) root = root.getCause();
+        String message = root.getMessage();
+        return message != null ? message : root.getClass().getSimpleName();
     }
 
     /**
@@ -224,8 +244,11 @@ public class Main {
         java.io.File target = new java.io.File(outputFile);
         java.io.File parent = target.getAbsoluteFile().getParentFile();
         if (parent != null && !parent.isDirectory()) {
-            throw new OWLOntologyStorageException(
-                parent + " (No such file or directory)");
+            // Say which of the two things is wrong. Saving by IRI would create a missing
+            // parent, so this has to be pre-empted rather than reported afterwards — but
+            // a parent that exists and is a plain file is a different mistake.
+            throw new OWLOntologyStorageException(outputFile + " ("
+                + (parent.exists() ? "Not a directory" : "No such file or directory") + ")");
         }
         manager.saveOntology(ontology, outputFormat, IRI.create(target));
     }

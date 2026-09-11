@@ -93,31 +93,6 @@
                     </execution>
                 </executions>
             </plugin>
-            <!--
-                Run the output-encoding test a second time with a hostile default charset.
-
-                It cannot catch what it is for otherwise: the defect it guards against is a
-                writer that encodes with Charset.defaultCharset(), and on a UTF-8 machine
-                that is indistinguishable from correct. Verifying the original change on a
-                UTF-8 machine is exactly how the defect got through review.
-            -->
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-surefire-plugin</artifactId>
-                <executions>
-                    <execution>
-                        <id>non-utf8-default-charset</id>
-                        <phase>test</phase>
-                        <goals><goal>test</goal></goals>
-                        <configuration>
-                            <argLine>-Dfile.encoding=US-ASCII</argLine>
-                            <includes>
-                                <include>**/OutputEncodingTest.java</include>
-                            </includes>
-                        </configuration>
-                    </execution>
-                </executions>
-            </plugin>
         </plugins>
     </build>
 </project>

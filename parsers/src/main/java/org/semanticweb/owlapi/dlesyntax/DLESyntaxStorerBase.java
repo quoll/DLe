@@ -100,15 +100,32 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
      * {@code ../} chains, which is the behaviour wanted here — a path that climbs out of the
      * document's own directory is more fragile than an absolute one.
      */
+    /**
+     * Where the document being written came from, used when the output has no location of
+     * its own — writing to stdout or a stream.
+     *
+     * <p>Without it, {@code owltx in.dle > out.dle} wrote every import as an absolute local
+     * path while {@code owltx in.dle out.dle} kept it relative, so the two invocations
+     * produced different documents. The source location is where the reference was relative
+     * to in the first place, which makes it the right guess rather than merely a guess.
+     */
+    @Nullable
+    private IRI sourceDocumentIRI() {
+        if (currentOntology == null) return null;
+        IRI iri = currentOntology.getOWLOntologyManager().getOntologyDocumentIRI(currentOntology);
+        return iri != null && iri.toString().startsWith("file:") ? iri : null;
+    }
+
     /** Escapes what the STRING token treats as special, so the value reads back unchanged. */
     private static String escapeForString(String value) {
         return value.replace("\\", "\\\\").replace("\"", "\\\"");
     }
 
     private String renderImport(IRI importIRI) {
-        if (targetDocumentIRI != null) {
+        IRI location = targetDocumentIRI != null ? targetDocumentIRI : sourceDocumentIRI();
+        if (location != null) {
             try {
-                java.net.URI target = new java.net.URI(targetDocumentIRI.toString());
+                java.net.URI target = new java.net.URI(location.toString());
                 java.net.URI imported = new java.net.URI(importIRI.toString());
                 if ("file".equals(target.getScheme()) && "file".equals(imported.getScheme())
                         && !target.isOpaque() && !imported.isOpaque()) {
@@ -119,7 +136,17 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
                         // as "my%20vocab.dle" — legal, and reloadable, but not the spelling
                         // it came in as, which is the point of keeping the relative form.
                         String path = relative.getPath();
-                        if (path == null || path.isEmpty()) path = relative.toString();
+                        if (path == null || path.isEmpty()) {
+                            // Nothing to name relatively — the import *is* the directory, or
+                            // carries only a fragment. An absolute IRI is the honest answer.
+                            return "<" + importIRI + ">";
+                        }
+                        // Decoded, because a quoted reference is a literal file name: this
+                        // is the exact inverse of the encoding the reader applies, so the
+                        // name comes back as it was written. The `./` is needed for the one
+                        // character the encoding leaves alone — a colon in the first
+                        // segment would otherwise read back as a scheme.
+                        if (DLEOntologyParser.firstSegmentHasColon(path)) path = "./" + path;
                         return "\"" + escapeForString(path) + "\"";
                     }
                 }

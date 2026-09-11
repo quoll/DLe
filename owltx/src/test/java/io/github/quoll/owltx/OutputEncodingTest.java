@@ -22,17 +22,20 @@ import static org.junit.jupiter.api.Assertions.*;
  * UTF-8, so this is not a preference. It is asserted on the bytes rather than on a string,
  * because reading the file back with the same wrong charset would hide the problem.
  *
- * <p>It guards {@link Main#writeToFile}, the real write path, and that is the point. A
- * first version called {@code saveOntology(o, format, IRI)} from the test itself — OWL API's
- * own code, which hardcodes UTF-8 — so it passed regardless of what owltx did, and a
- * deliberately broken owltx still went green. Asserting the right property against the
- * wrong code is no guard at all.
+ * <p>DLe is UTF-8 only, as every W3C serialisation is: the syntax is built from Unicode
+ * operators, so no other encoding could express it. That makes this a hard rule rather than
+ * a preference.
  *
- * <p>What it guards against: {@code FileDocumentTarget}'s writer is
- * {@code new FileWriter(file)}, which encodes with {@code Charset.defaultCharset()}, so
- * wherever that is not UTF-8 every DLe operator becomes a question mark. That was never
- * released — it existed only in an intermediate version of the import change — but the
- * target remains available and inviting, so the guard stays.
+ * <p>Two guards, because one is not enough. {@link #aWrittenFileIsUtf8} asserts the bytes
+ * of {@link Main#writeToFile} — the real write path; a first version called
+ * {@code saveOntology(o, format, IRI)} from the test itself, which is OWL API's own
+ * always-UTF-8 code, so it passed no matter what owltx did. And
+ * {@link #theWritePathNeverUsesADefaultCharsetWriter} checks structurally that no
+ * default-charset writer is referenced at all, because a byte assertion can only catch that
+ * on a machine whose default charset is wrong — which is never the machine you are on. An
+ * earlier attempt ran the byte test again under {@code -Dfile.encoding=US-ASCII}; JEP 400
+ * guarantees only {@code UTF-8} and {@code COMPAT}, so that fork could be silently
+ * neutralised, and US-ASCII is not a configuration DLe could ever support anyway.
  */
 class OutputEncodingTest {
 
@@ -102,6 +105,30 @@ class OutputEncodingTest {
             o.getOWLOntologyManager(), o, format, nested.toString()));
         assertFalse(Files.exists(nested.getParent()),
             "and it must not have created the directory");
+    }
+
+    /**
+     * No default-charset writer may appear in the write path.
+     *
+     * <p>This is the guard that holds on every machine. {@code FileDocumentTarget} reaches
+     * the file through {@code new FileWriter(file)} and {@code PrintWriter(File)} does the
+     * same; both encode with {@code Charset.defaultCharset()}, which is correct here and
+     * wrong under {@code LANG=C} or on Windows. Checking the compiled reference rather than
+     * the resulting bytes means the test cannot be fooled by the machine it runs on.
+     */
+    @Test
+    void theWritePathNeverUsesADefaultCharsetWriter() throws Exception {
+        byte[] bytecode = Files.readAllBytes(
+            Path.of(Main.class.getResource("Main.class").toURI()));
+        String constants = new String(bytecode, java.nio.charset.StandardCharsets.ISO_8859_1);
+        for (String forbidden : new String[] {
+                "org/semanticweb/owlapi/io/FileDocumentTarget",
+                "java/io/FileWriter",
+                "java/io/PrintWriter"}) {
+            assertFalse(constants.contains(forbidden),
+                () -> forbidden + " encodes with the platform default charset; DLe is UTF-8"
+                    + " only, so the write path must not reference it");
+        }
     }
 
     private static int indexOf(byte[] haystack, byte[] needle) {

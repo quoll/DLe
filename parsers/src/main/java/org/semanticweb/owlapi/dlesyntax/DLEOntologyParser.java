@@ -5,6 +5,7 @@ import java.io.IOException;
 import java.io.Reader;
 import java.util.Collections;
 import java.util.List;
+import java.util.Set;
 
 import org.antlr.v4.runtime.Token;
 import org.antlr.v4.runtime.BaseErrorListener;
@@ -22,6 +23,10 @@ import org.semanticweb.owlapi.model.AddImport;
 import org.semanticweb.owlapi.model.OWLOntologyManager;
 import org.semanticweb.owlapi.model.OWLImportsDeclaration;
 import org.semanticweb.owlapi.model.MissingImportHandlingStrategy;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.semanticweb.owlapi.model.UnloadableImportException;
+import org.semanticweb.owlapi.model.OWLOntologyCreationException;
 import org.semanticweb.owlapi.model.IRI;
 import org.semanticweb.owlapi.model.OWLDocumentFormat;
 import org.semanticweb.owlapi.model.OWLDocumentFormatFactory;
@@ -43,15 +48,24 @@ import org.semanticweb.owlapi.model.SetOntologyID;
  */
 public class DLEOntologyParser extends AbstractOWLParser {
 
+    private static final Logger LOGGER = LoggerFactory.getLogger(DLEOntologyParser.class);
+
     /**
-     * Problems from the last parse that did not stop it.
+     * Where warnings from the parse in progress accumulate, shared by every parser on the
+     * call stack.
      *
-     * <p>Cleared when a parse begins, not when one succeeds, so a failed parse does not
-     * leave the previous document's warnings behind. Only a caller holding the parser can
-     * read them, which is how {@code owltx} surfaces them; through OWL API's ServiceLoader
-     * the instance is not visible.
+     * <p>It has to be shared. An imported document is parsed by a parser OWL API creates
+     * through its ServiceLoader, which no caller can reach — so a per-instance list reported
+     * a failure at the top level and lost the identical failure one level down, which is
+     * exactly the class of silence this reporting exists to remove.
+     *
+     * <p>Thread-local rather than static, so two parses on different threads cannot see each
+     * other's warnings, and the outermost parse is the one that owns and clears it.
      */
-    private final List<String> warnings = new java.util.ArrayList<>();
+    private static final ThreadLocal<List<String>> ACTIVE_WARNINGS = new ThreadLocal<>();
+
+    /** Warnings from the last parse this instance began; see {@link #getWarnings()}. */
+    private volatile List<String> warnings = java.util.Collections.emptyList();
 
     private static final long serialVersionUID = 1L;
 
@@ -62,7 +76,9 @@ public class DLEOntologyParser extends AbstractOWLParser {
     public OWLDocumentFormat parse(OWLOntologyDocumentSource source,
                                    OWLOntology ontology,
                                    OWLOntologyLoaderConfiguration configuration) {
-        warnings.clear();
+        List<String> outer = ACTIVE_WARNINGS.get();
+        List<String> sink = outer != null ? outer : new java.util.ArrayList<>();
+        if (outer == null) ACTIVE_WARNINGS.set(sink);
         try {
             Reader reader = DocumentSources.wrapInputAsReader(source, configuration);
             var chars  = CharStreams.fromReader(reader);
@@ -139,19 +155,14 @@ public class DLEOntologyParser extends AbstractOWLParser {
                                       java.util.Optional.ofNullable(verIRI))));
             }
 
-            // Apply import declarations, resolving relative references against this document
-            for (String ref : visitor.getImportRefs()) {
-                IRI importIRI = resolveImport(source.getDocumentIRI(), ref);
-                OWLOntologyManager manager = ontology.getOWLOntologyManager();
-                OWLImportsDeclaration declaration =
-                    manager.getOWLDataFactory().getOWLImportsDeclaration(importIRI);
-                manager.applyChange(new AddImport(ontology, declaration));
-                // Recording the declaration does not fetch anything — imports were declared
-                // and then never followed, so the closure of a document with an @import was
-                // always just the document itself. Asking the manager to load it is what a
-                // parser is expected to do, and it honours the caller's configuration for a
-                // missing import rather than deciding here.
-                loadImport(manager, declaration, configuration);
+            // Apply import declarations.
+            OWLOntologyManager manager = ontology.getOWLOntologyManager();
+            for (String ref : visitor.getIriImportRefs()) {
+                declareAndLoad(manager, ontology, IRI.create(ref), configuration);
+            }
+            for (String ref : visitor.getQuotedImportRefs()) {
+                declareAndLoad(manager, ontology,
+                    resolveQuotedImport(source.getDocumentIRI(), ref), configuration);
             }
 
             DLESyntaxDocumentFormat format = new DLESyntaxDocumentFormat();
@@ -160,12 +171,19 @@ public class DLEOntologyParser extends AbstractOWLParser {
 
         } catch (OWLOntologyInputSourceException | IOException e) {
             throw new OWLParserException(e);
+        } finally {
+            // The outermost parse owns the sink: publish what accumulated, including when
+            // this parse failed, so nothing from a previous document survives into the next.
+            if (outer == null) {
+                warnings = List.copyOf(sink);
+                ACTIVE_WARNINGS.remove();
+            }
         }
     }
 
-    /** Problems from the last parse that did not stop it; see {@link #warnings}. */
+    /** Problems from the last parse that did not stop it; see {@link #ACTIVE_WARNINGS}. */
     public List<String> getWarnings() {
-        return java.util.Collections.unmodifiableList(new java.util.ArrayList<>(warnings));
+        return warnings;
     }
 
     @Override
@@ -174,91 +192,149 @@ public class DLEOntologyParser extends AbstractOWLParser {
     }
 
     /**
-     * Resolves an import reference against the document that declared it.
+     * Schemes OWL API can actually retrieve.
      *
-     * <p>A relative reference — {@code "ardoqvocab.dle"}, the file beside this one — cannot
-     * be carried as an IRI on its own. Under RFC 3986 a scheme must be followed by a slash
-     * for the path to be hierarchical, so {@code file:ardoqvocab.dle} is an <em>opaque</em>
-     * URI with no path at all: {@code new File(uri)} on it throws "URI is not hierarchical",
-     * and nothing can open it. The reference has to become absolute, and the only sensible
-     * base is the location of the document being parsed.
-     *
-     * <p>An absolute reference is returned untouched, so {@code @import <http://…>} and
-     * {@code @import "http://…"} behave identically and neither changes meaning.
-     *
-     * <p>Where no usable base exists — a document parsed from a string or a stream, whose
-     * document IRI is opaque — a relative reference is left as it stands rather than being
-     * resolved against something arbitrary like the working directory. OWL API then reports
-     * it, which is more use than silently loading the wrong file.
+     * <p>Deliberately short. A quoted reference carrying any other scheme is far more likely
+     * to be a file whose name happens to contain a colon than an ontology someone can fetch:
+     * {@code urn:} and {@code mailto:} say nothing about where to look, and there is no
+     * retrieval mechanism for {@code classpath:} or {@code gopher:} — accepting those would
+     * only guarantee a reported failure later. Anything unretrievable is therefore read as a
+     * path, and {@code @import <iri>} remains the way to name an IRI of any scheme, for the
+     * benefit of a caller with an IRI mapper or a catalogue.
      */
-    static IRI resolveImport(@Nullable IRI documentIRI, String ref) {
-        java.net.URI reference = asUri(ref);
-        if (reference == null) return IRI.create(ref);
-        if (reference.isAbsolute()) return IRI.create(reference.toString());
-        if (documentIRI == null) return IRI.create(ref);
-        try {
-            java.net.URI base = new java.net.URI(documentIRI.toString());
-            if (!base.isAbsolute() || base.isOpaque()) return IRI.create(ref);
-            return IRI.create(base.resolve(reference).toString());
-        } catch (java.net.URISyntaxException e) {
-            return IRI.create(ref);
+    private static final Set<String> RETRIEVABLE_SCHEMES = Set.of("http", "https", "file");
+
+    /** A Windows path: a drive letter, a colon, then a separator. */
+    private static final java.util.regex.Pattern WINDOWS_PATH =
+        java.util.regex.Pattern.compile("^[A-Za-z]:[\\\\/].*");
+
+    /**
+     * Interprets a quoted import reference.
+     *
+     * <p>An IRI if it parses as one and carries a scheme we can retrieve; a file path
+     * otherwise, including whenever it carries no scheme at all. A path is taken
+     * <em>literally</em> — no percent-decoding — so a file really named {@code a%20b.dle},
+     * or one containing {@code #} or {@code ?}, names itself rather than something else.
+     * Reading it literally means percent-<em>encoding</em> it to build the IRI, which is
+     * what makes the write side able to hand back the same spelling.
+     */
+    static IRI resolveQuotedImport(@Nullable IRI documentIRI, String ref) {
+        java.net.URI parsed = tryUri(ref);
+        if (parsed != null && parsed.getScheme() != null
+                && RETRIEVABLE_SCHEMES.contains(
+                    parsed.getScheme().toLowerCase(java.util.Locale.ROOT))) {
+            return IRI.create(parsed.toString());
         }
+        return resolveFilePath(documentIRI, ref);
+    }
+
+    /** Turns a file path into an absolute IRI, relative to the declaring document. */
+    private static IRI resolveFilePath(@Nullable IRI documentIRI, String path) {
+        if (WINDOWS_PATH.matcher(path).matches()) {
+            try {
+                return IRI.create(
+                    new java.net.URI("file", "", "/" + path.replace('\\', '/'), null).toString());
+            } catch (java.net.URISyntaxException notAFileUri) {
+                // fall through and treat it as an ordinary relative path
+            }
+        }
+        java.net.URI relative = asPath(path);
+        if (relative == null) return IRI.create(path);   // nothing legal to build; OWLAPI reports it
+        if (documentIRI == null) return IRI.create(relative.toString());
+        java.net.URI base = tryUri(documentIRI.toString());
+        if (base == null || !base.isAbsolute() || base.isOpaque()) {
+            // A string or stream source has no location to resolve against. Leaving the
+            // reference relative is more use than resolving it against something arbitrary.
+            return IRI.create(relative.toString());
+        }
+        return IRI.create(base.resolve(relative).toString());
+    }
+
+    /**
+     * Percent-encodes a file path into a relative URI reference.
+     *
+     * <p>A path whose first segment contains a colon gets {@code ./} in front: Java does not
+     * escape a colon in a path, so {@code a:b.dle} would otherwise come back out as an
+     * absolute URI with scheme {@code a}. Every other character the constructor escapes for
+     * us, and decoding reverses it exactly — which is the property the writer relies on.
+     */
+    @Nullable
+    private static java.net.URI asPath(String path) {
+        String safe = firstSegmentHasColon(path) ? "./" + path : path;
+        try {
+            return new java.net.URI(null, null, safe, null);
+        } catch (java.net.URISyntaxException e) {
+            return null;
+        }
+    }
+
+    /** Whether the part before the first slash contains a colon. */
+    static boolean firstSegmentHasColon(String path) {
+        int slash = path.indexOf('/');
+        String first = slash < 0 ? path : path.substring(0, slash);
+        return first.indexOf(':') >= 0;
+    }
+
+    @Nullable
+    private static java.net.URI tryUri(String text) {
+        try {
+            return new java.net.URI(text);
+        } catch (java.net.URISyntaxException notAUri) {
+            return null;
+        }
+    }
+
+    /** Adds a warning to the parse in progress, wherever on the stack it started. */
+    private static void warn(String message) {
+        List<String> sink = ACTIVE_WARNINGS.get();
+        if (sink != null) sink.add(message);
+        LOGGER.warn("{}", message);
+    }
+
+    /** Records an import declaration and asks the manager to follow it. */
+    private void declareAndLoad(OWLOntologyManager manager, OWLOntology ontology, IRI importIRI,
+                                OWLOntologyLoaderConfiguration configuration) {
+        OWLImportsDeclaration declaration =
+            manager.getOWLDataFactory().getOWLImportsDeclaration(importIRI);
+        manager.applyChange(new AddImport(ontology, declaration));
+        loadImport(manager, declaration, configuration);
     }
 
     /**
      * Asks the manager to load an import, honouring the caller's missing-import strategy.
      *
-     * <p>{@code makeLoadImportRequest} reports a missing document by throwing
-     * {@code OWLOntologyCreationException}, which the manager itself catches and routes
-     * through that strategy. But a reference it cannot find a factory for at all — an
-     * unknown scheme, or a path it cannot make sense of — comes back as
-     * {@code OWLOntologyFactoryNotFoundException}, a <em>RuntimeException</em>. That escapes
-     * the manager's own handling, so {@code SILENT} was bypassed and one unreadable import
-     * took the whole document down.
+     * <p>The manager reports a missing document by throwing {@code OWLOntologyCreationException},
+     * which it catches itself and routes through the strategy. But a reference it can find no
+     * factory for, or a fault inside the imported document's own parse, arrives as a
+     * <em>RuntimeException</em> — outside that handling entirely, so {@code SILENT} was
+     * bypassed and one unreadable import took the whole document down.
+     *
+     * <p>So a runtime failure is caught and routed through the strategy by hand. Under
+     * anything but {@code SILENT} it is rethrown as {@code UnloadableImportException}, which
+     * is the type the strategy documents and which carries the declaration that failed —
+     * rethrowing the original left a caller's {@code catch (UnloadableImportException)}
+     * unreached.
      */
     private void loadImport(OWLOntologyManager manager, OWLImportsDeclaration declaration,
                             OWLOntologyLoaderConfiguration configuration) {
         try {
             manager.makeLoadImportRequest(declaration, configuration);
-        } catch (org.semanticweb.owlapi.model.OWLRuntimeException e) {
+        } catch (UnloadableImportException alreadyRouted) {
+            throw alreadyRouted;
+        } catch (RuntimeException e) {
             if (configuration.getMissingImportHandlingStrategy()
-                    == MissingImportHandlingStrategy.THROW_EXCEPTION) {
-                throw e;
+                    != MissingImportHandlingStrategy.SILENT) {
+                throw new UnloadableImportException(
+                    new OWLOntologyCreationException(describe(e), e), declaration);
             }
-            // Recorded rather than discarded. The manager's own missing-import listeners
-            // never fire for this path — that is the whole reason it is caught here — so
-            // swallowing it silently would leave an unreadable import with nothing at all
-            // to show for it.
-            warnings.add("could not load import <" + declaration.getIRI() + ">: "
-                + e.getMessage());
+            warn("could not load import <" + declaration.getIRI() + ">: " + describe(e));
         }
     }
 
-    /**
-     * Reads a reference as a URI, escaping it as a path if it is not already one.
-     *
-     * <p>A file name is the point of the quoted form, and a file name may contain a space —
-     * which is illegal in a URI, so parsing it fails and the reference used to be passed
-     * through unresolved. Escaping it as a path turns {@code my vocab.dle} into
-     * {@code my%20vocab.dle}, which resolves and opens the file it names.
-     *
-     * <p>Tried as a plain URI first, because escaping an absolute reference as a path would
-     * mangle it: {@code http://x/y} would become the relative path
-     * {@code http:%2F%2Fx%2Fy}.
-     *
-     * @return the URI, or null if the reference cannot be made into one at all
-     */
-    @Nullable
-    private static java.net.URI asUri(String ref) {
-        try {
-            return new java.net.URI(ref);
-        } catch (java.net.URISyntaxException notAUri) {
-            try {
-                return new java.net.URI(null, null, ref, null);
-            } catch (java.net.URISyntaxException notAPathEither) {
-                return null;
-            }
-        }
+    /** A message for an exception that may not have one. */
+    private static String describe(Throwable t) {
+        String message = t.getMessage();
+        return message != null ? message : t.getClass().getSimpleName();
     }
 
     /** Converts any ANTLR syntax error into an OWLParserException. */

@@ -102,19 +102,85 @@ class ImportResolutionTest {
         }
     }
 
-    /** The unit behind all of the above, including the cases with no usable base. */
+    /**
+     * What a quoted reference means, as a table.
+     *
+     * <p>An IRI only when it parses as one AND carries a scheme that can actually be
+     * retrieved. Everything else is a file path, taken literally — no percent-decoding — so
+     * a file whose name contains {@code #}, {@code ?} or {@code %} names itself. Reading it
+     * literally means encoding it to build the IRI, which is what lets the writer hand back
+     * the same spelling.
+     */
     @Test
-    void resolveImportHandlesTheAwkwardCases() {
-        IRI base = IRI.create("file:/tmp/dir/doc.dle");
-        assertEquals("file:/tmp/dir/x.dle",
-            DLEOntologyParser.resolveImport(base, "x.dle").toString());
+    void whatAQuotedReferenceMeans() {
+        IRI base = IRI.create("file:/dir/doc.dle");
+        String[][] cases = {
+            // retrievable schemes pass through untouched
+            {"http://example.org/x",   "http://example.org/x"},
+            {"https://example.org/x",  "https://example.org/x"},
+            {"file:/abs/v.dle",        "file:/abs/v.dle"},
+            // unretrievable schemes are file names whose first segment has a colon
+            {"urn:x:y",                "file:/dir/urn:x:y"},
+            {"mailto:bob@example.org", "file:/dir/mailto:bob@example.org"},
+            {"classpath:v.dle",        "file:/dir/classpath:v.dle"},
+            {"a:b.dle",                "file:/dir/a:b.dle"},
+            // ordinary paths
+            {"v.dle",                  "file:/dir/v.dle"},
+            {"sub/deep.dle",           "file:/dir/sub/deep.dle"},
+            {"../beside.dle",          "file:/beside.dle"},
+            // literal names: nothing is decoded, everything is encoded to build the IRI
+            {"my vocab.dle",           "file:/dir/my%20vocab.dle"},
+            {"a%20b.dle",              "file:/dir/a%2520b.dle"},
+            {"a#b.dle",                "file:/dir/a%23b.dle"},
+            {"a?b.dle",                "file:/dir/a%3Fb.dle"},
+            {"100%.dle",               "file:/dir/100%25.dle"},
+        };
+        for (String[] c : cases) {
+            assertEquals(c[1], DLEOntologyParser.resolveQuotedImport(base, c[0]).toString(),
+                () -> "reference: " + c[0]);
+        }
+    }
+
+    /** A Windows path is its own case, because a drive letter looks like a scheme. */
+    @Test
+    void aWindowsPathIsRecognised() {
+        IRI base = IRI.create("file:/dir/doc.dle");
+        assertEquals("file:///C:/vocab.dle",
+            DLEOntologyParser.resolveQuotedImport(base, "C:\\vocab.dle").toString());
+        assertEquals("file:///C:/vocab.dle",
+            DLEOntologyParser.resolveQuotedImport(base, "C:/vocab.dle").toString());
+        assertEquals("file:///D:/a%20b/v.dle",
+            DLEOntologyParser.resolveQuotedImport(base, "D:\\a b\\v.dle").toString());
+    }
+
+    /** With no location to resolve against, a path is left as it stands. */
+    @Test
+    void withNoBaseAPathIsLeftRelative() {
+        assertEquals("v.dle", DLEOntologyParser.resolveQuotedImport(null, "v.dle").toString());
+        assertEquals("my%20v.dle",
+            DLEOntologyParser.resolveQuotedImport(null, "my v.dle").toString(),
+            "still escaped, so what is written can be read back");
+        // A string or stream source has an opaque document IRI; there is nothing to resolve to.
+        assertEquals("v.dle",
+            DLEOntologyParser.resolveQuotedImport(IRI.create("string:ontology"), "v.dle").toString());
+        // But an absolute reference never needed a base.
         assertEquals("http://example.org/x",
-            DLEOntologyParser.resolveImport(base, "http://example.org/x").toString());
-        // No base: leave it relative rather than resolve against something arbitrary.
-        assertEquals("x.dle", DLEOntologyParser.resolveImport(null, "x.dle").toString());
-        // An opaque base cannot be resolved against; `string:` sources look like this.
-        assertEquals("x.dle",
-            DLEOntologyParser.resolveImport(IRI.create("string:ontology"), "x.dle").toString());
+            DLEOntologyParser.resolveQuotedImport(null, "http://example.org/x").toString());
+    }
+
+    /** `@import <iri>` is handed over exactly as written — no resolution, any scheme. */
+    @Test
+    void theAngleFormIsUsedAsWritten(@TempDir Path dir) throws Exception {
+        Path main = write(dir, "m.dle", HEAD + "@import <urn:example:vocab>\nA ⊑ B\n");
+        OWLOntologyManager manager = OWLManager.createOWLOntologyManager();
+        OWLOntology o = manager.createOntology();
+        new DLEOntologyParser().parse(
+            new org.semanticweb.owlapi.io.FileDocumentSource(main.toFile()), o,
+            manager.getOntologyLoaderConfiguration().setMissingImportHandlingStrategy(
+                org.semanticweb.owlapi.model.MissingImportHandlingStrategy.SILENT));
+        assertEquals("urn:example:vocab",
+            o.importsDeclarations().findFirst().orElseThrow().getIRI().toString(),
+            "the angle form is the escape hatch for any scheme, so it must not be touched");
     }
 
     // ── Loading, not merely declaring ───────────────────────────────────────
@@ -181,7 +247,7 @@ class ImportResolutionTest {
      */
     @Test
     void anUnloadableReferenceHonoursTheStrategy(@TempDir Path dir) throws Exception {
-        Path main = write(dir, "m.dle", HEAD + "@import \"classpath:nope.dle\"\nA ⊑ B\n");
+        Path main = write(dir, "m.dle", HEAD + "@import <urn:example:nope>\nA ⊑ B\n");
         OWLOntologyManager manager = OWLManager.createOWLOntologyManager();
 
         OWLOntology silent = manager.createOntology();
@@ -220,14 +286,16 @@ class ImportResolutionTest {
     /**
      * An import that cannot be loaded is reported even when the strategy is silent.
      *
-     * <p>The manager's own missing-import listeners never fire for a reference it can find
-     * no factory for — that failure arrives as a RuntimeException, which is why it is caught
-     * at all — so swallowing it left a whole class of unreadable import with nothing to show
-     * for it. A missing *file* was reported; an unknown scheme was not.
+     * <p>The manager's own handling never sees a reference it can find no factory for: that
+     * failure arrives as a RuntimeException, outside the strategy entirely. A missing *file*
+     * was reported; this was not.
+     *
+     * <p>Reached through the angle form, which is now the only way to write a reference with
+     * an unretrievable scheme — a quoted one would be read as a file name.
      */
     @Test
     void anUnloadableReferenceIsReportedNotSwallowed(@TempDir Path dir) throws Exception {
-        Path main = write(dir, "m.dle", HEAD + "@import \"classpath:nope.dle\"\nA ⊑ B\n");
+        Path main = write(dir, "m.dle", HEAD + "@import <urn:example:nope>\nA ⊑ B\n");
         OWLOntologyManager manager = OWLManager.createOWLOntologyManager();
         DLEOntologyParser parser = new DLEOntologyParser();
         parser.parse(new org.semanticweb.owlapi.io.FileDocumentSource(main.toFile()),
@@ -236,14 +304,14 @@ class ImportResolutionTest {
                 org.semanticweb.owlapi.model.MissingImportHandlingStrategy.SILENT));
         assertEquals(1, parser.getWarnings().size(),
             () -> "expected one warning, got " + parser.getWarnings());
-        assertTrue(parser.getWarnings().get(0).contains("classpath:nope.dle"),
+        assertTrue(parser.getWarnings().get(0).contains("urn:example:nope"),
             () -> parser.getWarnings().get(0));
     }
 
     /** Warnings must not survive into the next parse, including after a failure. */
     @Test
     void warningsDoNotLeakBetweenParses(@TempDir Path dir) throws Exception {
-        Path bad = write(dir, "bad.dle", HEAD + "@import \"classpath:nope.dle\"\nA ⊑ B\n");
+        Path bad = write(dir, "bad.dle", HEAD + "@import <urn:example:nope>\nA ⊑ B\n");
         OWLOntologyManager manager = OWLManager.createOWLOntologyManager();
         DLEOntologyParser parser = new DLEOntologyParser();
         org.semanticweb.owlapi.model.OWLOntologyLoaderConfiguration silent =
@@ -284,8 +352,10 @@ class ImportResolutionTest {
         OWLOntology o = parseFile(main);
 
         File out = dir.resolve("out.dle").toFile();
+        // Saved by IRI, which is the overload owltx uses — and the one that carries the
+        // document location, so it is the path that must be characterised here.
         o.getOWLOntologyManager().saveOntology(
-            o, new DLESyntaxDocumentFormat(), new FileDocumentTarget(out));
+            o, new DLESyntaxDocumentFormat(), IRI.create(out));
         String written = new String(Files.readAllBytes(out.toPath()), StandardCharsets.UTF_8);
         assertTrue(written.contains("@import \"vocab.dle\""),
             () -> "expected the relative form back:\n" + written);
@@ -304,8 +374,10 @@ class ImportResolutionTest {
             "@version <http://example.org/thing/1.0>\n@prefix : <" + NS_F + ">\nA ⊑ B\n");
         OWLOntology o = parseFile(main);
         File out = dir.resolve("out.dle").toFile();
+        // Saved by IRI, which is the overload owltx uses — and the one that carries the
+        // document location, so it is the path that must be characterised here.
         o.getOWLOntologyManager().saveOntology(
-            o, new DLESyntaxDocumentFormat(), new FileDocumentTarget(out));
+            o, new DLESyntaxDocumentFormat(), IRI.create(out));
         String written = new String(Files.readAllBytes(out.toPath()), StandardCharsets.UTF_8);
         assertTrue(statementsOnly(written).contains("@version <http://example.org/thing/1.0>"),
             () -> "the version must be written:\n" + written);
@@ -320,8 +392,10 @@ class ImportResolutionTest {
         Path main = write(dir, "main.dle", HEAD + "@import \"my vocab.dle\"\nA ⊑ B\n");
         OWLOntology o = parseFile(main);
         File out = dir.resolve("out.dle").toFile();
+        // Saved by IRI, which is the overload owltx uses — and the one that carries the
+        // document location, so it is the path that must be characterised here.
         o.getOWLOntologyManager().saveOntology(
-            o, new DLESyntaxDocumentFormat(), new FileDocumentTarget(out));
+            o, new DLESyntaxDocumentFormat(), IRI.create(out));
         String written = new String(Files.readAllBytes(out.toPath()), StandardCharsets.UTF_8);
         assertTrue(statementsOnly(written).contains("@import \"my vocab.dle\""),
             () -> "the spelling it came in as:\n" + written);
@@ -335,8 +409,10 @@ class ImportResolutionTest {
 
         File out = dir.resolve("elsewhere/out.dle").toFile();
         Files.createDirectories(out.getParentFile().toPath());
+        // Saved by IRI, which is the overload owltx uses — and the one that carries the
+        // document location, so it is the path that must be characterised here.
         o.getOWLOntologyManager().saveOntology(
-            o, new DLESyntaxDocumentFormat(), new FileDocumentTarget(out));
+            o, new DLESyntaxDocumentFormat(), IRI.create(out));
         String written = new String(Files.readAllBytes(out.toPath()), StandardCharsets.UTF_8);
         assertTrue(written.contains("@import <file:"),
             () -> "a relative path would be wrong from here:\n" + written);

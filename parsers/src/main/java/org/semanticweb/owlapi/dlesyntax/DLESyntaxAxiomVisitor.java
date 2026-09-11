@@ -59,7 +59,10 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
     /** Version IRI from {@code @version}, null if not declared. */
     private IRI versionIRI  = null;
     /** IRIs declared via {@code @import}. */
-    private final List<String> importRefs = new ArrayList<>();
+    /** `@import <iri>` references, used exactly as written. */
+    private final List<String> iriImportRefs = new ArrayList<>();
+    /** `@import "…"` references: an IRI with a retrievable scheme, or a file path. */
+    private final List<String> quotedImportRefs = new ArrayList<>();
 
     DLESyntaxAxiomVisitor(OWLDataFactory df,
                           Set<String> objectPropertyNames,
@@ -77,8 +80,11 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
     Map<String, String> getPrefixes() { return prefixes; }
     IRI getOntologyIRI()              { return ontologyIRI; }
     IRI getVersionIRI()               { return versionIRI; }
-    /** Import references as written, absolute or relative; see visitImportDecl. */
-    List<String> getImportRefs()      { return importRefs; }
+    /** `@import <iri>` references; see visitImportDecl. */
+    List<String> getIriImportRefs()    { return iriImportRefs; }
+
+    /** `@import "…"` references; see visitImportDecl. */
+    List<String> getQuotedImportRefs() { return quotedImportRefs; }
 
     // ── Prefix declarations ──────────────────────────────────────────────────
 
@@ -108,13 +114,19 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
 
     @Override
     public OWLObject visitImportDecl(DLESyntaxParser.ImportDeclContext ctx) {
-        // The reference is kept as text, not turned into an IRI here. A relative one has to
-        // be resolved against the document being parsed, and only the caller knows where
-        // that is; an absolute one survives resolution untouched.
+        // The two forms mean different things, so they are kept apart.
+        //
+        // `@import <iri>` is an IRI and is handed to OWL API as written — no resolution, no
+        // interpretation. That is the escape hatch for any scheme, including ones only an
+        // IRI mapper or catalogue can resolve.
+        //
+        // `@import "…"` is the extension. It is an IRI only when it carries a scheme OWL API
+        // can actually retrieve; otherwise it is a file path, taken literally. The caller
+        // resolves it, because only the caller knows where this document is.
         if (ctx.STRING() != null) {
-            importRefs.add(unquote(ctx.STRING().getText()));
+            quotedImportRefs.add(unquote(ctx.STRING().getText()));
         } else {
-            importRefs.add(expandIriRef(ctx.iriRef()).toString());
+            iriImportRefs.add(expandIriRef(ctx.iriRef()).toString());
         }
         return null;
     }
