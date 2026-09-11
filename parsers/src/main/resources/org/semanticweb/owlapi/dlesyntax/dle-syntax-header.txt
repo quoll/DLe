@@ -37,7 +37,8 @@
 #   minExclusive    → xsd:minExclusive     maxExclusive    → xsd:maxExclusive
 #   totalDigits     → xsd:totalDigits      fractionDigits  → xsd:fractionDigits
 #   langRange       → rdf:langRange
-# The xsd: name may be used directly in place of any keyword.
+# The IRI on the right may be used in place of its keyword, e.g. xsd:minLength for
+# minLength. Note langRange is in the rdf: namespace, not xsd:.
 #
 # DLe extensions:
 # ≝  — defines a symbol or predicate; right-hand side is not DL and is not required to be valid OWL

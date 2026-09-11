@@ -26,6 +26,44 @@ class FacetSyntaxTest {
     private static final String HEAD =
         "@ontology <http://example.org/o>\n@prefix : <http://example.org/o#>\n";
 
+    /**
+     * Every facet the ontology actually uses, by the name OWL API prints for it.
+     *
+     * <p>Matched on the rendered form rather than the IRI: a facetRestriction prints as
+     * {@code facetRestriction(pattern "…")}, using the facet's short form, so asserting on
+     * the IRI silently never matches — which is how a first version of this test passed
+     * while checking nothing.
+     */
+    private java.util.Set<OWLFacet> facetsOf(OWLOntology o) {
+        java.util.Set<OWLFacet> found = new java.util.HashSet<>();
+        String text = o.getLogicalAxioms().toString();
+        for (OWLFacet f : OWLFacet.values()) {
+            if (text.contains("facetRestriction(" + f.getShortForm() + " ")) found.add(f);
+        }
+        return found;
+    }
+
+    private String rewrite(String document) throws Exception {
+        OWLOntologyManager manager = OWLManager.createOWLOntologyManager();
+        OWLOntology ontology = manager.createOntology();
+        org.semanticweb.owlapi.model.OWLDocumentFormat format = new DLEOntologyParser().parse(
+            new StringDocumentSource(document), ontology,
+            manager.getOntologyLoaderConfiguration());
+        java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+        manager.saveOntology(ontology, format,
+            new org.semanticweb.owlapi.io.StreamDocumentTarget(out));
+        return new String(out.toByteArray(), java.nio.charset.StandardCharsets.UTF_8);
+    }
+
+    /** The document without its explanatory header, whose prose contains parentheses. */
+    private static String statementsOnly(String document) {
+        StringBuilder out = new StringBuilder();
+        for (String line : document.split("\n", -1)) {
+            if (!line.trim().startsWith("#")) out.append(line).append('\n');
+        }
+        return out.toString();
+    }
+
     private OWLOntology parse(String document) throws Exception {
         OWLOntologyManager manager = OWLManager.createOWLOntologyManager();
         OWLOntology ontology = manager.createOntology();
@@ -42,23 +80,63 @@ class FacetSyntaxTest {
         assertEquals(parse(spaced).getLogicalAxioms(), parse(called).getLogicalAxioms());
     }
 
+    /**
+     * Every keyword in call form, asserting the facet it maps to.
+     *
+     * <p>Asserting only that some axiom appeared would pass even if every keyword mapped to
+     * the wrong facet, which is the one thing worth checking here.
+     */
     @Test
     void everyFacetKeywordTakesTheCallForm() throws Exception {
-        String[][] cases = {
-            {"matches(\"[a-f]+\")", "xsd:string"},
-            {"length(4)", "xsd:string"},
-            {"minLength(2)", "xsd:string"},
-            {"maxLength(8)", "xsd:string"},
-            {"min(1)", "xsd:integer"},
-            {"max(9)", "xsd:integer"},
-            {"minExclusive(0)", "xsd:integer"},
-            {"maxExclusive(10)", "xsd:integer"},
-            {"totalDigits(5)", "xsd:decimal"},
-            {"fractionDigits(2)", "xsd:decimal"},
+        Object[][] cases = {
+            {"matches(\"[a-f]+\")", "xsd:string",  OWLFacet.PATTERN},
+            {"length(4)",           "xsd:string",  OWLFacet.LENGTH},
+            {"minLength(2)",        "xsd:string",  OWLFacet.MIN_LENGTH},
+            {"maxLength(8)",        "xsd:string",  OWLFacet.MAX_LENGTH},
+            {"min(1)",              "xsd:integer", OWLFacet.MIN_INCLUSIVE},
+            {"max(9)",              "xsd:integer", OWLFacet.MAX_INCLUSIVE},
+            {"minExclusive(0)",     "xsd:integer", OWLFacet.MIN_EXCLUSIVE},
+            {"maxExclusive(10)",    "xsd:integer", OWLFacet.MAX_EXCLUSIVE},
+            {"totalDigits(5)",      "xsd:decimal", OWLFacet.TOTAL_DIGITS},
+            {"fractionDigits(2)",   "xsd:decimal", OWLFacet.FRACTION_DIGITS},
+            {"langRange(\"en\")",   "rdf:PlainLiteral", OWLFacet.LANG_RANGE},
         };
-        for (String[] c : cases) {
+        assertEquals(OWLFacet.values().length, cases.length,
+            "a facet was added to OWL API and is not covered here");
+        for (Object[] c : cases) {
             String doc = HEAD + "⊤ ⊑ ∀v.[" + c[1] + " ⊓ [" + c[0] + "]]\n";
-            assertFalse(parse(doc).getLogicalAxioms().isEmpty(), () -> "failed: " + c[0]);
+            OWLOntology o = parse(doc);
+            assertTrue(facetsOf(o).contains((OWLFacet) c[2]),
+                () -> c[0] + " should be " + c[2] + ", got " + facetsOf(o));
+        }
+    }
+
+    /**
+     * The written form does not change. This is the compatibility claim of the whole
+     * change — accepting a second spelling must not start rewriting every document that
+     * uses the first — and it is the one thing here whose breakage would be silent.
+     */
+    @Test
+    void theWriterStillEmitsTheSpaceForm() throws Exception {
+        for (String facet : new String[] {"matches(\"[A-Z]{3}\")", "minLength(2)"}) {
+            String written = rewrite(HEAD + "⊤ ⊑ ∀v.[xsd:string ⊓ [" + facet + "]]\n");
+            assertFalse(statementsOnly(written).contains("("),
+                () -> "output must keep the space form:\n" + written);
+        }
+        // And the two spellings must write identically, since they parse identically.
+        assertEquals(rewrite(HEAD + "⊤ ⊑ ∀v.[xsd:string ⊓ [matches \"x\"]]\n"),
+                     rewrite(HEAD + "⊤ ⊑ ∀v.[xsd:string ⊓ [matches(\"x\")]]\n"));
+    }
+
+    /** The rejections the new alternative makes possible, each with its own shape. */
+    @Test
+    void malformedCallFormsAreRejected() {
+        for (String facet : new String[] {
+                "matches()", "matches((\"x\"))", "matches(\"x\", \"y\")", "matches(\"x\"",
+                "matches(xsd:string)"}) {
+            assertThrows(Exception.class,
+                () -> parse(HEAD + "⊤ ⊑ ∀v.[xsd:string ⊓ [" + facet + "]]\n"),
+                () -> "should not parse: " + facet);
         }
     }
 
@@ -91,7 +169,7 @@ class FacetSyntaxTest {
     @Test
     void anUnknownFacetIsStillRejectedInEitherForm() {
         for (String facet : new String[] {"nonsense \"x\"", "nonsense(\"x\")"}) {
-            Exception thrown = assertThrows(Exception.class,
+            DLESemanticException thrown = assertThrows(DLESemanticException.class,
                 () -> parse(HEAD + "⊤ ⊑ ∀v.[xsd:string ⊓ [" + facet + "]]\n"));
             assertTrue(thrown.getMessage().contains("facet"),
                 () -> "should name the problem: " + thrown.getMessage());
