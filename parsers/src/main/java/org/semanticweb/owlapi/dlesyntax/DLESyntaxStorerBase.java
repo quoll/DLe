@@ -288,7 +288,8 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
         // class by its own axioms, and marking it added a vacuous `SubClassOf(X, owl:Thing)`
         // on the way back in for nothing — which is the whole of the round-trip cost this
         // mechanism used to carry.
-        boolean classContradictsCase = isClass && readerCanGuessRole(name) && inAGuessableRolePair(iri);
+        boolean classContradictsCase =
+            isClass && readerCanGuessRole(name, iri) && inAGuessableRolePair(iri);
         // The property-side counterpart of the narrowing above: a capitalised role gets a
         // statement only where a reader would actually misread it.
         //
@@ -316,7 +317,7 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
         // never rescue a data property: `a ⊑ b` between two data properties came back as
         // two object properties, silently, with no statement written because the name
         // looked like a role and the writer asked no further.
-        boolean caseCanRescue = readerCanGuessRole(name) && !entity.isOWLDataProperty();
+        boolean caseCanRescue = readerCanGuessRole(name, iri) && !entity.isOWLDataProperty();
         boolean propertyContradictsCase = isProperty && !caseCanRescue
             && ((startsUpperCase(name) && propertySubsumedByAPun(entity))
                 || !hasRoleEvidence(entity));
@@ -443,8 +444,9 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
             // class, and an IRI with no DLe spelling must not fail the save. It used to, so
             // whether a document could be written turned on the capitalisation of an
             // unrelated name — `:thing1 ⊑ <urn:isbn:123>` threw where `:Thing1` did not.
-            .map(other -> shortFormOrNull(other.asOWLClass().getIRI()))
-            .anyMatch(other -> other != null && readerCanGuessRole(other));
+            .filter(other -> shortFormOrNull(other.asOWLClass().getIRI()) != null)
+            .anyMatch(other -> readerCanGuessRole(
+                shortFormOrNull(other.asOWLClass().getIRI()), other.asOWLClass().getIRI()));
     }
 
     /**
@@ -482,25 +484,19 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
     /**
      * Whether the reader's own case guess can take this name for a role.
      *
-     * <p>This must mirror {@code EntityTypeScanner} exactly, and it did not. The reader
-     * guesses a role only for a <em>bare</em> name — no prefix — whose first character is
-     * lower case, and only when the name on the other side of the {@code ⊑} qualifies too.
-     * The writer instead asked whether the name's <em>local part</em> was upper or lower
-     * case, which strips the prefix and so answers a different question. Two whole families
-     * fell through the gap, in opposite directions:
+     * <p>Delegates to {@link EntityTypeScanner#caseSuggestsRole}, which is the reader's
+     * actual rule, rather than restating it. Restating it is precisely how this went wrong:
+     * the writer asked whether the local part was upper or lower case while the reader
+     * required a bare name, and two ordinary families of document fell through the gap in
+     * opposite directions — prefixed and digit-initial properties losing their axioms,
+     * prefixed classes gaining vacuous ones. Sharing the method makes that class of bug
+     * unavailable.
      *
-     * <ul>
-     * <li>A property the reader cannot guess — {@code ex:rel ⊑ ex:relation}, or the numeric
-     *     {@code :12345 ⊑ :67890} that SNOMED CT is made of — got no statement, because its
-     *     local part is not upper case. It came back as a class subsumption, losing both
-     *     declarations and the sub-property axiom.
-     * <li>A class the reader could never misread — {@code ex:cat ⊑ ex:animal}, where the
-     *     prefix stops the guess before case is considered — got a statement it did not
-     *     need, and the round trip gained a vacuous {@code ⊑ owl:Thing} for each name.
-     * </ul>
+     * <p>The IRI is passed because the rule excludes datatypes, and a datatype is known by
+     * its namespace and not by how it is spelled.
      */
-    private static boolean readerCanGuessRole(String name) {
-        return !name.isEmpty() && name.indexOf(':') < 0 && Character.isLowerCase(name.charAt(0));
+    private boolean readerCanGuessRole(String name, IRI iri) {
+        return EntityTypeScanner.caseSuggestsRole(name, iri.toString());
     }
 
     /** Whether this property is a direct sub-property of a name that is also a class. */

@@ -33,6 +33,9 @@
 #   xml, dle. Any other prefix, skos and dcterms included, must be declared with @prefix
 # - Concept/class identifiers conventionally begin with an upper-case letter
 # - Role/reference/field identifiers conventionally begin with a lower-case letter
+# - The convention is read from the local part, so ex:hasPart names a role as plainly as
+#   hasPart does. Datatypes are the exception: everything in xsd:, and rdf:langString,
+#   rdf:dirLangString, owl:rational and owl:real, are datatypes despite the lower case
 #
 # Kind statements:
 # - `X ⊑ ⊤` states that X is a concept. `X ⊑ owl:topObjectProperty` states that X is an
@@ -40,9 +43,10 @@
 #   cannot be both, and stating both is an error. All three are ordinary subsumptions that
 #   are always true, so they add no information beyond the kind itself.
 # - They are written only where the text would otherwise be ambiguous: a name the reader's
-#   conventions cannot classify — prefixed, or beginning with a digit or a capital — used
-#   where only a subsumption pair says it is a role, or a name used as BOTH a concept and
-#   a role.
+#   conventions cannot classify — one beginning with a digit or a capital — used where only
+#   a subsumption pair says it is a role; a data property, since the convention can only
+#   offer an object property; a lower-case concept, for the same reason; or a name used as
+#   BOTH a concept and a role.
 # - A name carrying both a concept and a role statement is punned — it is both, and the pair
 #   is what says so. The two lines may be far apart, since each is written with its own kind.
 # - A role statement, and a concept statement on a punned name, are read as declarations

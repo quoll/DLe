@@ -207,14 +207,17 @@ class KindStatementFidelityTest {
     // ── Classes the reader could never misread ──────────────────────────────
 
     /**
-     * A prefixed lower-case class pair gains nothing.
+     * A prefixed lower-case class pair is marked, and round-trips exactly.
      *
-     * <p>The reader's role guess bails on any name containing a colon, so it could never
-     * have taken `ex:cat ⊑ ex:animal` for a role pair. Marking both names was pure cost: two
-     * statements written, and two vacuous {@code ⊑ owl:Thing} axioms gained on every read.
+     * <p>The case convention is about the local part, so `ex:cat ⊑ ex:animal` reads as a
+     * role pair just as `cat ⊑ animal` does — which is why these two classes have to say
+     * they are classes. The prefix used to disable the convention entirely; that made this
+     * pair safe without statements, at the cost of `ex:hasPart ⊑ ex:related` being read as
+     * classes and losing its axiom. The convention now applies either way, so whichever of
+     * the two a document means, it survives.
      */
     @Test
-    void aPrefixedLowerCaseClassPairIsNotMarked() throws Exception {
+    void aPrefixedLowerCaseClassPairIsMarkedAndRoundTrips() throws Exception {
         OWLOntologyManager manager = OWLManager.createOWLOntologyManager();
         OWLOntology o = manager.createOntology();
         OWLDataFactory df = manager.getOWLDataFactory();
@@ -223,13 +226,89 @@ class KindStatementFidelityTest {
             df.getOWLClass(IRI.create(ns + "cat")), df.getOWLClass(IRI.create(ns + "animal"))));
 
         String written = write(o, "http://example.org/d#", "ex:", ns);
-        assertFalse(statementsOnly(written).contains("⊑ ⊤"),
-            () -> "no statement is needed, the prefix already settles it:\n" + written);
+        assertTrue(statementsOnly(written).contains("ex:cat ⊑ ⊤")
+                && statementsOnly(written).contains("ex:animal ⊑ ⊤"),
+            () -> "both names must say they are classes:\n" + written);
 
-        Set<OWLLogicalAxiom> before = o.getLogicalAxioms();
-        Set<OWLLogicalAxiom> after = parse(written).getLogicalAxioms();
-        assertEquals(before, after,
-            () -> "the round trip must gain nothing:\n" + written);
+        OWLOntology back = parse(written);
+        assertTrue(back.containsClassInSignature(IRI.create(ns + "cat")),
+            () -> "and come back as classes:\n" + written);
+        assertFalse(back.containsObjectPropertyInSignature(IRI.create(ns + "cat")),
+            () -> "not as properties:\n" + written);
+        assertTrue(back.getLogicalAxioms().containsAll(o.getLogicalAxioms()),
+            () -> "nothing may be lost:\n" + written);
+        // What is gained is the two statements themselves, read back as the ordinary axioms
+        // they are. `X ⊑ ⊤` is only consumed as a marker when X is also stated to be a role;
+        // for a name that is just a class it is indistinguishable from one an author wrote,
+        // and consuming it would destroy that. Both are tautologies, so the cost is a line.
+        Set<OWLLogicalAxiom> gained = new java.util.HashSet<>(back.getLogicalAxioms());
+        gained.removeAll(o.getLogicalAxioms());
+        assertTrue(gained.stream().allMatch(ax -> ax instanceof OWLSubClassOfAxiom
+                && ((OWLSubClassOfAxiom) ax).getSuperClass().isOWLThing()),
+            () -> "and nothing beyond the two ⊑ ⊤ tautologies: " + gained);
+    }
+
+    /**
+     * And a prefixed lower-case property pair now needs no statement at all.
+     *
+     * <p>The other side of the same change: this is what the convention is for, so the
+     * reader reaches it unaided and the writer stays quiet. Before, it either lost the
+     * axiom or needed two statements to keep it.
+     */
+    @Test
+    void aPrefixedLowerCasePropertyPairNeedsNoStatement() throws Exception {
+        OWLOntologyManager manager = OWLManager.createOWLOntologyManager();
+        OWLOntology o = manager.createOntology();
+        OWLDataFactory df = manager.getOWLDataFactory();
+        String ns = "http://example.org/ex#";
+        manager.addAxiom(o, df.getOWLSubObjectPropertyOfAxiom(
+            df.getOWLObjectProperty(IRI.create(ns + "hasPart")),
+            df.getOWLObjectProperty(IRI.create(ns + "related"))));
+
+        String written = write(o, "http://example.org/d#", "ex:", ns);
+        assertFalse(statementsOnly(written).contains("owl:top"),
+            () -> "the convention already says these are roles:\n" + written);
+        assertEquals(o.getLogicalAxioms(), parse(written).getLogicalAxioms(),
+            () -> "and the axiom must survive without one:\n" + written);
+    }
+
+    /**
+     * A datatype is neither a class nor a role, whatever case its name is in.
+     *
+     * <p>The convention now reads a lower-case local part as a role, and the standard
+     * datatypes are spelled in lower case — so without an exception `mytype ≡ owl:real`
+     * would make both sides object properties. The four below are the only datatypes
+     * outside {@code xsd:} whose names begin lower case; everything else the seeded
+     * vocabularies call a class is capitalised, and their lower-case names really are
+     * properties.
+     *
+     * <p>The last case is the reason the exception is keyed on the resolved IRI rather than
+     * on the prefix text: the XSD namespace reached under some other prefix is still the XSD
+     * namespace.
+     */
+    @Test
+    void aLowerCaseDatatypeIsNotReadAsARole() throws Exception {
+        for (String datatype : new String[] {"owl:real", "owl:rational"}) {
+            OWLOntology o = parse("@prefix : <http://example.org/t#>\nmytype ≡ " + datatype + "\n");
+            IRI mytype = IRI.create("http://example.org/t#mytype");
+            assertFalse(o.containsObjectPropertyInSignature(mytype),
+                () -> datatype + " must not make mytype a role: " + o.getLogicalAxioms());
+        }
+
+        OWLOntology aliased = parse("@prefix xs2: <http://www.w3.org/2001/XMLSchema#>\n"
+            + "@prefix : <http://example.org/t#>\nmytype ≡ xs2:string\n");
+        assertFalse(aliased.containsObjectPropertyInSignature(
+                IRI.create("http://example.org/t#mytype")),
+            () -> "the XSD namespace is the XSD namespace under any prefix: "
+                + aliased.getLogicalAxioms());
+    }
+
+    /** The control: a lower-case name that is not a datatype still reads as a role. */
+    @Test
+    void aLowerCaseNonDatatypePairStillReadsAsRoles() throws Exception {
+        OWLOntology o = parse("@prefix : <http://example.org/t#>\nmytype ≡ otherthing\n");
+        assertTrue(o.containsObjectPropertyInSignature(IRI.create("http://example.org/t#mytype")),
+            () -> "the convention must still apply: " + o.getLogicalAxioms());
     }
 
     // ── Statements that cannot be spelled, or must not be written ───────────
@@ -302,12 +381,13 @@ class KindStatementFidelityTest {
     // ── Contradictions are reported, not settled ────────────────────────────
 
     /**
-     * A name stated to be both an object and a data property is refused.
+     * A name stated to be both an object and a data property is refused, citing both lines.
      *
      * <p>Both statements were honoured, giving one IRI two property declarations — punning
      * OWL 2 DL forbids, and which DLe cannot write. The reader then let data win, so a
      * document could turn its own object property axioms into data property ones. There is
-     * no right answer to choose, so it is reported.
+     * no right answer to choose, so it is reported, and reported from the evidence rather
+     * than from whichever axiom happened to be built second.
      */
     @Test
     void statingBothRoleKindsIsRefused() {
@@ -315,7 +395,9 @@ class KindStatementFidelityTest {
             + "X ⊑ owl:topObjectProperty\n"
             + "X ⊑ owl:topDataProperty\n";
         Throwable t = assertThrows(Throwable.class, () -> parse(doc));
-        assertTrue(String.valueOf(t.getMessage()).contains("both an object property and a data"),
-            () -> "expected a diagnostic naming the contradiction, got: " + t.getMessage());
+        String message = String.valueOf(t.getMessage());
+        assertTrue(message.contains("used as an object property on line 2")
+                && message.contains("data property on line 3"),
+            () -> "expected both lines named, got: " + message);
     }
 }

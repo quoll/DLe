@@ -1372,7 +1372,6 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
         if (TOP_OBJECT_PROPERTY_IRI.equals(top)) {
             IRI iri = expandNameText(lhs);
             if (iri == null) return false;
-            requireOneRoleKind(iri, lhs, false, ctx);
             axioms.add(df.getOWLDeclarationAxiom(df.getOWLObjectProperty(iri)));
             statedKindIRIs.add(iri);
             return true;
@@ -1380,7 +1379,6 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
         if (TOP_DATA_PROPERTY_IRI.equals(top)) {
             IRI iri = expandNameText(lhs);
             if (iri == null) return false;
-            requireOneRoleKind(iri, lhs, true, ctx);
             axioms.add(df.getOWLDeclarationAxiom(df.getOWLDataProperty(iri)));
             statedKindIRIs.add(iri);
             return true;
@@ -1409,30 +1407,6 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
             return true;
         }
         return false;
-    }
-
-    /** Which role kind each name has been stated to have, to catch a document stating both. */
-    private final Map<IRI, Boolean> statedRoleIsData = new LinkedHashMap<>();
-
-    /**
-     * Refuses a name stated to be both an object and a data property.
-     *
-     * <p>Both statements were previously honoured, producing one IRI declared as both kinds
-     * — the punning OWL 2 DL forbids outright, and which DLe has no way to write. The reader
-     * then resolved it by letting data win, so a document could silently turn its own object
-     * property axioms into data property axioms. There is no correct answer to pick here, so
-     * the contradiction is reported instead of settled.
-     */
-    private void requireOneRoleKind(IRI iri, String name, boolean isData,
-                                    org.antlr.v4.runtime.ParserRuleContext ctx) {
-        Boolean stated = statedRoleIsData.putIfAbsent(iri, isData);
-        if (stated != null && stated != isData) {
-            throw new DLESemanticException(
-                name + " is stated to be both an object property and a data property."
-                    + " An IRI can be only one, so the two statements contradict each other;"
-                    + " keep the one that matches how " + name + " is used.",
-                ctx.start.getLine(), ctx.start.getCharPositionInLine());
-        }
     }
 
     private static final IRI TOP_OBJECT_PROPERTY_IRI =

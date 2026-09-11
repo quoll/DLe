@@ -36,6 +36,31 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
     // or complex-expression subclass/equiv contexts).  Role propagation will not cross
     // these nodes, preventing the attribute hierarchy from bleeding into the concept hierarchy.
     private final Set<String> mustBeClass = new HashSet<>();
+    /**
+     * Where a name was first forced to one property kind by structure, per kind.
+     *
+     * <p>Only direct evidence goes in: a filler that is a datatype or a class, a domain or
+     * range, an inverse, or an explicit kind statement. Nothing inferred by propagation or
+     * guessed from case. A name in both maps is a document claiming an IRI is both an object
+     * and a data property, which OWL 2 DL forbids and DLe cannot write — see
+     * {@link #reportKindConflicts}.
+     *
+     * <p>Recorded separately from {@code objectPropertyNames}/{@code dataPropertyNames}
+     * because those two resolve the clash as they go, data winning, so by the time the scan
+     * ends the conflict has already been silently settled.
+     */
+    private final Map<String, Integer> objectEvidence = new LinkedHashMap<>();
+    private final Map<String, Integer> dataEvidence = new LinkedHashMap<>();
+    /**
+     * The filler name that supplied each piece of object evidence, where there was one.
+     *
+     * <p>Resolved when the conflict is checked, not when the evidence is recorded, because
+     * a named filler may turn out to be a <em>predicate</em> — `∃a.greaterThan` — and a
+     * predicate says nothing about the kind of the role in front of it. Whether a name is a
+     * predicate is only known once the whole document has been scanned, and depending on
+     * where the `≝` line happened to sit would make the answer depend on document order.
+     */
+    private final Map<String, String> objectEvidenceFiller = new LinkedHashMap<>();
 
     // Roles the document states outright, via `X ⊑ owl:topObjectProperty` or
     // `X ⊑ owl:topDataProperty`, for the case inference cannot reach: a name whose kind
@@ -200,6 +225,49 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
     // Classifies a role as object property only if not already established as data.
     // Func(p) and Disj(p,q) are syntactically ambiguous — they apply to both data
     // and object properties.  This avoids overwriting a definitive data classification.
+    /**
+     * Whether a filler is {@code ⊤}, which belongs to both hierarchies and so pins neither.
+     *
+     * <p>{@code ∃p.⊤ ⊑ C} is how DLe writes a domain, for a data property as much as an
+     * object one, so the filler there is no evidence of kind at all.
+     */
+    private static boolean isTopFiller(@Nullable DLESyntaxParser.AtomContext atom) {
+        return atom instanceof DLESyntaxParser.TopAtomContext;
+    }
+
+    /** Notes that structure forced this name to one kind, keeping the first line for each. */
+    private void recordKindEvidence(String name, boolean isData, int line) {
+        (isData ? dataEvidence : objectEvidence).putIfAbsent(name, line);
+    }
+
+    /**
+     * Refuses a name the document forces to be both an object and a data property.
+     *
+     * <p>OWL 2 DL requires the two sets of property IRIs to be disjoint, and DLe has one
+     * statement per kind, so such a name can be neither written nor loaded. It used to be
+     * resolved quietly by letting data win, which gave four different outcomes for four
+     * documents saying the same contradictory thing: two misleading messages about datatypes
+     * and class fillers, one accurate message, and one document accepted in silence that
+     * then declared the name as both kinds at once.
+     *
+     * <p>A class and a property on one name is a different matter — that is a pun, which is
+     * legal and supported. This is only about the two <em>property</em> kinds.
+     */
+    private void reportKindConflicts() {
+        for (Map.Entry<String, Integer> object : objectEvidence.entrySet()) {
+            Integer dataLine = dataEvidence.get(object.getKey());
+            if (dataLine == null) continue;
+            // A predicate filler is not evidence; see objectEvidenceFiller.
+            String filler = objectEvidenceFiller.get(object.getKey());
+            if (filler != null && predicateNames.contains(filler)) continue;
+            throw new DLESemanticException(
+                object.getKey() + " is used as an object property on line " + object.getValue()
+                    + " and as a data property on line " + dataLine
+                    + ". An IRI can be one or the other, not both.",
+                Math.max(object.getValue(), dataLine), 0);
+        }
+    }
+
     private void classifyUnknownRole(String name) {
         if (!dataPropertyNames.contains(name)) {
             objectPropertyNames.add(name);
@@ -212,7 +280,7 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
     public Void visitSubPropertyChainAxiom(DLESyntaxParser.SubPropertyChainAxiomContext ctx) {
         // All positions in a chain axiom are object properties
         for (DLESyntaxParser.PropertyExprContext propCtx : ctx.chainExpr().propertyExpr()) {
-            classifyProp(propCtx, false);
+            classifyProp(propCtx, false, true);
         }
         objectPropertyNames.add(ctx.name().getText());
         return visitChildren(ctx);
@@ -222,7 +290,7 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
     public Void visitPropertyChainEquivAxiom(DLESyntaxParser.PropertyChainEquivAxiomContext ctx) {
         objectPropertyNames.add(ctx.name().getText());
         for (DLESyntaxParser.PropertyExprContext propCtx : ctx.chainExpr().propertyExpr()) {
-            classifyProp(propCtx, false);
+            classifyProp(propCtx, false, true);
         }
         return visitChildren(ctx);
     }
@@ -233,7 +301,7 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
     public Void visitChainedEquivSubAxiom(DLESyntaxParser.ChainedEquivSubAxiomContext ctx) {
         // A ≡ B ⊑ C — all three positions are object properties
         for (DLESyntaxParser.PropertyExprContext propCtx : ctx.propertyExpr()) {
-            classifyProp(propCtx, false);
+            classifyProp(propCtx, false, true);
         }
         return visitChildren(ctx);
     }
@@ -260,13 +328,11 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
         if (rhs != null && singleInverseAtom(ctx.classExpr(0)) != null) {
             objectPropertyNames.add(rhs);
         }
-        // p ≡ q (both bare unprefixed names, lowercase) — treat as object properties.
-        // Prefixed names are excluded: the prefix letter is not a signal about resource type.
+        // p ≡ q (both lower-case local parts) — treat as object properties.
         if (lhs != null && rhs != null
-                && !lhs.contains(":") && !rhs.contains(":")
-                && Character.isLowerCase(lhs.charAt(0)) && Character.isLowerCase(rhs.charAt(0))) {
-            objectPropertyNames.add(lhs);
-            objectPropertyNames.add(rhs);
+                && caseSuggestsRole(lhs) && caseSuggestsRole(rhs)) {
+            classifyUnknownRole(lhs);
+            classifyUnknownRole(rhs);
         }
         // A ≡ (complex) → A is a class; (complex) ≡ B → B is a class.
         // Exclude inverse-atom RHS/LHS since those are property expressions, not complex classes.
@@ -310,6 +376,8 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
         String topProperty = rhs == null ? null : topPropertyIri(rhs);
         if (lhs != null && topProperty != null) {
             explicitRole.add(lhs);
+            recordKindEvidence(lhs, TOP_DATA_PROPERTY_IRI.equals(topProperty),
+                ctx.start.getLine());
             if (TOP_DATA_PROPERTY_IRI.equals(topProperty)) {
                 dataPropertyNames.add(lhs);
                 objectPropertyNames.remove(lhs);
@@ -321,14 +389,12 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
 
         if (lhs != null && rhs != null) {
             subPropertyPairs.computeIfAbsent(lhs, k -> new HashSet<>()).add(rhs);
-            // Heuristic: bare camelCase names (lowercase start, no prefix) are almost
-            // certainly properties.  Prefixed names are excluded because the prefix
-            // letter carries no information about the local resource type.
+            // Heuristic: a camelCase local part is almost certainly a property. A prefix
+            // does not change that — see caseSuggestsRole, which is also what the writer
+            // consults before deciding a kind needs stating.
             if (!objectPropertyNames.contains(lhs) && !dataPropertyNames.contains(lhs)
                     && !objectPropertyNames.contains(rhs) && !dataPropertyNames.contains(rhs)
-                    && !lhs.contains(":") && !rhs.contains(":")
-                    && Character.isLowerCase(lhs.charAt(0))
-                    && Character.isLowerCase(rhs.charAt(0))) {
+                    && caseSuggestsRole(lhs) && caseSuggestsRole(rhs)) {
                 objectPropertyNames.add(lhs);
                 objectPropertyNames.add(rhs);
             }
@@ -363,6 +429,10 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
      * </ol>
      */
     void propagatePropertyTypes() {
+        // Before anything is propagated: a contradiction in the direct evidence has to be
+        // reported from the evidence itself, because propagation resolves it silently.
+        reportKindConflicts();
+
         // Phase 1: propagate mustBeClass upward through sub-property chains.
         boolean changed = true;
         while (changed) {
@@ -402,13 +472,23 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
                     // to object-property puns, so `Upper ⊑ pun` kept Upper a class under a
                     // punned object property and silently made it a data property under a
                     // punned data one — the same document, the same shape, two answers.
+                    // Neither direction may cross a name the document has already forced
+                    // to be an object property. Data propagation used to override that, so
+                    // `∃x.Wheel ⊑ Car` with `x ⊑ s` and `s ⊑ owl:topDataProperty` quietly
+                    // made x a data property and then complained that Wheel was not a
+                    // datatype — blaming the filler for a conflict two lines away. Left
+                    // alone, x stays an object property, s stays a data one, and the pair
+                    // is reported for what it is: a sub-property axiom across the two
+                    // hierarchies, which OWL has no way to express.
                     if (dataPropertyNames.contains(sub) && !mustBeClass.contains(sup)
-                            && !explicitRole.contains(sup)) {
+                            && !explicitRole.contains(sup)
+                            && !objectEvidence.containsKey(sup)) {
                         changed |= dataPropertyNames.add(sup);
                         changed |= objectPropertyNames.remove(sup);
                     }
                     if (dataPropertyNames.contains(sup) && !mustBeClass.contains(sub)
                             && !explicitRole.contains(sub)
+                            && !objectEvidence.containsKey(sub)
                             && !(mustBeClass.contains(sup) && looksLikeAClass(sub))) {
                         changed |= dataPropertyNames.add(sub);
                         changed |= objectPropertyNames.remove(sub);
@@ -462,6 +542,58 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
         if (colon < 0) return null;   // a bare name is in the default namespace, never owl:
         String base = prefixes.get(name.substring(0, colon + 1));
         return base == null ? null : base + name.substring(colon + 1);
+    }
+
+    /** The XSD namespace, whose members are datatypes however their names are spelled. */
+    private static final String XSD_NS = "http://www.w3.org/2001/XMLSchema#";
+
+    /**
+     * The four datatypes outside {@code xsd:} whose names begin with a lower-case letter.
+     *
+     * <p>Every other datatype and class in the vocabularies DLe seeds is capitalised, so the
+     * convention classifies them correctly on its own. These do not follow it, and there is
+     * no more of them: {@code owl:Thing}, {@code owl:Nothing}, {@code rdfs:Literal},
+     * {@code rdf:PlainLiteral}, {@code rdf:XMLLiteral} and the SKOS and Dublin Core classes
+     * are all upper case, and the lower-case names in those namespaces — {@code rdfs:label},
+     * {@code owl:sameAs}, {@code owl:topObjectProperty} — really are properties, which is
+     * what the convention would call them anyway.
+     */
+    private static final Set<String> LOWER_CASE_DATATYPES = Set.of(
+        "http://www.w3.org/1999/02/22-rdf-syntax-ns#langString",
+        "http://www.w3.org/1999/02/22-rdf-syntax-ns#dirLangString",
+        OWL_NS + "rational",
+        OWL_NS + "real");
+
+    /**
+     * Whether the case convention offers this name as a role.
+     *
+     * <p>The convention is about the local part: {@code ex:hasPart} names a role as plainly
+     * as {@code hasPart} does. It used to be applied only to bare names, on the grounds that
+     * "the prefix letter carries no information about the local resource type" — true of the
+     * letter, but it threw away the local part along with it. A prefixed property hierarchy
+     * was therefore read as a class hierarchy, losing both declarations and the axiom.
+     *
+     * <p>The exception is a datatype, because a datatype is not a class and is not a role,
+     * and the standard ones are spelled in lower case. A resolved IRI is needed rather than
+     * the text, since a document may bind {@code xsd:} elsewhere or reach the XSD namespace
+     * under another prefix.
+     *
+     * <p>{@link DLESyntaxStorerBase} mirrors this to decide when to state a kind. The two
+     * disagreeing is what the kind statements are for, so they share this one method.
+     */
+    static boolean caseSuggestsRole(String name, @Nullable String resolvedIri) {
+        if (resolvedIri != null
+                && (resolvedIri.startsWith(XSD_NS) || LOWER_CASE_DATATYPES.contains(resolvedIri))) {
+            return false;
+        }
+        int colon = name.lastIndexOf(':');
+        String local = colon < 0 ? name : name.substring(colon + 1);
+        return !local.isEmpty() && Character.isLowerCase(local.charAt(0));
+    }
+
+    /** The reader's own view of the name, resolving it with this document's prefixes. */
+    private boolean caseSuggestsRole(String name) {
+        return caseSuggestsRole(name, resolve(name));
     }
 
     /**
@@ -554,7 +686,8 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
     private void classifyRestriction(DLESyntaxParser.PropertyExprContext propCtx,
                                      DLESyntaxParser.PrimaryContext fillerCtx) {
         boolean data = isDataPrimary(fillerCtx);
-        classifyProp(propCtx, data);
+        classifyProp(propCtx, data, data || !isTopFiller(Parens.atomOf(fillerCtx)),
+            primaryBareName(fillerCtx));
         // Non-data fillers are class expressions; seed mustBeClass so phase-1 propagation
         // can mark the full concept-hierarchy chain before role propagation runs.
         if (!data) {
@@ -566,7 +699,8 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
     private void classifyFromClassExpr(DLESyntaxParser.PropertyExprContext propCtx,
                                        DLESyntaxParser.ClassExprContext fillerCtx) {
         boolean data = isDataClassExpr(fillerCtx);
-        classifyProp(propCtx, data);
+        classifyProp(propCtx, data, data || !isTopFiller(Parens.atomOf(fillerCtx)),
+            singleBareName(fillerCtx));
         if (!data) {
             String fillerName = singleBareName(fillerCtx);
             if (fillerName != null) mustBeClass.add(fillerName);
@@ -574,7 +708,37 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
     }
 
     private void classifyProp(DLESyntaxParser.PropertyExprContext propCtx, boolean isData) {
+        classifyProp(propCtx, isData, false);
+    }
+
+    /**
+     * Classifies a property occurrence, recording evidence only when the position pins it.
+     *
+     * <p>{@code pinsKind} is separate from {@code isData} on purpose. Several callers pass
+     * {@code isData = false} as a <em>default</em> rather than a finding: an unqualified
+     * cardinality has no filler to inspect, and a multi-role predicate restriction's filler
+     * is a predicate, which says nothing about the roles. Above all, the domain idiom
+     * {@code ∃p.⊤ ⊑ C} has {@code ⊤} as its filler, and {@code ⊤} is kind-neutral — the
+     * wildlife corpus writes exactly that for a data property, immediately above the range
+     * that proves it is one. Treating those defaults as evidence made the conflict check
+     * reject three perfectly good documents.
+     */
+    private void classifyProp(DLESyntaxParser.PropertyExprContext propCtx, boolean isData,
+                              boolean pinsKind) {
+        classifyProp(propCtx, isData, pinsKind, null);
+    }
+
+    private void classifyProp(DLESyntaxParser.PropertyExprContext propCtx, boolean isData,
+                              boolean pinsKind, @Nullable String fillerName) {
         String name = PropertyExprs.coreNameText(propCtx);
+        boolean inverse = PropertyExprs.isInverse(propCtx);
+        if (pinsKind || inverse) {
+            // An inverse is object-only whatever the filler, which is evidence in itself.
+            recordKindEvidence(name, isData && !inverse, propCtx.start.getLine());
+            if (!isData && fillerName != null) {
+                objectEvidenceFiller.putIfAbsent(name, fillerName);
+            }
+        }
         if (PropertyExprs.isInverse(propCtx)) {
             // Inverse properties are always object properties
             objectPropertyNames.add(name);
