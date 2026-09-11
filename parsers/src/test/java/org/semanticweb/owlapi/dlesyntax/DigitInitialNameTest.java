@@ -160,8 +160,11 @@ class DigitInitialNameTest {
     @Test
     void aNonAsciiDigitKeepsItsBareForm() throws Exception {
         String written = write(parse(PREFIX + "٤x ⊑ Dog\n０y ⊑ Dog\n"));
-        assertTrue(written.contains("٤x ⊑ Dog"), () -> "expected a bare name in\n" + written);
-        assertFalse(written.contains(":٤x"), () -> "that does not lex:\n" + written);
+        for (String name : new String[] {"٤x", "０y"}) {
+            assertTrue(written.contains(name + " ⊑ Dog"),
+                () -> "expected a bare name for " + name + " in\n" + written);
+            assertFalse(written.contains(":" + name), () -> "that does not lex:\n" + written);
+        }
         assertTrue(parse(written).ontology.containsClassInSignature(IRI.create(NS + "٤x")),
             "and the written document must still parse");
     }
@@ -187,6 +190,107 @@ class DigitInitialNameTest {
 
         assertFalse(written.contains(":1.Dog"),
             () -> "a colon here reads back as a restriction, not this class:\n" + written);
+    }
+
+    /**
+     * Whatever the writer emits must parse. This is the contract the colon decision exists
+     * to keep, and the reason it has to agree with the grammar exactly.
+     *
+     * <p>`isNameChar` in the renderer is a hand-copied second definition of the grammar's
+     * NameStart ranges, so the two can drift apart silently. Rather than compare the
+     * definitions — one is private, the other generated — this checks the property that
+     * matters, at the boundary of every range where a copy is most likely to be wrong,
+     * including the deliberate hole at U+207B (the inverse marker).
+     */
+    @Test
+    void whateverTheWriterEmitsCanBeParsed() throws Exception {
+        int[] boundaries = {
+            0x0041, 0x005A, 0x005F, 0x0061, 0x007A,          // ASCII letters and underscore
+            0x002D, 0x002E, 0x0030, 0x0039,                  // hyphen, dot, digits
+            0x00BF, 0x00C0, 0x02FF, 0x0300,                  // first Unicode range edges
+            0x036F, 0x0370, 0x037D, 0x037E, 0x037F, 0x1FFF,
+            0x2000, 0x200C, 0x200D, 0x200E,
+            0x206F, 0x2070, 0x207A, 0x207B, 0x207C, 0x218F,  // U+207B is excluded on purpose
+            0x2190, 0x2BFF, 0x2C00, 0x2FEF, 0x2FF0,
+            0x3000, 0x3001, 0xD7FF, 0xF8FF, 0xF900, 0xFDCF,
+            0xFDD0, 0xFDF0, 0xFFFD,
+        };
+        for (int cp : boundaries) {
+            String local = "1" + new String(Character.toChars(cp));
+            OWLOntologyManager manager = OWLManager.createOWLOntologyManager();
+            OWLOntology o = manager.createOntology(IRI.create("http://example.org/t"));
+            OWLDataFactory df = manager.getOWLDataFactory();
+            manager.addAxiom(o, df.getOWLSubClassOfAxiom(
+                df.getOWLClass(IRI.create(NS + local)), df.getOWLClass(IRI.create(NS + "Cat"))));
+            DLESyntaxDocumentFormat format = new DLESyntaxDocumentFormat();
+            format.setDefaultPrefix(NS);
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            manager.saveOntology(o, format, new StreamDocumentTarget(out));
+            String written = new String(out.toByteArray(), StandardCharsets.UTF_8);
+
+            boolean colonKept = written.contains(":" + local);
+            if (colonKept) {
+                // The writer claimed this spelling is legal, so it must parse back.
+                assertTrue(parse(written).ontology.containsClassInSignature(IRI.create(NS + local)),
+                    () -> String.format("U+%04X: writer emitted :%s but it does not parse:%n%s",
+                        cp, local, written));
+            } else {
+                // It declined, so the bare form must be what is there — loudly wrong is fine.
+                assertTrue(written.contains(local),
+                    () -> String.format("U+%04X: neither form written:%n%s", cp, written));
+            }
+        }
+    }
+
+    /** The bare form for an unspellable name must fail loudly, not read as something else. */
+    @Test
+    void anUnspellableNameFailsLoudlyRatherThanSilently() throws Exception {
+        OWLOntologyManager manager = OWLManager.createOWLOntologyManager();
+        OWLOntology o = manager.createOntology(IRI.create("http://example.org/t"));
+        OWLDataFactory df = manager.getOWLDataFactory();
+        manager.addAxiom(o, df.getOWLSubClassOfAxiom(
+            df.getOWLClass(IRI.create(NS + "1.Dog")), df.getOWLClass(IRI.create(NS + "Cat"))));
+        DLESyntaxDocumentFormat format = new DLESyntaxDocumentFormat();
+        format.setDefaultPrefix(NS);
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        manager.saveOntology(o, format, new StreamDocumentTarget(out));
+        String written = new String(out.toByteArray(), StandardCharsets.UTF_8);
+
+        assertThrows(Exception.class, () -> parse(written),
+            () -> "a dot has no legal spelling, so this must not quietly parse as"
+                + " something else:\n" + written);
+    }
+
+    /** A digit-initial name has to work wherever a name works, not just in a subsumption. */
+    @Test
+    void aDigitInitialNameWorksInEveryPosition() throws Exception {
+        String[] statements = {
+            "A ⊑ ∃:1.B", "A ⊑ ∀:1.B", "A ⊑ ∃:1⁻.B", "A ⊑ ≥2 :1.B",
+            "A ≡ {:1, :2}", "Trans(:1)", "Func(:1)", "Disj(:1, :2)",
+            ":1 ∘ :2 ⊑ :3", "∃:1.⊤ ⊑ A", "⊤ ⊑ ∀:1.B",
+            "@label :1 \"one\"", "@doc :1 \"one\"", "@ann :1 rdfs:seeAlso \"x\"",
+        };
+        for (String statement : statements) {
+            OWLOntology o = parse(PREFIX + statement + "\n").ontology;
+            assertFalse(o.getAxioms().isEmpty(), () -> "no axioms from: " + statement);
+        }
+    }
+
+    /** The parse error for a pre-fix document explains itself. */
+    @Test
+    void aBareDigitInitialNameIsExplained() {
+        Exception thrown = assertThrows(Exception.class,
+            () -> parse(PREFIX + "A ⊑ 1\n"));
+        assertTrue(thrown.getMessage().contains("cannot begin with a digit"),
+            () -> "this is the error an older document produces: " + thrown.getMessage());
+    }
+
+    @Test
+    void anUnrelatedSyntaxErrorGetsNoHint() {
+        Exception thrown = assertThrows(Exception.class, () -> parse(PREFIX + "A ⊑ ∃r.\n"));
+        assertFalse(thrown.getMessage().contains("cannot begin with a digit"),
+            () -> thrown.getMessage());
+        assertFalse(thrown.getMessage().contains("leading ':'"), () -> thrown.getMessage());
     }
 
     // ── What must not change ────────────────────────────────────────────────

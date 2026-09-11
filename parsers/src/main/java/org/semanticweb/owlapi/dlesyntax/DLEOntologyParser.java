@@ -138,11 +138,25 @@ public class DLEOntologyParser extends AbstractOWLParser {
          * lists the token names, which does not explain the asymmetry.
          */
         private String hintFor(Object offendingSymbol) {
-            if (offendingSymbol instanceof Token && ":".equals(((Token) offendingSymbol).getText())) {
+            if (!(offendingSymbol instanceof Token)) return "";
+            String text = ((Token) offendingSymbol).getText();
+
+            // A bare number where a name belongs. This is the error a document written by
+            // an older version produces — it emitted the local part with no prefix — and it
+            // is the one worth explaining, because the fix is not in the reader.
+            if (!text.isEmpty() && text.charAt(0) >= '0' && text.charAt(0) <= '9') {
+                return ". A name cannot begin with a digit unless it is prefixed: write"
+                    + " :" + text + " for the default namespace, or use a declared prefix."
+                    + " A document written before that form existed will have the bare"
+                    + " spelling here";
+            }
+            // A lone colon where a name belongs. Only a digit may follow it, so this is
+            // most often `:Something` written by hand.
+            if (":".equals(text)) {
                 return ". A leading ':' names the default namespace only when the local part"
-                    + " begins with a digit, as in ':762705008' — a digit-initial name has no"
-                    + " other spelling. Write any other name in the default namespace bare,"
-                    + " without the colon";
+                    + " begins with a digit — a digit-initial name has no other spelling."
+                    + " Write any other name in the default namespace bare, without the"
+                    + " colon";
             }
             return "";
         }
