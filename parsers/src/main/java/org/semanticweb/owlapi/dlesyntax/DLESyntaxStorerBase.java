@@ -368,9 +368,12 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
         // written nowhere: the reader gives such a document the default IRI — a version IRI
         // cannot be held without one — and that default is exactly what the test below
         // suppresses.
+        // An ontology IRI is written whenever there is one. The test used to exclude one
+        // particular IRI, because the reader invented that IRI for documents which declared
+        // none — so a document whose ontology IRI genuinely *was* that one silently lost it.
+        // The reader no longer invents anything, so there is nothing to suppress.
         OWLOntologyID id = ontology.getOntologyID();
-        boolean named = id.getOntologyIRI().isPresent()
-            && !DLESyntaxAxiomVisitor.DLE_DEFAULT_ONTOLOGY_IRI.equals(id.getOntologyIRI().get());
+        boolean named = id.getOntologyIRI().isPresent();
         if (named) {
             writer.println("@ontology <" + id.getOntologyIRI().get() + ">");
         }

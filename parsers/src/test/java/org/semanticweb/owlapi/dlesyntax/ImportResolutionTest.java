@@ -269,19 +269,6 @@ class ImportResolutionTest {
     }
 
     /**
-     * A version IRI cannot be held without an ontology IRI, so leaving an undeclared
-     * document anonymous would have dropped a declared @version silently.
-     */
-    @Test
-    void aVersionWithoutAnOntologyIriIsKept(@TempDir Path dir) throws Exception {
-        Path main = write(dir, "v.dle",
-            "@version <http://example.org/thing/1.0>\n@prefix : <" + NS_F + ">\nA ⊑ B\n");
-        OWLOntology o = parseFile(main);
-        assertTrue(o.getOntologyID().getVersionIRI().isPresent(),
-            "the declared version must survive");
-        assertEquals("http://example.org/thing/1.0",
-            o.getOntologyID().getVersionIRI().get().toString());
-    }
 
     /**
      * An import that cannot be loaded is reported even when the strategy is silent.
@@ -329,13 +316,132 @@ class ImportResolutionTest {
             "a failed parse must not leave the previous document's warnings behind");
     }
 
-    /** Two documents naming different versions and no ontology must coexist. */
+
+    // ── Identity ────────────────────────────────────────────────────────────
+
+    /**
+     * A document that declares no @ontology is anonymous.
+     *
+     * <p>It used to be handed a fixed sentinel IRI. That is invisible until imports are
+     * followed: most DLe documents omit @ontology, so any two of them then collide on
+     * the same identity and the manager refuses the second.
+     */
     @Test
-    void differentVersionsWithoutAnOntologyIriCoexist(@TempDir Path dir) throws Exception {
-        write(dir, "dep.dle", "@version <http://example.org/v/2.0>\nC ⊑ D\n");
-        Path main = write(dir, "top.dle", "@version <http://example.org/v/1.0>\n"
-            + "@prefix : <" + NS_F + ">\n@import \"dep.dle\"\nA ⊑ B\n");
-        assertEquals(2, parseFile(main).importsClosure().count());
+    void aDocumentWithNoOntologyDeclarationIsAnonymous(@TempDir Path dir) throws Exception {
+        OWLOntology o = parseFile(write(dir, "a.dle", "A ⊑ B\n"));
+        assertTrue(o.isAnonymous(), () -> "expected anonymous, got " + o.getOntologyID());
+    }
+
+    /**
+     * Two undeclared documents can be loaded together, one importing the other.
+     *
+     * <p>This is the common case, not an edge case, and it is what the sentinel broke.
+     */
+    @Test
+    void twoUndeclaredDocumentsCoexist(@TempDir Path dir) throws Exception {
+        write(dir, "dep.dle", "C ⊑ D\n");
+        Path main = write(dir, "top.dle",
+            HEAD + "@import \"dep.dle\"\nA ⊑ B\n");
+        assertEquals(2, parseFile(main).importsClosure().count(),
+            "both documents must be in the closure");
+    }
+
+    /**
+     * A declared ontology IRI is written back, even when it happens to be the IRI the
+     * reader once invented.
+     *
+     * <p>The writer suppressed that one IRI, so a document that genuinely declared it —
+     * this project's own published vocabulary — silently lost its identity on the way out.
+     */
+    @Test
+    void anOntologyIriThatMatchesTheOldSentinelSurvives(@TempDir Path dir) throws Exception {
+        String iri = "http://quoll.github.io/DLe/ontology";
+        Path main = write(dir, "s.dle", "@ontology <" + iri + ">\nA ⊑ B\n");
+        OWLOntology o = parseFile(main);
+        assertEquals(iri, o.getOntologyID().getOntologyIRI().get().toString());
+
+        File out = dir.resolve("out.dle").toFile();
+        o.getOWLOntologyManager().saveOntology(o, new DLESyntaxDocumentFormat(), IRI.create(out));
+        String written = new String(Files.readAllBytes(out.toPath()), StandardCharsets.UTF_8);
+        assertTrue(statementsOnly(written).contains("@ontology <" + iri + ">"),
+            () -> "the declared IRI must be written:\n" + written);
+    }
+
+    /** An ontology IRI and its version both survive the DLe text, not merely the parse. */
+    @Test
+    void anOntologyAndItsVersionSurviveTheText(@TempDir Path dir) throws Exception {
+        Path main = write(dir, "v.dle", "@ontology <http://example.org/thing>\n"
+            + "@version <http://example.org/thing/1.0>\nA ⊑ B\n");
+        OWLOntology o = parseFile(main);
+        assertEquals("http://example.org/thing/1.0",
+            o.getOntologyID().getVersionIRI().get().toString());
+
+        File out = dir.resolve("out.dle").toFile();
+        o.getOWLOntologyManager().saveOntology(o, new DLESyntaxDocumentFormat(), IRI.create(out));
+        String written = statementsOnly(
+            new String(Files.readAllBytes(out.toPath()), StandardCharsets.UTF_8));
+        assertTrue(written.contains("@ontology <http://example.org/thing>"),
+            () -> "the ontology IRI must be written:\n" + written);
+        assertTrue(written.contains("@version <http://example.org/thing/1.0>"),
+            () -> "the version must be written:\n" + written);
+    }
+
+    /**
+     * @version without @ontology is refused, and says why.
+     *
+     * <p>OWL has no such ontology: a version IRI identifies a version *of* a named
+     * ontology, and OWL API rejects the pair outright. The alternatives were to drop the
+     * declaration silently or to invent an ontology IRI the author never wrote.
+     */
+    @Test
+    void aVersionWithoutAnOntologyIriIsRefused(@TempDir Path dir) throws Exception {
+        Path main = write(dir, "v.dle", "@version <http://example.org/thing/1.0>\nA ⊑ B\n");
+        String message = dleDiagnostic(main);
+        assertTrue(message.contains("@version requires @ontology"),
+            () -> "expected a diagnostic naming the rule, got: " + message);
+    }
+
+    /** Declaring an identity twice is refused rather than resolved by taking the last. */
+    @Test
+    void aDuplicateIdentityDeclarationIsRefused(@TempDir Path dir) throws Exception {
+        Path two = write(dir, "d.dle",
+            "@ontology <http://example.org/a>\n@ontology <http://example.org/b>\nA ⊑ B\n");
+        String first = dleDiagnostic(two);
+        assertTrue(first.contains("duplicate @ontology"), () -> "got: " + first);
+
+        Path ver = write(dir, "dv.dle", "@ontology <http://example.org/a>\n"
+            + "@version <http://example.org/a/1>\n@version <http://example.org/a/2>\nA ⊑ B\n");
+        String second = dleDiagnostic(ver);
+        assertTrue(second.contains("duplicate @version"), () -> "got: " + second);
+    }
+
+    /**
+     * A relative IRI cannot be an identity.
+     *
+     * <p>OWL 2 requires both to be absolute. OWL API does not check, so a relative one
+     * survives as far as the first document that imports it — a much worse place to find
+     * out that the identity means something different depending on where it is read.
+     */
+    @Test
+    void aRelativeIdentityIsRefused(@TempDir Path dir) throws Exception {
+        Path main = write(dir, "r.dle", "@ontology <foo>\nA ⊑ B\n");
+        String message = dleDiagnostic(main);
+        assertTrue(message.contains("must be an absolute IRI"), () -> "got: " + message);
+    }
+
+    /**
+     * Parses a document expected to fail, and returns the DLe parser's own diagnostic.
+     *
+     * <p>Going through the manager would bury it among every other parser's complaint, so
+     * the DLe parser is invoked directly. That is also what characterises the message a
+     * caller can act on.
+     */
+    private String dleDiagnostic(Path file) throws Exception {
+        OWLOntologyManager manager = OWLManager.createOWLOntologyManager();
+        Throwable t = assertThrows(Throwable.class, () -> new DLEOntologyParser().parse(
+            new org.semanticweb.owlapi.io.FileDocumentSource(file.toFile()),
+            manager.createOntology(), manager.getOntologyLoaderConfiguration()));
+        return String.valueOf(t.getMessage());
     }
 
     // ── Writing it back ─────────────────────────────────────────────────────
@@ -362,28 +468,6 @@ class ImportResolutionTest {
     }
 
     /**
-     * A version survives the DLe text, not merely the parse.
-     *
-     * <p>The writer used to nest `@version` inside the `@ontology` emission, which is
-     * suppressed for the default IRI — exactly the IRI a version-only document is given,
-     * since a version IRI cannot be held without one. So the version was written nowhere.
-     */
-    @Test
-    void aVersionWithoutAnOntologyIriSurvivesTheText(@TempDir Path dir) throws Exception {
-        Path main = write(dir, "v.dle",
-            "@version <http://example.org/thing/1.0>\n@prefix : <" + NS_F + ">\nA ⊑ B\n");
-        OWLOntology o = parseFile(main);
-        File out = dir.resolve("out.dle").toFile();
-        // Saved by IRI, which is the overload owltx uses — and the one that carries the
-        // document location, so it is the path that must be characterised here.
-        o.getOWLOntologyManager().saveOntology(
-            o, new DLESyntaxDocumentFormat(), IRI.create(out));
-        String written = new String(Files.readAllBytes(out.toPath()), StandardCharsets.UTF_8);
-        assertTrue(statementsOnly(written).contains("@version <http://example.org/thing/1.0>"),
-            () -> "the version must be written:\n" + written);
-        assertFalse(statementsOnly(written).contains("@ontology"),
-            () -> "and the placeholder ontology IRI must stay suppressed:\n" + written);
-    }
 
     /** A name with a space keeps its spelling, rather than coming back percent-encoded. */
     @Test

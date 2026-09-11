@@ -7,7 +7,7 @@ Prefix(xsd:=<http://www.w3.org/2001/XMLSchema#>)
 Prefix(rdfs:=<http://www.w3.org/2000/01/rdf-schema#>)
 
 
-Ontology(<http://quoll.github.io/DLe/ontology>
+Ontology(<http://example.org/wildlife-test>
 
 Declaration(Class(:ActiveSurveyWindow))
 Declaration(Class(:AdultAnimal))

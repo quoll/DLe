@@ -122,32 +122,24 @@ public class DLEOntologyParser extends AbstractOWLParser {
             DualDeclarationResolver.resolve(ontology);
             DefaultLabelAdder.addDefaultLabels(ontology);
 
-            // Apply the ontology ID. A document that declares no @ontology is left
-            // anonymous rather than given a made-up IRI.
+            // Apply the ontology ID. A document that declares no @ontology is anonymous —
+            // it does not name itself, and nothing should claim it did.
             //
-            // It used to be handed a fixed default, which was harmless while imports were
-            // never followed. Now that they are, two documents that both omit @ontology —
-            // and most do — collided on that one IRI, and the manager refused the second
-            // with "Ontology already exists". Naming it after its own file would avoid the
-            // collision but stamp a machine-specific location into every such document,
-            // which is exactly the problem being avoided on the import side.
-            //
-            // Anonymous is also what the writer already assumed: it suppresses @ontology
-            // when the IRI is the default, so output is unchanged either way.
+            // It used to be handed a fixed sentinel IRI instead, the same one for every such
+            // document. That was invisible while imports were never followed; once they are,
+            // two documents that both omit @ontology collide on it, and most DLe documents
+            // omit it. Worse, the sentinel was this project's own published ontology IRI, so
+            // a document carrying it could not import the DLe vocabulary.
             IRI ontIRI = visitor.getOntologyIRI();
             IRI verIRI = visitor.getVersionIRI();
-            // A version IRI cannot be held without an ontology IRI — OWL API rejects the
-            // pair — so a document declaring @version and no @ontology would have had its
-            // version silently dropped by the anonymity above. The default IRI is kept for
-            // that one case, because there is something to lose.
-            //
-            // Two such documents in one closure do still collide, but only if they declare
-            // the *same* version, and then the collision is right: identical ID means
-            // identical ontology under OWL's identity rules, and two documents claiming to
-            // be version 1.0 of the unnamed ontology are claiming to be the same thing.
-            // Different versions coexist.
             if (ontIRI == null && verIRI != null) {
-                ontIRI = DLESyntaxAxiomVisitor.DLE_DEFAULT_ONTOLOGY_IRI;
+                // OWL has no such ontology: a version IRI names a version *of* a named
+                // ontology, and OWL API rejects the pair outright. Saying so beats inventing
+                // an ontology IRI the author never wrote.
+                throw new DLESemanticException(
+                    "@version requires @ontology: a version identifies a version of a named"
+                        + " ontology, so a document declaring a version must name itself",
+                    -1, 0);
             }
             if (ontIRI != null) {
                 ontology.getOWLOntologyManager().applyChange(new SetOntologyID(ontology,

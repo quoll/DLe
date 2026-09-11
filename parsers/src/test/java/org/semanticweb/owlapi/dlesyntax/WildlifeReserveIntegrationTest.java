@@ -73,5 +73,15 @@ class WildlifeReserveIntegrationTest {
         assertFalse(reloadedAxioms.isEmpty(), "Reloaded ontology must contain logical axioms");
         assertEquals(originalAxioms, reloadedAxioms,
             "Round-tripped ontology must have the same logical axioms as the original");
+
+        // The identity has to survive the trip too. Comparing the IDs directly would not
+        // work — an anonymous ID is unique per instance — so the IRIs are compared, which
+        // catches both losing a declared identity and inventing one that was not declared.
+        assertEquals(original.getOntologyID().getOntologyIRI(),
+            reloaded.getOntologyID().getOntologyIRI(),
+            "Round-tripping must preserve the ontology IRI");
+        assertEquals(original.getOntologyID().getVersionIRI(),
+            reloaded.getOntologyID().getVersionIRI(),
+            "Round-tripping must preserve the version IRI");
     }
 }
