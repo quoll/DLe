@@ -24,8 +24,6 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
 
     /** IRI namespace for internally-generated predicate restriction classes. */
     static final String DLE_NS = "http://quoll.github.io/DLe/vocab#";
-    /** Default ontology IRI, used when no {@code @ontology} declaration is present. */
-    static final IRI DLE_DEFAULT_ONTOLOGY_IRI = IRI.create("http://quoll.github.io/DLe/ontology");
     /** Annotation property IRI used to preserve DLE block {@code #} comments through the OWL model. */
     static final IRI DLE_COMMENT_IRI = IRI.create(DLE_NS + "comment");
     /** Annotation property IRI used to preserve DLE trailing inline {@code #} comments. */
@@ -59,7 +57,10 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
     /** Version IRI from {@code @version}, null if not declared. */
     private IRI versionIRI  = null;
     /** IRIs declared via {@code @import}. */
-    private final List<IRI> imports = new ArrayList<>();
+    /** `@import <iri>` references, used exactly as written. */
+    private final List<String> iriImportRefs = new ArrayList<>();
+    /** `@import "…"` references: an IRI with a retrievable scheme, or a file path. */
+    private final List<String> quotedImportRefs = new ArrayList<>();
 
     DLESyntaxAxiomVisitor(OWLDataFactory df,
                           Set<String> objectPropertyNames,
@@ -77,7 +78,11 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
     Map<String, String> getPrefixes() { return prefixes; }
     IRI getOntologyIRI()              { return ontologyIRI; }
     IRI getVersionIRI()               { return versionIRI; }
-    List<IRI> getImports()            { return imports; }
+    /** `@import <iri>` references; see visitImportDecl. */
+    List<String> getIriImportRefs()    { return iriImportRefs; }
+
+    /** `@import "…"` references; see visitImportDecl. */
+    List<String> getQuotedImportRefs() { return quotedImportRefs; }
 
     // ── Prefix declarations ──────────────────────────────────────────────────
 
@@ -95,20 +100,83 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
 
     @Override
     public OWLObject visitOntologyDecl(DLESyntaxParser.OntologyDeclContext ctx) {
-        ontologyIRI = expandIriRef(ctx.iriRef());
+        // A document names itself once. Two declarations are not a merge and not a
+        // choice; taking the last silently discards the first, which is how a document
+        // ends up identified as something its author never intended.
+        if (ontologyIRI != null) {
+            throw new DLESemanticException(
+                "duplicate @ontology: this document already declared itself as <"
+                    + ontologyIRI + ">, and an ontology has one identity",
+                ctx.start.getLine(), ctx.start.getCharPositionInLine());
+        }
+        ontologyIRI = requireAbsolute(expandIriRef(ctx.iriRef()), "@ontology", ctx);
         return null;
     }
 
     @Override
     public OWLObject visitVersionDecl(DLESyntaxParser.VersionDeclContext ctx) {
-        versionIRI = expandIriRef(ctx.iriRef());
+        if (versionIRI != null) {
+            throw new DLESemanticException(
+                "duplicate @version: this document already declared version <"
+                    + versionIRI + ">",
+                ctx.start.getLine(), ctx.start.getCharPositionInLine());
+        }
+        versionIRI = requireAbsolute(expandIriRef(ctx.iriRef()), "@version", ctx);
         return null;
+    }
+
+    /**
+     * Rejects a relative IRI used as an ontology or version identity.
+     *
+     * <p>OWL 2 requires both to be absolute, and for good reason: they identify the
+     * document to everything that imports it, so an identity that means different
+     * things depending on where it is read is not an identity. OWL API does not check
+     * this, and a relative one survives as far as the first importer, which is a much
+     * worse place to find out.
+     */
+    private IRI requireAbsolute(IRI iri, String keyword,
+                                org.antlr.v4.runtime.ParserRuleContext ctx) {
+        if (!iri.toURI().isAbsolute()) {
+            throw new DLESemanticException(
+                keyword + " must be an absolute IRI, but <" + iri + "> is relative."
+                    + " An ontology's identity has to mean the same thing to everything"
+                    + " that imports it.",
+                ctx.start.getLine(), ctx.start.getCharPositionInLine());
+        }
+        return iri;
     }
 
     @Override
     public OWLObject visitImportDecl(DLESyntaxParser.ImportDeclContext ctx) {
-        imports.add(expandIriRef(ctx.iriRef()));
+        // The two forms mean different things, so they are kept apart.
+        //
+        // `@import <iri>` is an IRI and is handed to OWL API as written — no resolution, no
+        // interpretation. That is the escape hatch for any scheme, including ones only an
+        // IRI mapper or catalogue can resolve.
+        //
+        // `@import "…"` is the extension. It is an IRI only when it carries a scheme OWL API
+        // can actually retrieve; otherwise it is a file path, taken literally. The caller
+        // resolves it, because only the caller knows where this document is.
+        if (ctx.STRING() != null) {
+            quotedImportRefs.add(unquote(ctx.STRING().getText()));
+        } else {
+            iriImportRefs.add(expandIriRef(ctx.iriRef()).toString());
+        }
         return null;
+    }
+
+    /**
+     * Strips the quotes from a STRING token and unescapes it, the same way everywhere.
+     *
+     * <p>Shared with {@link #stringLiteral}: one token type should not have two escaping
+     * dialects. A backslash before anything else is kept, which matters for the reference
+     * form this is used for — a Windows path such as {@code "C:\vocab.dle"} must not lose
+     * its separator.
+     */
+    static String unquote(String token) {
+        return token.substring(1, token.length() - 1)
+            .replace("\\\"", "\"")
+            .replace("\\\\", "\\");
     }
 
     // ── Predicate definitions ────────────────────────────────────────────────
@@ -1196,9 +1264,6 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
 
     /** Strips surrounding double-quotes and unescapes basic sequences. */
     private OWLLiteral stringLiteral(String tokenText) {
-        String inner = tokenText.substring(1, tokenText.length() - 1)
-            .replace("\\\"", "\"")
-            .replace("\\\\", "\\");
-        return df.getOWLLiteral(inner);
+        return df.getOWLLiteral(unquote(tokenText));
     }
 }

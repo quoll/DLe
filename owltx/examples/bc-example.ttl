@@ -9,7 +9,7 @@
 @prefix skos: <http://www.w3.org/2004/02/skos/core#> .
 @base <http://snomed.info/sct/900000000000207008#> .
 
-<http://quoll.github.io/DLe/ontology> rdf:type owl:Ontology .
+[] rdf:type owl:Ontology .
 
 #################################################################
 #    Annotation properties

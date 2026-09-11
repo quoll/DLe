@@ -5,11 +5,12 @@ import org.semanticweb.owlapi.dlesyntax.DLESyntaxStorer;
 import org.semanticweb.owlapi.formats.*;
 import org.semanticweb.owlapi.model.*;
 import org.semanticweb.owlapi.io.StreamDocumentTarget;
-import org.semanticweb.owlapi.io.FileDocumentTarget;
+import org.semanticweb.owlapi.model.OWLOntologyStorageException;
+import org.semanticweb.owlapi.model.IRI;
+import org.semanticweb.owlapi.model.OWLOntologyLoaderConfiguration;
+import org.semanticweb.owlapi.model.MissingImportHandlingStrategy;
 
 import java.io.File;
-import java.io.FileOutputStream;
-import java.io.OutputStream;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -148,14 +149,32 @@ public class Main {
         // would otherwise claim the file by matching its @prefix lines).
         OWLOntology ontology;
         String inputExt = extension(inputFile);
+        // An import that cannot be loaded is reported, not fatal. A conversion tool should
+        // convert what it was given: the alternative is that an unreachable remote import,
+        // or one file in a set that does not parse, takes the whole document down.
+        manager.addMissingImportListener(event ->
+            System.err.println("warning: could not load import <"
+                + event.getImportedOntologyURI() + ">: "
+                + rootMessage(event.getCreationException())));
+        OWLOntologyLoaderConfiguration loaderConfig = manager.getOntologyLoaderConfiguration()
+            .setMissingImportHandlingStrategy(MissingImportHandlingStrategy.SILENT);
+        manager.setOntologyLoaderConfiguration(loaderConfig);
+
         if ("dle".equalsIgnoreCase(inputExt)) {
             try {
                 ontology = manager.createOntology();
-                OWLDocumentFormat dleFormat = new org.semanticweb.owlapi.dlesyntax.DLEOntologyParser().parse(
+                var dleParser = new org.semanticweb.owlapi.dlesyntax.DLEOntologyParser();
+                OWLDocumentFormat dleFormat = dleParser.parse(
                     new org.semanticweb.owlapi.io.FileDocumentSource(input),
                     ontology,
-                    manager.getOntologyLoaderConfiguration());
+                    loaderConfig);
+                dleParser.getWarnings().forEach(w -> System.err.println("warning: " + w));
                 manager.setOntologyFormat(ontology, dleFormat);
+                // Tell the manager where this came from. It is true, and it is what lets the
+                // storer keep a relative @import relative when the output has no location of
+                // its own — writing to stdout, where otherwise an absolute local path would
+                // appear and `owltx in.dle > out.dle` would disagree with `owltx in.dle out.dle`.
+                manager.setOntologyDocumentIRI(ontology, IRI.create(input));
             } catch (Exception e) {
                 die("parsing DLE file: " + e.getMessage());
                 return; // unreachable, but satisfies compiler
@@ -176,14 +195,62 @@ public class Main {
 
         // Write output
         if (outputFile != null) {
-            try (OutputStream out = new FileOutputStream(outputFile)) {
-                manager.saveOntology(ontology, outputFormat, new StreamDocumentTarget(out));
+            try {
+                writeToFile(manager, ontology, outputFormat, outputFile);
             } catch (Exception e) {
-                die("writing to " + outputFile + ": " + e.getMessage());
+                die("writing to " + outputFile + ": " + rootMessage(e));
             }
         } else {
             manager.saveOntology(ontology, outputFormat, new StreamDocumentTarget(System.out));
         }
+    }
+
+    /**
+     * The innermost message, for a diagnostic a person will read.
+     *
+     * <p>{@code OWLOntologyStorageException.getMessage()} returns its cause's
+     * {@code toString()}, which put {@code java.io.FileNotFoundException:} in front of
+     * perfectly good text like "Permission denied".
+     */
+    static String rootMessage(Throwable t) {
+        Throwable root = t;
+        while (root.getCause() != null && root.getCause() != root) root = root.getCause();
+        String message = root.getMessage();
+        return message != null ? message : root.getClass().getSimpleName();
+    }
+
+    /**
+     * Writes an ontology to a named file.
+     *
+     * <p>Package-private and separate from {@code main} so a test can exercise the real
+     * write path. That matters more than it looks: the first attempt at guarding the
+     * encoding here asserted on {@code saveOntology(o, format, IRI)} called from the test
+     * itself, which is OWL API's code and always UTF-8 — so the guard passed no matter what
+     * this method did, and a deliberately broken version of it still went green.
+     *
+     * <p>Saving by IRI rather than through a stream, because the storer needs the document's
+     * location to write an import back as the relative path it came in as. It also encodes
+     * UTF-8, which {@code FileDocumentTarget} does not: that target's writer is
+     * {@code new FileWriter(file)}, using the platform default charset, which turns every
+     * DLe operator into a question mark wherever the default is not UTF-8.
+     *
+     * <p>The parent directory must already exist. Saving by IRI would otherwise create it —
+     * {@code AbstractOWLStorer} calls {@code mkdirs()} — so a mistyped output path would
+     * silently materialise a directory tree instead of failing.
+     */
+    static void writeToFile(OWLOntologyManager manager, OWLOntology ontology,
+                            OWLDocumentFormat outputFormat, String outputFile)
+            throws OWLOntologyStorageException {
+        java.io.File target = new java.io.File(outputFile);
+        java.io.File parent = target.getAbsoluteFile().getParentFile();
+        if (parent != null && !parent.isDirectory()) {
+            // Say which of the two things is wrong. Saving by IRI would create a missing
+            // parent, so this has to be pre-empted rather than reported afterwards — but
+            // a parent that exists and is a plain file is a different mistake.
+            throw new OWLOntologyStorageException(outputFile + " ("
+                + (parent.exists() ? "Not a directory" : "No such file or directory") + ")");
+        }
+        manager.saveOntology(ontology, outputFormat, IRI.create(target));
     }
 
     /** A DLE format instance; the default when nothing else determines one. */

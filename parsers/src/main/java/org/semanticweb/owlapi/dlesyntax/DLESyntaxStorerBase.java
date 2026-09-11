@@ -26,6 +26,8 @@ import org.semanticweb.owlapi.model.OWLEntity;
 import org.semanticweb.owlapi.model.OWLLiteral;
 import org.semanticweb.owlapi.model.OWLOntologyID;
 import org.semanticweb.owlapi.formats.PrefixDocumentFormat;
+import org.semanticweb.owlapi.io.OWLOntologyDocumentTarget;
+import org.semanticweb.owlapi.model.OWLOntologyStorageException;
 import org.semanticweb.owlapi.model.OWLOntology;
 import org.semanticweb.owlapi.util.DefaultPrefixManager;
 
@@ -54,6 +56,106 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
 
     /** Renderer used to produce DLE syntax strings for axioms. */
     private final DLESyntaxObjectRenderer renderer = new DLESyntaxObjectRenderer();
+
+    /**
+     * Where this document is being written, when that is known.
+     *
+     * <p>Only needed to write an import back the way it came. A relative reference is
+     * resolved to an absolute IRI on the way in — it has to be, because a relative path
+     * cannot be carried inside a {@code file:} IRI — and writing that absolute path back
+     * would put a machine-specific location into a document that is likely under version
+     * control. With the target known it can be made relative again.
+     */
+    @Nullable
+    private IRI targetDocumentIRI;
+
+    @Override
+    public void storeOntology(OWLOntology o, IRI documentIRI, OWLDocumentFormat format)
+            throws OWLOntologyStorageException {
+        targetDocumentIRI = documentIRI;
+        try {
+            super.storeOntology(o, documentIRI, format);
+        } finally {
+            targetDocumentIRI = null;
+        }
+    }
+
+    @Override
+    public void storeOntology(OWLOntology o, OWLOntologyDocumentTarget target,
+                              OWLDocumentFormat format)
+            throws OWLOntologyStorageException {
+        targetDocumentIRI = target.getDocumentIRI().orElse(null);
+        try {
+            super.storeOntology(o, target, format);
+        } finally {
+            targetDocumentIRI = null;
+        }
+    }
+
+    /**
+     * Renders an import target: a quoted relative path when it sits beside this document or
+     * below it, and an absolute IRI otherwise.
+     *
+     * <p>Relativised only downward. {@link java.net.URI#relativize} declines to produce
+     * {@code ../} chains, which is the behaviour wanted here — a path that climbs out of the
+     * document's own directory is more fragile than an absolute one.
+     */
+    /**
+     * Where the document being written came from, used when the output has no location of
+     * its own — writing to stdout or a stream.
+     *
+     * <p>Without it, {@code owltx in.dle > out.dle} wrote every import as an absolute local
+     * path while {@code owltx in.dle out.dle} kept it relative, so the two invocations
+     * produced different documents. The source location is where the reference was relative
+     * to in the first place, which makes it the right guess rather than merely a guess.
+     */
+    @Nullable
+    private IRI sourceDocumentIRI() {
+        if (currentOntology == null) return null;
+        IRI iri = currentOntology.getOWLOntologyManager().getOntologyDocumentIRI(currentOntology);
+        return iri != null && iri.toString().startsWith("file:") ? iri : null;
+    }
+
+    /** Escapes what the STRING token treats as special, so the value reads back unchanged. */
+    private static String escapeForString(String value) {
+        return value.replace("\\", "\\\\").replace("\"", "\\\"");
+    }
+
+    private String renderImport(IRI importIRI) {
+        IRI location = targetDocumentIRI != null ? targetDocumentIRI : sourceDocumentIRI();
+        if (location != null) {
+            try {
+                java.net.URI target = new java.net.URI(location.toString());
+                java.net.URI imported = new java.net.URI(importIRI.toString());
+                if ("file".equals(target.getScheme()) && "file".equals(imported.getScheme())
+                        && !target.isOpaque() && !imported.isOpaque()) {
+                    java.net.URI relative = target.resolve(".").relativize(imported);
+                    if (!relative.isAbsolute()) {
+                        // The decoded path, not the URI's text: relativize hands back
+                        // percent-encoding, so a file named "my vocab.dle" would be written
+                        // as "my%20vocab.dle" — legal, and reloadable, but not the spelling
+                        // it came in as, which is the point of keeping the relative form.
+                        String path = relative.getPath();
+                        if (path == null || path.isEmpty()) {
+                            // Nothing to name relatively — the import *is* the directory, or
+                            // carries only a fragment. An absolute IRI is the honest answer.
+                            return "<" + importIRI + ">";
+                        }
+                        // Decoded, because a quoted reference is a literal file name: this
+                        // is the exact inverse of the encoding the reader applies, so the
+                        // name comes back as it was written. The `./` is needed for the one
+                        // character the encoding leaves alone — a colon in the first
+                        // segment would otherwise read back as a scheme.
+                        if (DLEOntologyParser.firstSegmentHasColon(path)) path = "./" + path;
+                        return "\"" + escapeForString(path) + "\"";
+                    }
+                }
+            } catch (java.net.URISyntaxException e) {
+                // fall through to the absolute form
+            }
+        }
+        return "<" + importIRI + ">";
+    }
 
     /** Current ontology being stored; set for the duration of {@code storeOntology}. */
     @Nullable private OWLOntology currentOntology;
@@ -260,17 +362,29 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
         // The header resource already ends with a blank line; no extra println() needed.
 
         // Emit ontology/version/import declarations if present.
+        //
+        // The version is emitted independently of the ontology IRI. It used to be nested
+        // inside it, so a document declaring @version and no @ontology had its version
+        // written nowhere: the reader gives such a document the default IRI — a version IRI
+        // cannot be held without one — and that default is exactly what the test below
+        // suppresses.
+        // An ontology IRI is written whenever there is one. The test used to exclude one
+        // particular IRI, because the reader invented that IRI for documents which declared
+        // none — so a document whose ontology IRI genuinely *was* that one silently lost it.
+        // The reader no longer invents anything, so there is nothing to suppress.
         OWLOntologyID id = ontology.getOntologyID();
-        if (id.getOntologyIRI().isPresent()
-                && !DLESyntaxAxiomVisitor.DLE_DEFAULT_ONTOLOGY_IRI.equals(id.getOntologyIRI().get())) {
+        boolean named = id.getOntologyIRI().isPresent();
+        if (named) {
             writer.println("@ontology <" + id.getOntologyIRI().get() + ">");
-            if (id.getVersionIRI().isPresent()) {
-                writer.println("@version <" + id.getVersionIRI().get() + ">");
-            }
+        }
+        if (id.getVersionIRI().isPresent()) {
+            writer.println("@version <" + id.getVersionIRI().get() + ">");
+        }
+        if (named || id.getVersionIRI().isPresent()) {
             writer.println();
         }
         ontology.importsDeclarations().sorted().forEach(decl ->
-            writer.println("@import <" + decl.getIRI() + ">"));
+            writer.println("@import " + renderImport(decl.getIRI())));
         if (ontology.importsDeclarations().findAny().isPresent()) {
             writer.println();
         }

@@ -10,7 +10,10 @@
 # @ann <IRI> <annotation-property> "text"  — annotation using the given property
 # @prefix <prefix>: <namespace>  — declares a prefix
 # @import <IRI>  — imports another ontology
-# @ontology <IRI>  — declares the ontology IRI
+# @import "path"  — imports a file, resolved relative to this document
+# @ontology <IRI>  — declares the ontology IRI. A document without one is anonymous
+# @version <IRI>  — declares the version IRI. Requires @ontology, since a version
+#   identifies a version of a named ontology. Both IRIs must be absolute
 #
 # Naming conventions:
 # - Every entity has an implicit label equal to its identifier unless @label is declared
