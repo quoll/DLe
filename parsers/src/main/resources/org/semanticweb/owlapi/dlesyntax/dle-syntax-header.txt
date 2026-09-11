@@ -10,6 +10,7 @@
 # @ann <IRI> <annotation-property> "text"  — annotation using the given property
 # @prefix <prefix>: <namespace>  — declares a prefix
 # @import <IRI>  — imports another ontology
+# @import "path"  — imports a file, resolved relative to this document
 # @ontology <IRI>  — declares the ontology IRI
 #
 # Naming conventions:

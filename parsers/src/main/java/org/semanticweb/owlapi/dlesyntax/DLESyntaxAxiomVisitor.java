@@ -119,25 +119,18 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
         return null;
     }
 
-    /** Strips the quotes from a STRING token and unescapes what the lexer allowed in. */
-    private static String unquote(String token) {
-        String inner = token.substring(1, token.length() - 1);
-        StringBuilder out = new StringBuilder(inner.length());
-        for (int i = 0; i < inner.length(); i++) {
-            char c = inner.charAt(i);
-            if (c == '\\' && i + 1 < inner.length()) {
-                char next = inner.charAt(++i);
-                switch (next) {
-                    case 'n': out.append('\n'); break;
-                    case 't': out.append('\t'); break;
-                    case 'r': out.append('\r'); break;
-                    default:  out.append(next);
-                }
-            } else {
-                out.append(c);
-            }
-        }
-        return out.toString();
+    /**
+     * Strips the quotes from a STRING token and unescapes it, the same way everywhere.
+     *
+     * <p>Shared with {@link #stringLiteral}: one token type should not have two escaping
+     * dialects. A backslash before anything else is kept, which matters for the reference
+     * form this is used for — a Windows path such as {@code "C:\vocab.dle"} must not lose
+     * its separator.
+     */
+    static String unquote(String token) {
+        return token.substring(1, token.length() - 1)
+            .replace("\\\"", "\"")
+            .replace("\\\\", "\\");
     }
 
     // ── Predicate definitions ────────────────────────────────────────────────
@@ -1225,9 +1218,6 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
 
     /** Strips surrounding double-quotes and unescapes basic sequences. */
     private OWLLiteral stringLiteral(String tokenText) {
-        String inner = tokenText.substring(1, tokenText.length() - 1)
-            .replace("\\\"", "\"")
-            .replace("\\\\", "\\");
-        return df.getOWLLiteral(inner);
+        return df.getOWLLiteral(unquote(tokenText));
     }
 }

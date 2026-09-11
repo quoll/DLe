@@ -5,9 +5,9 @@ import org.semanticweb.owlapi.dlesyntax.DLESyntaxStorer;
 import org.semanticweb.owlapi.formats.*;
 import org.semanticweb.owlapi.model.*;
 import org.semanticweb.owlapi.io.StreamDocumentTarget;
+import org.semanticweb.owlapi.model.IRI;
 import org.semanticweb.owlapi.model.OWLOntologyLoaderConfiguration;
 import org.semanticweb.owlapi.model.MissingImportHandlingStrategy;
-import org.semanticweb.owlapi.io.FileDocumentTarget;
 
 import java.io.File;
 import java.io.FileOutputStream;
@@ -188,11 +188,21 @@ public class Main {
 
         // Write output
         if (outputFile != null) {
-            // FileDocumentTarget rather than a bare stream: it carries the document's IRI,
-            // which the DLe storer needs to write an import back as the relative path it
-            // came in as instead of an absolute local one.
+            // Save by IRI, not through a stream or a FileDocumentTarget.
+            //
+            // The storer needs the document's location to write an import back as the
+            // relative path it came in as rather than an absolute local one, so a bare
+            // stream will not do. But FileDocumentTarget will not do either: its writer is
+            // `new FileWriter(file)`, which encodes with the platform default charset, and
+            // DLe is made of non-ASCII operators. Under LANG=C or on Windows every ⊑ became
+            // a question mark and the output stopped being a DLe document at all — and the
+            // same for .ofn and .ttl, which both mandate UTF-8.
+            //
+            // This path carries the IRI and encodes as UTF-8. It also creates missing parent
+            // directories, which writing to a stream did not.
             try {
-                manager.saveOntology(ontology, outputFormat, new FileDocumentTarget(new java.io.File(outputFile)));
+                manager.saveOntology(ontology, outputFormat,
+                    IRI.create(new java.io.File(outputFile)));
             } catch (Exception e) {
                 die("writing to " + outputFile + ": " + e.getMessage());
             }

@@ -28,6 +28,7 @@ import static org.junit.jupiter.api.Assertions.*;
  */
 class ImportResolutionTest {
 
+    private static final String NS_F = "http://example.org/f#";
     private static final String HEAD =
         "@ontology <http://example.org/f>\n@prefix : <http://example.org/f#>\n";
 
@@ -143,6 +144,63 @@ class ImportResolutionTest {
             "neither document names itself, so neither can clash with the other");
         assertTrue(o.getOntologyID().isAnonymous(),
             "a document that declares no @ontology has no IRI to report");
+    }
+
+    /**
+     * A file name may contain a space, which is illegal in a URI. Parsing the reference
+     * therefore failed and it was passed through unresolved — and an unresolved relative
+     * reference comes back from the manager as OWLOntologyFactoryNotFoundException, a
+     * RuntimeException, which its own missing-import handling never sees. One space in a
+     * file name took the whole document down.
+     */
+    @Test
+    void aReferenceWithASpaceResolvesAndLoads(@TempDir Path dir) throws Exception {
+        write(dir, "my vocab.dle", "@ontology <http://example.org/v>\nThing1 ⊑ ⊤\n");
+        Path main = write(dir, "main.dle", HEAD + "@import \"my vocab.dle\"\nA ⊑ B\n");
+        OWLOntology o = parseFile(main);
+        assertEquals(2, o.importsClosure().count(),
+            () -> "the file exists and must be loaded: " + o.importsDeclarations().count());
+    }
+
+    /**
+     * An unloadable reference must honour the caller's strategy, not bypass it. These come
+     * back as RuntimeExceptions, so the manager's own handling is skipped.
+     */
+    @Test
+    void anUnloadableReferenceHonoursTheStrategy(@TempDir Path dir) throws Exception {
+        Path main = write(dir, "m.dle", HEAD + "@import \"classpath:nope.dle\"\nA ⊑ B\n");
+        OWLOntologyManager manager = OWLManager.createOWLOntologyManager();
+
+        OWLOntology silent = manager.createOntology();
+        new DLEOntologyParser().parse(
+            new org.semanticweb.owlapi.io.FileDocumentSource(main.toFile()), silent,
+            manager.getOntologyLoaderConfiguration().setMissingImportHandlingStrategy(
+                org.semanticweb.owlapi.model.MissingImportHandlingStrategy.SILENT));
+        assertFalse(silent.getLogicalAxioms().isEmpty(),
+            "silent means the readable part is still delivered");
+
+        OWLOntologyManager strict = OWLManager.createOWLOntologyManager();
+        OWLOntology thrown = strict.createOntology();
+        assertThrows(Exception.class, () -> new DLEOntologyParser().parse(
+            new org.semanticweb.owlapi.io.FileDocumentSource(main.toFile()), thrown,
+            strict.getOntologyLoaderConfiguration().setMissingImportHandlingStrategy(
+                org.semanticweb.owlapi.model.MissingImportHandlingStrategy.THROW_EXCEPTION)),
+            "and the default strategy must still refuse it");
+    }
+
+    /**
+     * A version IRI cannot be held without an ontology IRI, so leaving an undeclared
+     * document anonymous would have dropped a declared @version silently.
+     */
+    @Test
+    void aVersionWithoutAnOntologyIriIsKept(@TempDir Path dir) throws Exception {
+        Path main = write(dir, "v.dle",
+            "@version <http://example.org/thing/1.0>\n@prefix : <" + NS_F + ">\nA ⊑ B\n");
+        OWLOntology o = parseFile(main);
+        assertTrue(o.getOntologyID().getVersionIRI().isPresent(),
+            "the declared version must survive");
+        assertEquals("http://example.org/thing/1.0",
+            o.getOntologyID().getVersionIRI().get().toString());
     }
 
     // ── Writing it back ─────────────────────────────────────────────────────

@@ -21,6 +21,7 @@ import org.semanticweb.owlapi.io.OWLParserException;
 import org.semanticweb.owlapi.model.AddImport;
 import org.semanticweb.owlapi.model.OWLOntologyManager;
 import org.semanticweb.owlapi.model.OWLImportsDeclaration;
+import org.semanticweb.owlapi.model.MissingImportHandlingStrategy;
 import org.semanticweb.owlapi.model.IRI;
 import org.semanticweb.owlapi.model.OWLDocumentFormat;
 import org.semanticweb.owlapi.model.OWLDocumentFormatFactory;
@@ -108,6 +109,14 @@ public class DLEOntologyParser extends AbstractOWLParser {
             // when the IRI is the default, so output is unchanged either way.
             IRI ontIRI = visitor.getOntologyIRI();
             IRI verIRI = visitor.getVersionIRI();
+            // A version IRI cannot be held without an ontology IRI — OWL API rejects the
+            // pair — so a document declaring @version and no @ontology would have had its
+            // version silently dropped by the anonymity above. Keep the default IRI for
+            // that one case: there is something to lose, and nothing to collide with that
+            // a document naming a version was going to avoid anyway.
+            if (ontIRI == null && verIRI != null) {
+                ontIRI = DLESyntaxAxiomVisitor.DLE_DEFAULT_ONTOLOGY_IRI;
+            }
             if (ontIRI != null) {
                 ontology.getOWLOntologyManager().applyChange(new SetOntologyID(ontology,
                     new OWLOntologyID(java.util.Optional.of(ontIRI),
@@ -126,7 +135,7 @@ public class DLEOntologyParser extends AbstractOWLParser {
                 // always just the document itself. Asking the manager to load it is what a
                 // parser is expected to do, and it honours the caller's configuration for a
                 // missing import rather than deciding here.
-                manager.makeLoadImportRequest(declaration, configuration);
+                loadImport(manager, declaration, configuration);
             }
 
             DLESyntaxDocumentFormat format = new DLESyntaxDocumentFormat();
@@ -162,12 +171,8 @@ public class DLEOntologyParser extends AbstractOWLParser {
      * it, which is more use than silently loading the wrong file.
      */
     static IRI resolveImport(@Nullable IRI documentIRI, String ref) {
-        java.net.URI reference;
-        try {
-            reference = new java.net.URI(ref);
-        } catch (java.net.URISyntaxException e) {
-            return IRI.create(ref);   // not a URI at all; let OWLAPI report it
-        }
+        java.net.URI reference = asUri(ref);
+        if (reference == null) return IRI.create(ref);
         if (reference.isAbsolute()) return IRI.create(reference.toString());
         if (documentIRI == null) return IRI.create(ref);
         try {
@@ -176,6 +181,57 @@ public class DLEOntologyParser extends AbstractOWLParser {
             return IRI.create(base.resolve(reference).toString());
         } catch (java.net.URISyntaxException e) {
             return IRI.create(ref);
+        }
+    }
+
+    /**
+     * Asks the manager to load an import, honouring the caller's missing-import strategy.
+     *
+     * <p>{@code makeLoadImportRequest} reports a missing document by throwing
+     * {@code OWLOntologyCreationException}, which the manager itself catches and routes
+     * through that strategy. But a reference it cannot find a factory for at all — an
+     * unknown scheme, or a path it cannot make sense of — comes back as
+     * {@code OWLOntologyFactoryNotFoundException}, a <em>RuntimeException</em>. That escapes
+     * the manager's own handling, so {@code SILENT} was bypassed and one unreadable import
+     * took the whole document down.
+     */
+    private static void loadImport(OWLOntologyManager manager, OWLImportsDeclaration declaration,
+                                   OWLOntologyLoaderConfiguration configuration) {
+        try {
+            manager.makeLoadImportRequest(declaration, configuration);
+        } catch (org.semanticweb.owlapi.model.OWLRuntimeException e) {
+            if (configuration.getMissingImportHandlingStrategy()
+                    == MissingImportHandlingStrategy.THROW_EXCEPTION) {
+                throw e;
+            }
+            // Silent means silent: the caller asked for the document it could read.
+        }
+    }
+
+    /**
+     * Reads a reference as a URI, escaping it as a path if it is not already one.
+     *
+     * <p>A file name is the point of the quoted form, and a file name may contain a space —
+     * which is illegal in a URI, so parsing it fails and the reference used to be passed
+     * through unresolved. Escaping it as a path turns {@code my vocab.dle} into
+     * {@code my%20vocab.dle}, which resolves and opens the file it names.
+     *
+     * <p>Tried as a plain URI first, because escaping an absolute reference as a path would
+     * mangle it: {@code http://x/y} would become the relative path
+     * {@code http:%2F%2Fx%2Fy}.
+     *
+     * @return the URI, or null if the reference cannot be made into one at all
+     */
+    @Nullable
+    private static java.net.URI asUri(String ref) {
+        try {
+            return new java.net.URI(ref);
+        } catch (java.net.URISyntaxException notAUri) {
+            try {
+                return new java.net.URI(null, null, ref, null);
+            } catch (java.net.URISyntaxException notAPathEither) {
+                return null;
+            }
         }
     }
 
