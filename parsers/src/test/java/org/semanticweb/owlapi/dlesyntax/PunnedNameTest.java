@@ -373,9 +373,23 @@ class PunnedNameTest {
             () -> "the round trip must be lossless:\n" + written);
     }
 
-    /** An IRI that is both kinds of property states both, once each. */
+    /**
+     * An IRI that is both kinds of property states neither, and stays readable.
+     *
+     * <p>It used to state both. DLe has one statement per role kind and a name can only
+     * have one, so the two lines contradict each other — the reader resolved the
+     * contradiction by letting data win, quietly turning object property axioms into data
+     * property ones, and now refuses the pair outright. Writing just one was no better:
+     * which one appeared depended on which entity the base storer happened to ask about,
+     * and the result failed to re-read with a message about datatypes.
+     *
+     * <p>So nothing is written, and the reader classifies from use. The data-property
+     * declaration is lost, which is unavoidable — DLe cannot express this, and OWL 2 DL
+     * forbids it, so nothing well-formed arrives here. What matters is that the document
+     * the writer produces is one the reader can read.
+     */
     @Test
-    void anObjectAndDataPropertyStatesBothKinds() throws Exception {
+    void anObjectAndDataPropertyStatesNeitherKind() throws Exception {
         OWLOntologyManager manager = OWLManager.createOWLOntologyManager();
         OWLOntology o = manager.createOntology(IRI.create("http://example.org/t"));
         OWLDataFactory df = manager.getOWLDataFactory();
@@ -390,19 +404,66 @@ class PunnedNameTest {
         manager.saveOntology(o, format, new StreamDocumentTarget(out));
         String written = new String(out.toByteArray(), StandardCharsets.UTF_8);
 
-        assertEquals(1, countOccurrences(statementsOnly(written), "X ⊑ owl:topObjectProperty"),
-            () -> "the object kind must be stated exactly once:\n" + written);
-        assertEquals(1, countOccurrences(statementsOnly(written), "X ⊑ owl:topDataProperty"),
-            () -> "and so must the data kind:\n" + written);
+        assertEquals(0, countOccurrences(statementsOnly(written), "X ⊑ owl:topObjectProperty"),
+            () -> "a contradictory pair must not be written:\n" + written);
+        assertEquals(0, countOccurrences(statementsOnly(written), "X ⊑ owl:topDataProperty"),
+            () -> "neither half of it:\n" + written);
+        assertDoesNotThrow(() -> parse(written),
+            () -> "and what is written must be readable:\n" + written);
     }
 
-    /** An authored `X ⊑ owl:topObjectProperty` must not be written twice. */
+    /**
+     * The same shape with a real object-property use: the axiom survives.
+     *
+     * <p>This is the case the old behaviour broke hardest. The writer emitted the data
+     * statement — chosen by which entity the base class asked about, not by the evidence —
+     * and the document then failed to parse at all, so the restriction was lost along with
+     * everything after it.
+     */
+    @Test
+    void aDualKindPropertyKeepsItsObjectUse() throws Exception {
+        OWLOntologyManager manager = OWLManager.createOWLOntologyManager();
+        OWLOntology o = manager.createOntology();
+        OWLDataFactory df = manager.getOWLDataFactory();
+        IRI x = IRI.create(NS + "X");
+        manager.addAxiom(o, df.getOWLDeclarationAxiom(df.getOWLObjectProperty(x)));
+        manager.addAxiom(o, df.getOWLDeclarationAxiom(df.getOWLDataProperty(x)));
+        OWLClass a = df.getOWLClass(IRI.create(NS + "A"));
+        manager.addAxiom(o, df.getOWLSubClassOfAxiom(a,
+            df.getOWLObjectSomeValuesFrom(df.getOWLObjectProperty(x), a)));
+
+        String written = writeOf(o);
+        OWLOntology back = assertDoesNotThrow(() -> parse(written),
+            () -> "the writer must not produce something it cannot read:\n" + written);
+        assertTrue(back.containsObjectPropertyInSignature(x),
+            () -> "the use settles the kind:\n" + written);
+        assertTrue(back.getAxioms(AxiomType.SUBCLASS_OF).stream()
+                .anyMatch(ax -> ax.getSubClass().equals(a)),
+            () -> "and the restriction must survive:\n" + written);
+    }
+
+    /**
+     * An authored `X ⊑ owl:topObjectProperty` must not be written twice.
+     *
+     * <p>Built rather than parsed. Reading that line consumes it — the statement is the
+     * marker, not content — so a parsed ontology never holds the axiom, the dedup guard is
+     * never reached, and the count of one was guaranteed by there being one producer. The
+     * guard only bites when the ontology arrives from somewhere other than DLe, which is
+     * the case this now covers.
+     */
     @Test
     void anAuthoredTopPropertySubsumptionIsWrittenOnce() throws Exception {
-        String written = rewrite(PREFIX
-            + "Attr ⊑ ⊤\n"
-            + "Attr ⊑ owl:topObjectProperty\n"
-            + "finding ⊑ Attr\n");
+        OWLOntologyManager manager = OWLManager.createOWLOntologyManager();
+        OWLOntology o = manager.createOntology();
+        OWLDataFactory df = manager.getOWLDataFactory();
+        OWLObjectProperty attr = df.getOWLObjectProperty(IRI.create(NS + "Attr"));
+        manager.addAxiom(o, df.getOWLDeclarationAxiom(df.getOWLClass(attr.getIRI())));
+        manager.addAxiom(o, df.getOWLSubObjectPropertyOfAxiom(
+            attr, df.getOWLTopObjectProperty()));
+        manager.addAxiom(o, df.getOWLSubObjectPropertyOfAxiom(
+            df.getOWLObjectProperty(IRI.create(NS + "finding")), attr));
+
+        String written = writeOf(o);
         assertEquals(1, countOccurrences(statementsOnly(written), "Attr ⊑ owl:topObjectProperty"),
             () -> "written twice, from two sources:\n" + written);
         assertEquals(written, rewrite(written), "writing must be idempotent");
@@ -466,20 +527,65 @@ class PunnedNameTest {
             "MyClass must not be reclassified as a property");
     }
 
-    /** A `⊤` subsumption an author wrote must not be eaten, nor written twice. */
+    /**
+     * A `⊤` subsumption an author wrote must not be eaten, nor written twice.
+     *
+     * <p>Built rather than parsed, and paired with a <em>lower-case</em> super. The old
+     * fixture used `lowerCase ⊑ Other`, for which the writer considers no statement at all:
+     * a lower-case class is marked only when the name across the `⊑` is also one the reader
+     * could take for a role, and `Other` is not. So the single occurrence was the authored
+     * axiom being rendered, and the "written once" half could not fail. A lower-case pair is
+     * not expressible in DLe text either — it reads as two roles — so the API is the only
+     * way in. {@link #aLowerCaseClassPairIsMarked} is the control that proves the fixture
+     * reaches the code.
+     */
     @Test
     void anAuthoredTopSubsumptionSurvivesAndIsWrittenOnce() throws Exception {
-        OWLDataFactory df = OWLManager.getOWLDataFactory();
-        OWLAxiom authored = df.getOWLSubClassOfAxiom(
-            df.getOWLClass(IRI.create(NS + "lowerCase")), df.getOWLThing());
+        OWLOntologyManager manager = OWLManager.createOWLOntologyManager();
+        OWLOntology o = manager.createOntology();
+        OWLDataFactory df = manager.getOWLDataFactory();
+        OWLClass lower = df.getOWLClass(IRI.create(NS + "lowerCase"));
+        manager.addAxiom(o, df.getOWLSubClassOfAxiom(lower, df.getOWLClass(IRI.create(NS + "other"))));
+        OWLAxiom authored = df.getOWLSubClassOfAxiom(lower, df.getOWLThing());
+        manager.addAxiom(o, authored);
 
-        String written = rewrite(PREFIX + "lowerCase ⊑ ⊤\nlowerCase ⊑ Other\n");
+        String written = writeOf(o);
         assertEquals(1, countOccurrences(statementsOnly(written), "lowerCase ⊑ ⊤"),
             () -> "the kind statement and the axiom must not both be written:\n" + written);
         OWLOntology back = parse(written);
         assertTrue(back.containsAxiom(authored),
             () -> "the ⊤ subsumption must survive: " + back.getLogicalAxioms());
         assertEquals(written, rewrite(written), "writing must be idempotent");
+    }
+
+    /**
+     * The control for the test above: without the authored axiom, the writer invents one.
+     *
+     * <p>A lower-case pair is exactly the shape the reader's guess claims as two roles, so
+     * both names need marking. If this ever stops holding, the test above goes vacuous
+     * again — its whole point is that a second source exists to be deduplicated against.
+     */
+    @Test
+    void aLowerCaseClassPairIsMarked() throws Exception {
+        OWLOntologyManager manager = OWLManager.createOWLOntologyManager();
+        OWLOntology o = manager.createOntology();
+        OWLDataFactory df = manager.getOWLDataFactory();
+        manager.addAxiom(o, df.getOWLSubClassOfAxiom(
+            df.getOWLClass(IRI.create(NS + "lowerCase")),
+            df.getOWLClass(IRI.create(NS + "other"))));
+
+        String body = statementsOnly(writeOf(o));
+        assertEquals(1, countOccurrences(body, "lowerCase ⊑ ⊤"), () -> body);
+        assertEquals(1, countOccurrences(body, "other ⊑ ⊤"), () -> body);
+    }
+
+    /** Writes an ontology as DLe with the test namespace as the default prefix. */
+    private String writeOf(OWLOntology o) throws Exception {
+        DLESyntaxDocumentFormat format = new DLESyntaxDocumentFormat();
+        format.setDefaultPrefix(NS);
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        o.getOWLOntologyManager().saveOntology(o, format, new StreamDocumentTarget(out));
+        return new String(out.toByteArray(), StandardCharsets.UTF_8);
     }
 
     /** An IRI that is a property and also an individual must state its kind once, not twice. */

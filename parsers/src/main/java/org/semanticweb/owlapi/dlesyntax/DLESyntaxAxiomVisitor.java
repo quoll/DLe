@@ -11,8 +11,6 @@ import java.util.stream.Collectors;
 
 import org.antlr.v4.runtime.CommonTokenStream;
 import org.antlr.v4.runtime.Token;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.semanticweb.owlapi.model.*;
 
 import javax.annotation.Nullable;
@@ -78,6 +76,9 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
     private IRI ontologyIRI = null;
     /** Version IRI from {@code @version}, null if not declared. */
     private IRI versionIRI  = null;
+    /** Where @version was declared, so a refusal raised after the parse can point at it. */
+    private int versionLine = -1;
+    private int versionColumn;
     /** IRIs declared via {@code @import}. */
     /** `@import <iri>` references, used exactly as written. */
     private final List<String> iriImportRefs = new ArrayList<>();
@@ -110,6 +111,8 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
     Set<IRI> getStatedKindIRIs() { return statedKindIRIs; }
     IRI getOntologyIRI()              { return ontologyIRI; }
     IRI getVersionIRI()               { return versionIRI; }
+    int getVersionLine()              { return versionLine; }
+    int getVersionColumn()            { return versionColumn; }
     /** `@import <iri>` references; see visitImportDecl. */
     List<String> getIriImportRefs()    { return iriImportRefs; }
 
@@ -118,7 +121,6 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
 
     // ── Prefix declarations ──────────────────────────────────────────────────
 
-    private static final Logger LOGGER = LoggerFactory.getLogger(DLESyntaxAxiomVisitor.class);
 
     /** Prefix labels this document declared, as opposed to the standard pre-seeded ones. */
     private final Set<String> declaredPrefixes = new HashSet<>();
@@ -162,8 +164,9 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
                     + " are both declared for <" + namespace + ">. Entity kinds are tracked"
                     + " per spelling, so writing one entity both ways can misclassify it;"
                     + " use one prefix per namespace";
+                // Recorded only. The parser logs every warning it collects, so logging
+                // here as well produced two records of one problem, under two logger names.
                 warnings.add(message);
-                LOGGER.warn("{}", message);
                 return;
             }
         }
@@ -194,6 +197,7 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
                     + ontologyIRI + ">, and an ontology has one identity",
                 ctx.start.getLine(), ctx.start.getCharPositionInLine());
         }
+        requireExplicitIri(ctx.iriRef(), "@ontology", ctx);
         ontologyIRI = requireAbsolute(expandIriRef(ctx.iriRef()), "@ontology", ctx);
         return null;
     }
@@ -206,7 +210,10 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
                     + versionIRI + ">",
                 ctx.start.getLine(), ctx.start.getCharPositionInLine());
         }
+        requireExplicitIri(ctx.iriRef(), "@version", ctx);
         versionIRI = requireAbsolute(expandIriRef(ctx.iriRef()), "@version", ctx);
+        versionLine = ctx.start.getLine();
+        versionColumn = ctx.start.getCharPositionInLine();
         return null;
     }
 
@@ -219,6 +226,32 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
      * this, and a relative one survives as far as the first importer, which is a much
      * worse place to find out.
      */
+    /**
+     * Requires the angle-bracket form for an identity, refusing a bare or prefixed name.
+     *
+     * <p>The grammar's {@code iriRef} allows either, and a name is expanded through the
+     * prefix map — so {@code @ontology onto} silently became
+     * {@code <http://quoll.github.io/DLe/ontology#onto>}, an identity minted under this
+     * project's own namespace. Worse, which namespace it landed in depended on whether a
+     * {@code @prefix :} line had been read yet, so moving the declaration changed the
+     * document's identity. That is the same hazard as the fixed sentinel this replaced, and
+     * {@link #requireAbsolute} cannot catch it because the expansion is absolute.
+     *
+     * <p>Only the identity declarations are restricted. {@code @import} keeps the name form,
+     * where resolving through a prefix is a convenience and names no local resource.
+     */
+    private void requireExplicitIri(DLESyntaxParser.IriRefContext ref, String keyword,
+                                    org.antlr.v4.runtime.ParserRuleContext ctx) {
+        if (ref.IRI() == null) {
+            throw new DLESemanticException(
+                keyword + " must be written as a full IRI in angle brackets, not as a name."
+                    + " A name is expanded through the prefix map, so <" + ref.getText()
+                    + "> would identify this document relative to a namespace — and to"
+                    + " whichever prefix declarations happened to precede it.",
+                ctx.start.getLine(), ctx.start.getCharPositionInLine());
+        }
+    }
+
     private IRI requireAbsolute(IRI iri, String keyword,
                                 org.antlr.v4.runtime.ParserRuleContext ctx) {
         if (!iri.toURI().isAbsolute()) {
@@ -1257,6 +1290,7 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
         if (TOP_OBJECT_PROPERTY_IRI.equals(top)) {
             IRI iri = expandNameText(lhs);
             if (iri == null) return false;
+            requireOneRoleKind(iri, lhs, false, ctx);
             axioms.add(df.getOWLDeclarationAxiom(df.getOWLObjectProperty(iri)));
             statedKindIRIs.add(iri);
             return true;
@@ -1264,10 +1298,17 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
         if (TOP_DATA_PROPERTY_IRI.equals(top)) {
             IRI iri = expandNameText(lhs);
             if (iri == null) return false;
+            requireOneRoleKind(iri, lhs, true, ctx);
             axioms.add(df.getOWLDeclarationAxiom(df.getOWLDataProperty(iri)));
             statedKindIRIs.add(iri);
             return true;
         }
+        // The consumed statement does not survive as an axiom, and that is deliberate: the
+        // statement IS the marker, and re-adding the subsumption it came from would put the
+        // writer's own output back into the document as content. All three forms are
+        // tautologies, so nothing is lost but the line. The asymmetry worth knowing is that
+        // an `X ⊑ ⊤` on a name with no role statement is NOT a marker and does survive.
+        //
         // `X ⊑ ⊤` is consumed only when the document has also stated that X is a role —
         // that pair is what marks a pun, and the class side of a pun has to arrive as a
         // declaration rather than a subsumption.
@@ -1286,6 +1327,30 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
             return true;
         }
         return false;
+    }
+
+    /** Which role kind each name has been stated to have, to catch a document stating both. */
+    private final Map<IRI, Boolean> statedRoleIsData = new LinkedHashMap<>();
+
+    /**
+     * Refuses a name stated to be both an object and a data property.
+     *
+     * <p>Both statements were previously honoured, producing one IRI declared as both kinds
+     * — the punning OWL 2 DL forbids outright, and which DLe has no way to write. The reader
+     * then resolved it by letting data win, so a document could silently turn its own object
+     * property axioms into data property axioms. There is no correct answer to pick here, so
+     * the contradiction is reported instead of settled.
+     */
+    private void requireOneRoleKind(IRI iri, String name, boolean isData,
+                                    org.antlr.v4.runtime.ParserRuleContext ctx) {
+        Boolean stated = statedRoleIsData.putIfAbsent(iri, isData);
+        if (stated != null && stated != isData) {
+            throw new DLESemanticException(
+                name + " is stated to be both an object property and a data property."
+                    + " An IRI can be only one, so the two statements contradict each other;"
+                    + " keep the one that matches how " + name + " is used.",
+                ctx.start.getLine(), ctx.start.getCharPositionInLine());
+        }
     }
 
     private static final IRI TOP_OBJECT_PROPERTY_IRI =

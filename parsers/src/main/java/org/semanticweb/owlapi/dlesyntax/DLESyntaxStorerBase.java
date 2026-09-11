@@ -191,6 +191,14 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
         currentPrefixes = prefixesFor(o, outputFormat);
         if (!currentPrefixes.isEmpty()) {
             DefaultPrefixManager pm = new DefaultPrefixManager();
+            // Cleared first. A fresh DefaultPrefixManager pre-seeds owl:, rdf:, rdfs: and
+            // xsd: in BOTH directions, and setPrefix replaces only the forward entry — so a
+            // document that binds owl: to its own namespace left the reverse entry pointing
+            // the real OWL namespace at `owl:`. The renderer then wrote `owl:topObjectProperty`
+            // meaning that document's namespace, which named a different entity entirely, and
+            // the round trip invented a class and an axiom. Clearing makes the reverse map
+            // describe only what the document actually declares.
+            pm.clear();
             currentPrefixes.forEach(pm::setPrefix);
             renderer.setPrefixManager(pm);
         }
@@ -277,7 +285,7 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
         // class by its own axioms, and marking it added a vacuous `SubClassOf(X, owl:Thing)`
         // on the way back in for nothing — which is the whole of the round-trip cost this
         // mechanism used to carry.
-        boolean classContradictsCase = isClass && startsLowerCase(name) && inALowerCasePair(iri);
+        boolean classContradictsCase = isClass && readerCanGuessRole(name) && inAGuessableRolePair(iri);
         // The property-side counterpart of the narrowing above: a capitalised role gets a
         // statement only where a reader would actually misread it.
         //
@@ -290,11 +298,40 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
         //
         // Below a pun it is always needed, because the reader's last-resort case guess
         // applies there and takes a capitalised child for a concept.
-        boolean propertyContradictsCase = isProperty && startsUpperCase(name)
-            && (propertySubsumedByAPun(entity) || !hasRoleEvidence(entity));
+        // Below a pun, only a child the reader's guess would claim as a concept needs the
+        // statement — and that guess tests the local part for a capital, so it is
+        // `startsUpperCase` here, not `readerCanGuessRole`. The two reader rules genuinely
+        // differ: the pun-child guess strips the prefix, the sub-property guess refuses any
+        // name that has one. Each test below mirrors the one it is about.
+        //
+        // Conflating them marked every numeric child of a pun, which is every SNOMED CT
+        // attribute — names the reader classifies correctly on its own, from the pun above
+        // them.
+        boolean propertyContradictsCase = isProperty && !readerCanGuessRole(name)
+            && ((startsUpperCase(name) && propertySubsumedByAPun(entity))
+                || !hasRoleEvidence(entity));
+
+        // An IRI that is somehow both an object and a data property cannot be described at
+        // all: DLe has one statement per role kind and a name can only have one, so the two
+        // lines contradict each other and the reader now refuses the pair outright. Writing
+        // just one is no better — which one got written depended on which entity the base
+        // class happened to ask about, and the document then failed to re-read with a
+        // message about datatypes. Saying nothing leaves the reader to classify from use,
+        // which is the only evidence that survives.
+        //
+        // OWL 2 DL forbids this punning, so nothing well-formed arrives here.
+        boolean dualRoleKinds = isObjectProperty && isDataProperty;
+
+        // A pun needs BOTH of its statements: the pair is what says it is punned. If the
+        // property half cannot be spelled — no declared prefix maps to the OWL namespace,
+        // and DLe has no angle-bracket form in a name position — then writing the class
+        // half alone leaves `X ⊑ ⊤` on something the reader must treat as a role, which is
+        // strictly worse than writing nothing: it adds a vacuous axiom and still corrupts
+        // the kind. So the two halves stand or fall together.
+        boolean punStatements = punned && !dualRoleKinds && punIsFullySpellable(iri);
 
         boolean wrote = false;
-        if (entity.isOWLClass() && (punned || classContradictsCase || classUnderPun)
+        if (entity.isOWLClass() && (punStatements || classContradictsCase || classUnderPun)
                 && !thingSubsumptionExists(iri)) {
             pendingKindStatements.add(name + " ⊑ ⊤");
             wrote = true;
@@ -303,7 +340,7 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
         // it from the signature meant an IRI that is both an object and a data property had
         // `owl:topDataProperty` written by both passes — twice, with the object statement
         // never written at all, and the result did not parse.
-        if (isPropertyEntity && (punned || propertyContradictsCase)) {
+        if (isPropertyEntity && !dualRoleKinds && (punStatements || propertyContradictsCase)) {
             boolean data = entity.isOWLDataProperty();
             String top = topPropertyName(data);
             if (top != null && !topSubPropertyExists(iri, data)) {
@@ -326,6 +363,22 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
      * inexpressible, and writing something that resolves elsewhere would be worse than
      * writing nothing.
      */
+    /**
+     * Whether every statement a punned name needs can be spelled in this document.
+     *
+     * <p>Asked before either half is written; see the call site for why a half-written pun
+     * is worse than none. An IRI that is somehow both an object and a data property needs
+     * both top names, so both must be spellable.
+     */
+    private boolean punIsFullySpellable(IRI iri) {
+        if (currentOntology.containsObjectPropertyInSignature(iri)
+                && topPropertyName(false) == null) {
+            return false;
+        }
+        return !(currentOntology.containsDataPropertyInSignature(iri)
+            && topPropertyName(true) == null);
+    }
+
     @Nullable
     private String topPropertyName(boolean data) {
         IRI iri = data ? OWLRDFVocabulary.OWL_TOP_DATA_PROPERTY.getIRI()
@@ -367,7 +420,7 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
      * also lacks an upper-case signal — the shape the reader's sub-property heuristic
      * claims. Only then does a lower-case class need to say it is one.
      */
-    private boolean inALowerCasePair(IRI iri) {
+    private boolean inAGuessableRolePair(IRI iri) {
         OWLDataFactory df = currentOntology.getOWLOntologyManager().getOWLDataFactory();
         OWLClass cls = df.getOWLClass(iri);
         return Stream.concat(
@@ -376,8 +429,36 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
                 currentOntology.subClassAxiomsForSuperClass(cls)
                     .map(OWLSubClassOfAxiom::getSubClass))
             .filter(other -> !other.isAnonymous())
-            .anyMatch(other -> !startsUpperCase(
-                renderer.shortForm(other.asOWLClass().getIRI())));
+            // shortFormOrNull, not shortForm: this is a heuristic question about some other
+            // class, and an IRI with no DLe spelling must not fail the save. It used to, so
+            // whether a document could be written turned on the capitalisation of an
+            // unrelated name — `:thing1 ⊑ <urn:isbn:123>` threw where `:Thing1` did not.
+            .map(other -> shortFormOrNull(other.asOWLClass().getIRI()))
+            .anyMatch(other -> other != null && readerCanGuessRole(other));
+    }
+
+    /**
+     * Whether the reader's own case guess can take this name for a role.
+     *
+     * <p>This must mirror {@code EntityTypeScanner} exactly, and it did not. The reader
+     * guesses a role only for a <em>bare</em> name — no prefix — whose first character is
+     * lower case, and only when the name on the other side of the {@code ⊑} qualifies too.
+     * The writer instead asked whether the name's <em>local part</em> was upper or lower
+     * case, which strips the prefix and so answers a different question. Two whole families
+     * fell through the gap, in opposite directions:
+     *
+     * <ul>
+     * <li>A property the reader cannot guess — {@code ex:rel ⊑ ex:relation}, or the numeric
+     *     {@code :12345 ⊑ :67890} that SNOMED CT is made of — got no statement, because its
+     *     local part is not upper case. It came back as a class subsumption, losing both
+     *     declarations and the sub-property axiom.
+     * <li>A class the reader could never misread — {@code ex:cat ⊑ ex:animal}, where the
+     *     prefix stops the guess before case is considered — got a statement it did not
+     *     need, and the round trip gained a vacuous {@code ⊑ owl:Thing} for each name.
+     * </ul>
+     */
+    private static boolean readerCanGuessRole(String name) {
+        return !name.isEmpty() && name.indexOf(':') < 0 && Character.isLowerCase(name.charAt(0));
     }
 
     /** Whether this property is a direct sub-property of a name that is also a class. */
@@ -484,12 +565,6 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
     private static boolean startsUpperCase(String name) {
         String local = localPartOf(name);
         return !local.isEmpty() && Character.isUpperCase(local.charAt(0));
-    }
-
-    /** Whether a name's local part begins with a lower-case letter. */
-    private static boolean startsLowerCase(String name) {
-        String local = localPartOf(name);
-        return !local.isEmpty() && Character.isLowerCase(local.charAt(0));
     }
 
     private static String localPartOf(String name) {

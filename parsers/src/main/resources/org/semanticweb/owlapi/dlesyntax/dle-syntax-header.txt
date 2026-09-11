@@ -2,37 +2,52 @@
 # This document uses standard Description Logic (DL) syntax for ontology axioms, with the following extensions:
 #
 # Annotations (lines beginning with @):
-# @label <IRI> "text"  — display name of the resource
-# @doc <IRI> "text"  — description of the resource
-# @db <IRI>  — resource appears explicitly in the database using its own identifier
-# @db <IRI> "identifier"  — resource appears explicitly in the database and is queried using this identifier
-# @storage <IRI> "text"  — describes database storage details
-# @ann <IRI> <annotation-property> "text"  — annotation using the given property
+# In the six forms below, <name> is a name — bare, prefixed, or :digit-initial — not an
+# IRI in angle brackets. Only @prefix, @import, @ontology and @version take <IRI>.
+# @label <name> "text"  — display name of the resource
+# @doc <name> "text"  — description of the resource
+# @db <name>  — resource appears explicitly in the database using its own identifier
+# @db <name> "identifier"  — resource appears explicitly in the database and is queried using this identifier
+# @storage <name> "text"  — describes database storage details
+# @ann <name> <annotation-property> value  — annotation using the given property; the
+#   value may be a quoted string or a name
 # @prefix <prefix>: <namespace>  — declares a prefix
 # @import <IRI>  — imports another ontology
 # @import "path"  — imports a file, resolved relative to this document
-# @ontology <IRI>  — declares the ontology IRI. A document without one is anonymous
+# @ontology <IRI>  — declares the ontology IRI. A document without one is anonymous.
+#   Must be an IRI in angle brackets, not a name: a name would be expanded through the
+#   prefix map, making the document's identity depend on its own @prefix lines
 # @version <IRI>  — declares the version IRI. Requires @ontology, since a version
 #   identifies a version of a named ontology. Both IRIs must be absolute
 #
 # Naming conventions:
-# - Every entity has an implicit label equal to its identifier unless @label is declared
-# - Unprefixed names (e.g., Application) are in the default namespace (:Application)
+# - An entity with no @label is given one equal to its local name. A name whose local
+#   part begins with a digit gets none, so SNOMED CT-style identifiers keep whatever
+#   @label the document states and nothing more
+# - Unprefixed names (e.g., Application) are in the default namespace. They are written
+#   bare: the `:Application` spelling is not legal DLe
 # - A name whose local part begins with a digit keeps the colon — :762705008 — because
 #   the bare form would read as a number. Every other default-namespace name is bare
 # - Prefixed names use declared prefixes (e.g., xsd:string) 
-# - All standard prefixes are implicitly declared: owl, rdfs, rdf, xsd, skos, dcterms
+# - These prefixes are always available without declaring them: owl, rdf, rdfs, xsd,
+#   xml, dle. Any other prefix, skos and dcterms included, must be declared with @prefix
 # - Concept/class identifiers conventionally begin with an upper-case letter
 # - Role/reference/field identifiers conventionally begin with a lower-case letter
 #
 # Kind statements:
-# - `X ⊑ ⊤` states that X is a concept; `X ⊑ owl:topObjectProperty` and
-#   `X ⊑ owl:topDataProperty` state that X is a role. All three are ordinary subsumptions
-#   that are always true, so they add no information beyond the kind itself.
-# - They are written only where the text would otherwise be ambiguous: an identifier whose
-#   case contradicts the convention above, or one that is used as BOTH a concept and a role.
+# - `X ⊑ ⊤` states that X is a concept. `X ⊑ owl:topObjectProperty` states that X is an
+#   object property, and `X ⊑ owl:topDataProperty` that it is a data property — a name
+#   cannot be both, and stating both is an error. All three are ordinary subsumptions that
+#   are always true, so they add no information beyond the kind itself.
+# - They are written only where the text would otherwise be ambiguous: a name the reader's
+#   conventions cannot classify — prefixed, or beginning with a digit or a capital — used
+#   where only a subsumption pair says it is a role, or a name used as BOTH a concept and
+#   a role.
 # - A name carrying both a concept and a role statement is punned — it is both, and the pair
 #   is what says so. The two lines may be far apart, since each is written with its own kind.
+# - A role statement, and a concept statement on a punned name, are read as declarations
+#   rather than kept as subsumptions; they are the marker, not content. A bare `X ⊑ ⊤` on a
+#   name with no role statement is an ordinary axiom and is kept.
 #
 # Database convention:
 # - Resources only appear explicitly in the database if they have an @db annotation

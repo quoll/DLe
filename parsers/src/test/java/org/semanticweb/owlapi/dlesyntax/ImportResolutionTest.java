@@ -430,6 +430,68 @@ class ImportResolutionTest {
     }
 
     /**
+     * An identity must be written as an IRI, not as a name.
+     *
+     * <p>The grammar allows either, and a name is expanded through the prefix map — so
+     * {@code @ontology onto} silently became an IRI under this project's own namespace, and
+     * which namespace it landed in depended on whether a {@code @prefix :} line had been
+     * read yet. Moving the declaration changed the document's identity. That is the hazard
+     * the fixed sentinel was removed for, arriving by another route.
+     */
+    @Test
+    void anIdentityWrittenAsANameIsRefused(@TempDir Path dir) throws Exception {
+        Path named = write(dir, "n.dle", "@ontology onto\n@prefix : <" + NS_F + ">\nA ⊑ B\n");
+        String first = dleDiagnostic(named);
+        assertTrue(first.contains("must be written as a full IRI"), () -> "got: " + first);
+
+        Path prefixed = write(dir, "p.dle", "@prefix ex: <http://example.org/x#>\n"
+            + "@ontology ex:onto\nA ⊑ B\n");
+        String second = dleDiagnostic(prefixed);
+        assertTrue(second.contains("must be written as a full IRI"), () -> "got: " + second);
+    }
+
+    /**
+     * Every identity refusal names its position, including this one.
+     *
+     * <p>The {@code @version}-without-{@code @ontology} check runs after the parse, so it
+     * had no context to report and rendered as a bare "—" where its neighbours give a line
+     * and column. The visitor now records where the declaration was.
+     */
+    @Test
+    void theVersionRefusalNamesItsPosition(@TempDir Path dir) throws Exception {
+        Path main = write(dir, "v.dle",
+            "@prefix : <" + NS_F + ">\n\n@version <http://example.org/thing/1.0>\nA ⊑ B\n");
+        String message = dleDiagnostic(main);
+        assertTrue(message.contains("3:0"),
+            () -> "expected the @version line and column, got: " + message);
+    }
+
+    /**
+     * A warning raised before a failure is still reported.
+     *
+     * <p>Visitor diagnostics were collected at the end of the parse, so anything that threw
+     * after them — an identity refusal, a resolver, an import load — discarded them. The
+     * duplicate-prefix warning below is raised while reading the header; the document then
+     * fails on its {@code @version}. Losing the warning there is exactly the silence the
+     * shared sink exists to remove.
+     */
+    @Test
+    void aWarningRaisedBeforeAFailureIsStillReported(@TempDir Path dir) throws Exception {
+        Path main = write(dir, "w.dle",
+            "@prefix a: <http://example.org/n#>\n"
+                + "@prefix b: <http://example.org/n#>\n"
+                + "@version <http://example.org/v>\n"
+                + "a:X ⊑ a:Y\n");
+        OWLOntologyManager manager = OWLManager.createOWLOntologyManager();
+        DLEOntologyParser parser = new DLEOntologyParser();
+        assertThrows(Throwable.class, () -> parser.parse(
+            new org.semanticweb.owlapi.io.FileDocumentSource(main.toFile()),
+            manager.createOntology(), manager.getOntologyLoaderConfiguration()));
+        assertTrue(parser.getWarnings().stream().anyMatch(w -> w.contains("both declared")),
+            () -> "the warning must survive the failure, got: " + parser.getWarnings());
+    }
+
+    /**
      * Parses a document expected to fail, and returns the DLe parser's own diagnostic.
      *
      * <p>Going through the manager would bury it among every other parser's complaint, so

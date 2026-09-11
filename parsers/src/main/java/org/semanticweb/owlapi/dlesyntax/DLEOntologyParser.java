@@ -118,9 +118,21 @@ public class DLEOntologyParser extends AbstractOWLParser {
                 tokens);
             visitor.visit(tree);
 
+            // Collected here, not at the end of the parse. Everything below can throw —
+            // the identity checks, DualDeclarationResolver, an import load under a
+            // non-silent strategy — and a diagnostic the visitor has already raised is
+            // exactly what a reader needs when one of those fails. Reported last, they
+            // were dropped on every failing path, which is the silence the shared sink
+            // exists to remove.
+            visitor.getWarnings().forEach(DLEOntologyParser::warn);
+
             ontology.getOWLOntologyManager()
                 .addAxioms(ontology, new java.util.HashSet<>(visitor.getAxioms()));
 
+            // Before DefaultLabelAdder, and that order is load-bearing. The resolver only
+            // pushes a dual declaration down to sub-properties that carry no annotation
+            // assertions, and the label adder gives almost every entity one — so running it
+            // first would disable the resolver silently, with no test to notice.
             DualDeclarationResolver.resolve(ontology, visitor.getStatedKindIRIs());
             DefaultLabelAdder.addDefaultLabels(ontology);
 
@@ -138,10 +150,13 @@ public class DLEOntologyParser extends AbstractOWLParser {
                 // OWL has no such ontology: a version IRI names a version *of* a named
                 // ontology, and OWL API rejects the pair outright. Saying so beats inventing
                 // an ontology IRI the author never wrote.
+                // Positioned at the @version line. The check runs after the parse, so the
+                // visitor records where the declaration was — every neighbouring identity
+                // refusal names its position, and this one used to say only "—".
                 throw new DLESemanticException(
                     "@version requires @ontology: a version identifies a version of a named"
                         + " ontology, so a document declaring a version must name itself",
-                    -1, 0);
+                    visitor.getVersionLine(), visitor.getVersionColumn());
             }
             if (ontIRI != null) {
                 ontology.getOWLOntologyManager().applyChange(new SetOntologyID(ontology,
@@ -159,11 +174,6 @@ public class DLEOntologyParser extends AbstractOWLParser {
                     resolveQuotedImport(source.getDocumentIRI(), ref), configuration);
             }
 
-            // The visitor's own diagnostics join the shared sink rather than being assigned
-            // to `warnings` directly. `warnings` is published immutably by the outermost
-            // parse, so clearing it would throw; and routing through the sink is what makes
-            // a diagnostic raised inside an imported document reach the top-level caller.
-            visitor.getWarnings().forEach(DLEOntologyParser::warn);
 
             DLESyntaxDocumentFormat format = new DLESyntaxDocumentFormat();
             visitor.getPrefixes().forEach(format::setPrefix);
@@ -174,6 +184,8 @@ public class DLEOntologyParser extends AbstractOWLParser {
         } finally {
             // The outermost parse owns the sink: publish what accumulated, including when
             // this parse failed, so nothing from a previous document survives into the next.
+            // "Including when it failed" holds only for warnings already in the sink — which
+            // is why the visitor's are added as soon as it has run, not at the end.
             if (outer == null) {
                 warnings = List.copyOf(sink);
                 ACTIVE_WARNINGS.remove();
