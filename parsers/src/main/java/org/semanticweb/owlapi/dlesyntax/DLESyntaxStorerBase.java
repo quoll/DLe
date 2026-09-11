@@ -100,6 +100,11 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
      * {@code ../} chains, which is the behaviour wanted here — a path that climbs out of the
      * document's own directory is more fragile than an absolute one.
      */
+    /** Escapes what the STRING token treats as special, so the value reads back unchanged. */
+    private static String escapeForString(String value) {
+        return value.replace("\\", "\\\\").replace("\"", "\\\"");
+    }
+
     private String renderImport(IRI importIRI) {
         if (targetDocumentIRI != null) {
             try {
@@ -109,7 +114,13 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
                         && !target.isOpaque() && !imported.isOpaque()) {
                     java.net.URI relative = target.resolve(".").relativize(imported);
                     if (!relative.isAbsolute()) {
-                        return "\"" + relative + "\"";
+                        // The decoded path, not the URI's text: relativize hands back
+                        // percent-encoding, so a file named "my vocab.dle" would be written
+                        // as "my%20vocab.dle" — legal, and reloadable, but not the spelling
+                        // it came in as, which is the point of keeping the relative form.
+                        String path = relative.getPath();
+                        if (path == null || path.isEmpty()) path = relative.toString();
+                        return "\"" + escapeForString(path) + "\"";
                     }
                 }
             } catch (java.net.URISyntaxException e) {
@@ -324,13 +335,22 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
         // The header resource already ends with a blank line; no extra println() needed.
 
         // Emit ontology/version/import declarations if present.
+        //
+        // The version is emitted independently of the ontology IRI. It used to be nested
+        // inside it, so a document declaring @version and no @ontology had its version
+        // written nowhere: the reader gives such a document the default IRI — a version IRI
+        // cannot be held without one — and that default is exactly what the test below
+        // suppresses.
         OWLOntologyID id = ontology.getOntologyID();
-        if (id.getOntologyIRI().isPresent()
-                && !DLESyntaxAxiomVisitor.DLE_DEFAULT_ONTOLOGY_IRI.equals(id.getOntologyIRI().get())) {
+        boolean named = id.getOntologyIRI().isPresent()
+            && !DLESyntaxAxiomVisitor.DLE_DEFAULT_ONTOLOGY_IRI.equals(id.getOntologyIRI().get());
+        if (named) {
             writer.println("@ontology <" + id.getOntologyIRI().get() + ">");
-            if (id.getVersionIRI().isPresent()) {
-                writer.println("@version <" + id.getVersionIRI().get() + ">");
-            }
+        }
+        if (id.getVersionIRI().isPresent()) {
+            writer.println("@version <" + id.getVersionIRI().get() + ">");
+        }
+        if (named || id.getVersionIRI().isPresent()) {
             writer.println();
         }
         ontology.importsDeclarations().sorted().forEach(decl ->

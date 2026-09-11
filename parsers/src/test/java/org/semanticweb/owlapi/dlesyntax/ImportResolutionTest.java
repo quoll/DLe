@@ -13,6 +13,7 @@ import java.io.File;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -35,6 +36,18 @@ class ImportResolutionTest {
     private OWLOntology parseFile(Path file) throws Exception {
         OWLOntologyManager manager = OWLManager.createOWLOntologyManager();
         return manager.loadOntologyFromOntologyDocument(file.toFile());
+    }
+
+    /**
+     * The document without its explanatory header, which documents `@ontology` and
+     * `@import` as prose — so a naive search of the output finds the documentation.
+     */
+    private static String statementsOnly(String document) {
+        StringBuilder out = new StringBuilder();
+        for (String line : document.split("\n", -1)) {
+            if (!line.trim().startsWith("#")) out.append(line).append('\n');
+        }
+        return out.toString();
     }
 
     private Path write(Path dir, String name, String body) throws Exception {
@@ -181,7 +194,8 @@ class ImportResolutionTest {
 
         OWLOntologyManager strict = OWLManager.createOWLOntologyManager();
         OWLOntology thrown = strict.createOntology();
-        assertThrows(Exception.class, () -> new DLEOntologyParser().parse(
+        assertThrows(org.semanticweb.owlapi.model.OWLRuntimeException.class,
+            () -> new DLEOntologyParser().parse(
             new org.semanticweb.owlapi.io.FileDocumentSource(main.toFile()), thrown,
             strict.getOntologyLoaderConfiguration().setMissingImportHandlingStrategy(
                 org.semanticweb.owlapi.model.MissingImportHandlingStrategy.THROW_EXCEPTION)),
@@ -203,6 +217,59 @@ class ImportResolutionTest {
             o.getOntologyID().getVersionIRI().get().toString());
     }
 
+    /**
+     * An import that cannot be loaded is reported even when the strategy is silent.
+     *
+     * <p>The manager's own missing-import listeners never fire for a reference it can find
+     * no factory for — that failure arrives as a RuntimeException, which is why it is caught
+     * at all — so swallowing it left a whole class of unreadable import with nothing to show
+     * for it. A missing *file* was reported; an unknown scheme was not.
+     */
+    @Test
+    void anUnloadableReferenceIsReportedNotSwallowed(@TempDir Path dir) throws Exception {
+        Path main = write(dir, "m.dle", HEAD + "@import \"classpath:nope.dle\"\nA ⊑ B\n");
+        OWLOntologyManager manager = OWLManager.createOWLOntologyManager();
+        DLEOntologyParser parser = new DLEOntologyParser();
+        parser.parse(new org.semanticweb.owlapi.io.FileDocumentSource(main.toFile()),
+            manager.createOntology(),
+            manager.getOntologyLoaderConfiguration().setMissingImportHandlingStrategy(
+                org.semanticweb.owlapi.model.MissingImportHandlingStrategy.SILENT));
+        assertEquals(1, parser.getWarnings().size(),
+            () -> "expected one warning, got " + parser.getWarnings());
+        assertTrue(parser.getWarnings().get(0).contains("classpath:nope.dle"),
+            () -> parser.getWarnings().get(0));
+    }
+
+    /** Warnings must not survive into the next parse, including after a failure. */
+    @Test
+    void warningsDoNotLeakBetweenParses(@TempDir Path dir) throws Exception {
+        Path bad = write(dir, "bad.dle", HEAD + "@import \"classpath:nope.dle\"\nA ⊑ B\n");
+        OWLOntologyManager manager = OWLManager.createOWLOntologyManager();
+        DLEOntologyParser parser = new DLEOntologyParser();
+        org.semanticweb.owlapi.model.OWLOntologyLoaderConfiguration silent =
+            manager.getOntologyLoaderConfiguration().setMissingImportHandlingStrategy(
+                org.semanticweb.owlapi.model.MissingImportHandlingStrategy.SILENT);
+        parser.parse(new org.semanticweb.owlapi.io.FileDocumentSource(bad.toFile()),
+            manager.createOntology(), silent);
+        assertFalse(parser.getWarnings().isEmpty());
+
+        Path broken = write(dir, "broken.dle", "this is not DLe (((\n");
+        assertThrows(Exception.class, () -> parser.parse(
+            new org.semanticweb.owlapi.io.FileDocumentSource(broken.toFile()),
+            manager.createOntology(), silent));
+        assertEquals(List.of(), parser.getWarnings(),
+            "a failed parse must not leave the previous document's warnings behind");
+    }
+
+    /** Two documents naming different versions and no ontology must coexist. */
+    @Test
+    void differentVersionsWithoutAnOntologyIriCoexist(@TempDir Path dir) throws Exception {
+        write(dir, "dep.dle", "@version <http://example.org/v/2.0>\nC ⊑ D\n");
+        Path main = write(dir, "top.dle", "@version <http://example.org/v/1.0>\n"
+            + "@prefix : <" + NS_F + ">\n@import \"dep.dle\"\nA ⊑ B\n");
+        assertEquals(2, parseFile(main).importsClosure().count());
+    }
+
     // ── Writing it back ─────────────────────────────────────────────────────
 
     /**
@@ -222,6 +289,42 @@ class ImportResolutionTest {
         String written = new String(Files.readAllBytes(out.toPath()), StandardCharsets.UTF_8);
         assertTrue(written.contains("@import \"vocab.dle\""),
             () -> "expected the relative form back:\n" + written);
+    }
+
+    /**
+     * A version survives the DLe text, not merely the parse.
+     *
+     * <p>The writer used to nest `@version` inside the `@ontology` emission, which is
+     * suppressed for the default IRI — exactly the IRI a version-only document is given,
+     * since a version IRI cannot be held without one. So the version was written nowhere.
+     */
+    @Test
+    void aVersionWithoutAnOntologyIriSurvivesTheText(@TempDir Path dir) throws Exception {
+        Path main = write(dir, "v.dle",
+            "@version <http://example.org/thing/1.0>\n@prefix : <" + NS_F + ">\nA ⊑ B\n");
+        OWLOntology o = parseFile(main);
+        File out = dir.resolve("out.dle").toFile();
+        o.getOWLOntologyManager().saveOntology(
+            o, new DLESyntaxDocumentFormat(), new FileDocumentTarget(out));
+        String written = new String(Files.readAllBytes(out.toPath()), StandardCharsets.UTF_8);
+        assertTrue(statementsOnly(written).contains("@version <http://example.org/thing/1.0>"),
+            () -> "the version must be written:\n" + written);
+        assertFalse(statementsOnly(written).contains("@ontology"),
+            () -> "and the placeholder ontology IRI must stay suppressed:\n" + written);
+    }
+
+    /** A name with a space keeps its spelling, rather than coming back percent-encoded. */
+    @Test
+    void aSpacedReferenceKeepsItsSpelling(@TempDir Path dir) throws Exception {
+        write(dir, "my vocab.dle", "@ontology <http://example.org/v>\nThing1 ⊑ ⊤\n");
+        Path main = write(dir, "main.dle", HEAD + "@import \"my vocab.dle\"\nA ⊑ B\n");
+        OWLOntology o = parseFile(main);
+        File out = dir.resolve("out.dle").toFile();
+        o.getOWLOntologyManager().saveOntology(
+            o, new DLESyntaxDocumentFormat(), new FileDocumentTarget(out));
+        String written = new String(Files.readAllBytes(out.toPath()), StandardCharsets.UTF_8);
+        assertTrue(statementsOnly(written).contains("@import \"my vocab.dle\""),
+            () -> "the spelling it came in as:\n" + written);
     }
 
     @Test

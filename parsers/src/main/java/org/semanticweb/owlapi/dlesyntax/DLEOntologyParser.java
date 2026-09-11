@@ -43,6 +43,16 @@ import org.semanticweb.owlapi.model.SetOntologyID;
  */
 public class DLEOntologyParser extends AbstractOWLParser {
 
+    /**
+     * Problems from the last parse that did not stop it.
+     *
+     * <p>Cleared when a parse begins, not when one succeeds, so a failed parse does not
+     * leave the previous document's warnings behind. Only a caller holding the parser can
+     * read them, which is how {@code owltx} surfaces them; through OWL API's ServiceLoader
+     * the instance is not visible.
+     */
+    private final List<String> warnings = new java.util.ArrayList<>();
+
     private static final long serialVersionUID = 1L;
 
     /** Creates a new instance of this parser. */
@@ -52,6 +62,7 @@ public class DLEOntologyParser extends AbstractOWLParser {
     public OWLDocumentFormat parse(OWLOntologyDocumentSource source,
                                    OWLOntology ontology,
                                    OWLOntologyLoaderConfiguration configuration) {
+        warnings.clear();
         try {
             Reader reader = DocumentSources.wrapInputAsReader(source, configuration);
             var chars  = CharStreams.fromReader(reader);
@@ -111,9 +122,14 @@ public class DLEOntologyParser extends AbstractOWLParser {
             IRI verIRI = visitor.getVersionIRI();
             // A version IRI cannot be held without an ontology IRI — OWL API rejects the
             // pair — so a document declaring @version and no @ontology would have had its
-            // version silently dropped by the anonymity above. Keep the default IRI for
-            // that one case: there is something to lose, and nothing to collide with that
-            // a document naming a version was going to avoid anyway.
+            // version silently dropped by the anonymity above. The default IRI is kept for
+            // that one case, because there is something to lose.
+            //
+            // Two such documents in one closure do still collide, but only if they declare
+            // the *same* version, and then the collision is right: identical ID means
+            // identical ontology under OWL's identity rules, and two documents claiming to
+            // be version 1.0 of the unnamed ontology are claiming to be the same thing.
+            // Different versions coexist.
             if (ontIRI == null && verIRI != null) {
                 ontIRI = DLESyntaxAxiomVisitor.DLE_DEFAULT_ONTOLOGY_IRI;
             }
@@ -145,6 +161,11 @@ public class DLEOntologyParser extends AbstractOWLParser {
         } catch (OWLOntologyInputSourceException | IOException e) {
             throw new OWLParserException(e);
         }
+    }
+
+    /** Problems from the last parse that did not stop it; see {@link #warnings}. */
+    public List<String> getWarnings() {
+        return java.util.Collections.unmodifiableList(new java.util.ArrayList<>(warnings));
     }
 
     @Override
@@ -195,8 +216,8 @@ public class DLEOntologyParser extends AbstractOWLParser {
      * the manager's own handling, so {@code SILENT} was bypassed and one unreadable import
      * took the whole document down.
      */
-    private static void loadImport(OWLOntologyManager manager, OWLImportsDeclaration declaration,
-                                   OWLOntologyLoaderConfiguration configuration) {
+    private void loadImport(OWLOntologyManager manager, OWLImportsDeclaration declaration,
+                            OWLOntologyLoaderConfiguration configuration) {
         try {
             manager.makeLoadImportRequest(declaration, configuration);
         } catch (org.semanticweb.owlapi.model.OWLRuntimeException e) {
@@ -204,7 +225,12 @@ public class DLEOntologyParser extends AbstractOWLParser {
                     == MissingImportHandlingStrategy.THROW_EXCEPTION) {
                 throw e;
             }
-            // Silent means silent: the caller asked for the document it could read.
+            // Recorded rather than discarded. The manager's own missing-import listeners
+            // never fire for this path — that is the whole reason it is caught here — so
+            // swallowing it silently would leave an unreadable import with nothing at all
+            // to show for it.
+            warnings.add("could not load import <" + declaration.getIRI() + ">: "
+                + e.getMessage());
         }
     }
 

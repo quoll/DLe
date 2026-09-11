@@ -22,11 +22,17 @@ import static org.junit.jupiter.api.Assertions.*;
  * UTF-8, so this is not a preference. It is asserted on the bytes rather than on a string,
  * because reading the file back with the same wrong charset would hide the problem.
  *
- * <p>Writing through {@code FileDocumentTarget} broke this: its writer is
- * {@code new FileWriter(file)}, which encodes with {@code Charset.defaultCharset()}. Under
- * {@code LANG=C} or on Windows every {@code ⊑} became a question mark and the output
- * stopped being a DLe document. It passed review unnoticed because the change was verified
- * on a UTF-8 machine, where the default happens to be right.
+ * <p>It guards {@link Main#writeToFile}, the real write path, and that is the point. A
+ * first version called {@code saveOntology(o, format, IRI)} from the test itself — OWL API's
+ * own code, which hardcodes UTF-8 — so it passed regardless of what owltx did, and a
+ * deliberately broken owltx still went green. Asserting the right property against the
+ * wrong code is no guard at all.
+ *
+ * <p>What it guards against: {@code FileDocumentTarget}'s writer is
+ * {@code new FileWriter(file)}, which encodes with {@code Charset.defaultCharset()}, so
+ * wherever that is not UTF-8 every DLe operator becomes a question mark. That was never
+ * released — it existed only in an intermediate version of the import change — but the
+ * target remains available and inviting, so the guard stays.
  */
 class OutputEncodingTest {
 
@@ -50,7 +56,7 @@ class OutputEncodingTest {
         Path out = dir.resolve("out.dle");
         DLESyntaxDocumentFormat format = new DLESyntaxDocumentFormat();
         format.setDefaultPrefix(NS);
-        o.getOWLOntologyManager().saveOntology(o, format, IRI.create(out.toFile()));
+        Main.writeToFile(o.getOWLOntologyManager(), o, format, out.toString());
 
         byte[] written = Files.readAllBytes(out);
         String asUtf8 = new String(written, StandardCharsets.UTF_8);
@@ -73,11 +79,29 @@ class OutputEncodingTest {
         Path out = dir.resolve("out.dle");
         DLESyntaxDocumentFormat format = new DLESyntaxDocumentFormat();
         format.setDefaultPrefix(NS);
-        o.getOWLOntologyManager().saveOntology(o, format, IRI.create(out.toFile()));
+        Main.writeToFile(o.getOWLOntologyManager(), o, format, out.toString());
 
         OWLOntologyManager back = OWLManager.createOWLOntologyManager();
         OWLOntology reloaded = back.loadOntologyFromOntologyDocument(out.toFile());
         assertEquals(o.getLogicalAxioms(), reloaded.getLogicalAxioms());
+    }
+
+    /**
+     * A mistyped output path must fail, not create a directory tree.
+     *
+     * <p>Saving by IRI calls {@code mkdirs()} inside OWL API, so without this guard
+     * {@code owltx in.dle /nonexistant/out.dle} silently succeeded.
+     */
+    @Test
+    void aMissingParentDirectoryIsRefused(@TempDir Path dir) throws Exception {
+        OWLOntology o = ontologyWithOperators();
+        Path nested = dir.resolve("no-such-dir/out.dle");
+        DLESyntaxDocumentFormat format = new DLESyntaxDocumentFormat();
+        format.setDefaultPrefix(NS);
+        assertThrows(Exception.class, () -> Main.writeToFile(
+            o.getOWLOntologyManager(), o, format, nested.toString()));
+        assertFalse(Files.exists(nested.getParent()),
+            "and it must not have created the directory");
     }
 
     private static int indexOf(byte[] haystack, byte[] needle) {
