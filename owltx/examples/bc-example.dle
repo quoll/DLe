@@ -4,19 +4,44 @@
 # Annotations (lines beginning with @):
 # @label <IRI> "text"  — display name of the resource
 # @doc <IRI> "text"  — description of the resource
-# @db <IRI> "name"  — resource appears explicitly in the database and is queried using this label
+# @db <IRI>  — resource appears explicitly in the database using its own identifier
+# @db <IRI> "identifier"  — resource appears explicitly in the database and is queried using this identifier
 # @storage <IRI> "text"  — describes database storage details
 # @ann <IRI> <annotation-property> "text"  — annotation using the given property
 # @prefix <prefix>: <namespace>  — declares a prefix
 # @import <IRI>  — imports another ontology
 # @ontology <IRI>  — declares the ontology IRI
 #
-# IRIs:
-# - Prefixed names use declared prefixes (e.g., xsd:string) 
+# Naming conventions:
+# - Every entity has an implicit label equal to its identifier unless @label is declared
 # - Unprefixed names (e.g., Application) are in the default namespace (:Application)
+# - Prefixed names use declared prefixes (e.g., xsd:string) 
+# - All standard prefixes are implicitly declared: owl, rdfs, rdf, xsd, skos, dcterms
+# - Concept/class identifiers conventionally begin with an upper-case letter
+# - Role/reference/field identifiers conventionally begin with a lower-case letter
+#
+# Database convention:
+# - Resources only appear explicitly in the database if they have an @db annotation
+#
+# Datatype facets:
+# A datatype may be narrowed by facets, each in its own brackets:
+#   [xsd:string ⊓ [minLength 2] ⊓ [maxLength 8]]
+# The value may be written with or without parentheses — `matches "[A-Z]{3}"` and
+# `matches("[A-Z]{3}")` are the same facet.
+# Numeric bounds have a compact form needing no keyword: xsd:integer[≥1 ⊓ ≤40]
+#   ≥ ≤ are inclusive, > < are exclusive
+# Facet keywords, and the OWL facet each one means:
+#   matches         → xsd:pattern          length          → xsd:length
+#   minLength       → xsd:minLength        maxLength       → xsd:maxLength
+#   min             → xsd:minInclusive     max             → xsd:maxInclusive
+#   minExclusive    → xsd:minExclusive     maxExclusive    → xsd:maxExclusive
+#   totalDigits     → xsd:totalDigits      fractionDigits  → xsd:fractionDigits
+#   langRange       → rdf:langRange
+# The IRI on the right may be used in place of its keyword, e.g. xsd:minLength for
+# minLength. Note langRange is in the rdf: namespace, not xsd:.
 #
 # DLe extensions:
-# ≝  — defines a symbol or predicate; right-hand side is not DL
+# ≝  — defines a symbol or predicate; right-hand side is not DL and is not required to be valid OWL
 # ∃r₁,…,rₙ.P  — predicate restriction: P(r₁,…,rₙ) holds over the role values
 
 @prefix : <http://snomed.info/sct/900000000000207008#>
