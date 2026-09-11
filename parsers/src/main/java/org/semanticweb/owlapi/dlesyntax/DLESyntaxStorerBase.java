@@ -273,7 +273,7 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
     }
 
     /**
-     * The entity whose block is being written, and its axioms held back for ordering.
+     * The entity whose block is being written, and its own axioms held back for ordering.
      *
      * <p>The base class fetches an entity's axioms itself and writes them in whatever order
      * the ontology's indexes hand them over, which is not the same order twice: five runs
@@ -282,9 +282,20 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
      * variation is in the axiom index alone.
      *
      * <p>There is no hook for the order, so the axioms are collected as the base class
-     * offers them and written when the block ends, sorted. The sort is OWL API's own axiom
-     * order — the same {@code sorted()} the base class already applies to its general-axiom
-     * and usage sections, so the whole file is consistent about it.
+     * offers them and written, sorted, when the entity's own section ends. What is held is
+     * narrow on purpose — only the axioms between {@link #beginWritingAxioms} and
+     * {@link #beginWritingUsage}:
+     *
+     * <ul>
+     * <li>The comment and annotation lines this class emits itself are already written by
+     *     the time holding starts, so they stay ahead of the logical axioms where DLe puts
+     *     them. Holding them too sorted {@code @label} in among the subsumptions and pushed
+     *     both after them.
+     * <li>The usage section is flushed past, not absorbed. The base class has already
+     *     sorted it, it is a separate part of the block, and merging it in also changed
+     *     which statement heads the block — see {@link #flushHeldAxioms} for why that
+     *     matters to comments.
+     * </ul>
      */
     @Nullable
     private OWLEntity currentEntity;
@@ -310,7 +321,7 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
     protected void beginWritingAxioms(OWLEntity entity, PrintWriter writer) {
         currentEntity = entity;
         heldAxioms.clear();
-        holdingAxioms = true;
+        holdingAxioms = false;
         entityHadContent = false;
         // Suppress internal dle: entities — their labels are embedded inline in expressions.
         if (entity.getIRI().toString().startsWith(DLESyntaxAxiomVisitor.DLE_NS)) {
@@ -319,9 +330,13 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
                 currentOntology.annotationAssertionAxioms(entity.getIRI())
                     .forEach(writtenAnnotations::add);
             }
+            holdingAxioms = true;
             return;
         }
-        if (currentOntology == null || writtenAnnotations == null) return;
+        if (currentOntology == null || writtenAnnotations == null) {
+            holdingAxioms = true;
+            return;
+        }
 
         // Emit dle:comment annotations as # lines before the entity's logical axioms.
         if (writeComments(entity.getIRI(), currentOntology, writer)) {
@@ -347,6 +362,18 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
                 endWritingAxiom(writer);
             }
         });
+
+        // Only now: everything above belongs ahead of the logical axioms, and is already
+        // in an order of its own.
+        holdingAxioms = true;
+    }
+
+    @Override
+    protected void beginWritingUsage(int size, PrintWriter writer) {
+        // The entity's own axioms end here, so this is where they are written. The usage
+        // axioms that follow are a separate section, already sorted by the base class.
+        flushHeldAxioms(writer);
+        super.beginWritingUsage(size, writer);
     }
 
     @Override
@@ -359,19 +386,28 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
     }
 
     /**
-     * Writes the entity's axioms in a fixed order.
+     * Writes the entity's own axioms in a fixed order.
      *
-     * <p>Two things decide the order, and the first matters more than it looks. A statement
-     * that <em>begins</em> with this entity's own name goes first, because the comments for
-     * the block have already been written above it and a comment is attached, on the way
-     * back in, to the first name of the statement it precedes. Head the block with anything
-     * else — a domain axiom rendering as {@code ∃r.⊤ ⊑ X}, an inverse as {@code p ⊑ q⁻} —
-     * and the comment silently becomes a comment on that other name. Sorting without this
-     * made that worse rather than better: the comment loss on one corpus document went from
-     * two annotations to ten, because reordering moved which statement came first.
+     * <p>Two keys, and the second is the one that makes the output stable. First, a
+     * statement that <em>opens</em> with this entity's name comes before one that does not,
+     * so the block leads with what defines the entity rather than with a qualifier of it:
      *
-     * <p>Beyond that, the rendered text, so a diff between two versions of a document is
-     * readable. Ties fall back to OWL API's axiom order to stay total.
+     * <pre>
+     * belongsToSpecies &#8849; relationship      Func(belongsToSpecies)
+     * Func(belongsToSpecies)                     belongsToSpecies &#8849; relationship
+     * &#8707;belongsToSpecies.&#8868; &#8849; Animal          &#8707;belongsToSpecies.&#8868; &#8849; Animal
+     * </pre>
+     *
+     * <p>This is a readability rule and nothing more. It is <em>not</em> what keeps the
+     * comments above a block attached to the right entity on the way back in — a comment
+     * attaches to the first <em>name</em> of the statement below it, and in every form the
+     * renderer produces for an entity's own axiom, including {@code Func(r)},
+     * {@code Disj(r, s)} and {@code &#8707;r.&#8868; &#8849; C}, that first name is the entity itself. Both
+     * orderings preserve the same comments across a round trip of the corpus.
+     *
+     * <p>Second, the rendered text, which is what actually makes writing deterministic and
+     * a diff between two versions of a document readable. Ties fall back to OWL API's axiom
+     * order so the comparator stays total.
      *
      * <p>Each axiom is rendered once and the text kept, since rendering is what the base
      * class's {@code writeAxiom} does with it anyway.
@@ -386,7 +422,7 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
         for (OWLAxiom axiom : ordered) {
             rendered.put(axiom, getRendering(currentEntity, axiom));
         }
-        String own = currentEntity == null ? null : renderer.shortForm(currentEntity.getIRI());
+        String own = ownName();
         ordered.sort(Comparator
             .comparingInt((OWLAxiom ax) -> startsWithName(rendered.get(ax), own) ? 0 : 1)
             .thenComparing(ax -> rendered.getOrDefault(ax, ""))
@@ -398,6 +434,25 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
             lastRenderingEmpty = text.isEmpty();
             if (!text.isEmpty()) writer.write(text);
             endWritingAxiom(writer);
+        }
+    }
+
+    /**
+     * This entity's own name as it is rendered, or null if it has none.
+     *
+     * <p>An IRI with no declared prefix and no remainder — {@code <urn:isbn:123>} — has no
+     * short form, and asking for one throws. That is the right answer when the name has to
+     * be written, but here it is only a sort key, and an ordering preference is no reason
+     * to fail a save that would otherwise succeed. Such an entity's axioms sort by their
+     * rendered text alone.
+     */
+    @Nullable
+    private String ownName() {
+        if (currentEntity == null) return null;
+        try {
+            return renderer.shortForm(currentEntity.getIRI());
+        } catch (RuntimeException e) {
+            return null;
         }
     }
 
