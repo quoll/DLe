@@ -48,6 +48,9 @@
 # - A role statement, and a concept statement on a punned name, are read as declarations
 #   rather than kept as subsumptions; they are the marker, not content. A bare `X ⊑ ⊤` on a
 #   name with no role statement is an ordinary axiom and is kept.
+# - Kinds are worked out from this document alone, not from what it imports. A name an
+#   import defines as a concept, used here only in a subsumption pair, is read by the rules
+#   above and can come out a role. State its kind in this document to settle it.
 #
 # Database convention:
 # - Resources only appear explicitly in the database if they have an @db annotation

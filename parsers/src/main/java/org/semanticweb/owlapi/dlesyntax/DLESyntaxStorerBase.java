@@ -29,6 +29,9 @@ import org.semanticweb.owlapi.model.IRI;
 import org.semanticweb.owlapi.model.OWLAnnotationAssertionAxiom;
 import org.semanticweb.owlapi.model.OWLAxiom;
 import org.semanticweb.owlapi.model.OWLDeclarationAxiom;
+import org.semanticweb.owlapi.model.OWLEquivalentDataPropertiesAxiom;
+import org.semanticweb.owlapi.model.OWLEquivalentObjectPropertiesAxiom;
+import org.semanticweb.owlapi.model.OWLPropertyExpression;
 import org.semanticweb.owlapi.model.OWLDocumentFormat;
 import org.semanticweb.owlapi.model.OWLEntity;
 import org.semanticweb.owlapi.model.OWLLiteral;
@@ -307,7 +310,14 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
         // Conflating them marked every numeric child of a pun, which is every SNOMED CT
         // attribute — names the reader classifies correctly on its own, from the pun above
         // them.
-        boolean propertyContradictsCase = isProperty && !readerCanGuessRole(name)
+        // The reader's case guess yields an OBJECT property and nothing else — `a ⊑ b`
+        // between two bare lower-case names is read as a sub-property pair of object
+        // properties. So the guess can rescue an object property with such a name, and can
+        // never rescue a data property: `a ⊑ b` between two data properties came back as
+        // two object properties, silently, with no statement written because the name
+        // looked like a role and the writer asked no further.
+        boolean caseCanRescue = readerCanGuessRole(name) && !entity.isOWLDataProperty();
+        boolean propertyContradictsCase = isProperty && !caseCanRescue
             && ((startsUpperCase(name) && propertySubsumedByAPun(entity))
                 || !hasRoleEvidence(entity));
 
@@ -438,6 +448,38 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
     }
 
     /**
+     * Whether an axiom, once rendered, shows the reader that its subject is a role.
+     *
+     * <p>The question is about the DLe text, not the axiom. A declaration writes nothing.
+     * An annotation assertion says nothing about kind. A sub-property axiom renders as
+     * {@code p ⊑ q}, which is exactly a class subsumption — that ambiguity is the reason
+     * kind statements exist at all.
+     *
+     * <p>And an equivalence between two named properties renders as {@code p ≡ q}, which is
+     * likewise exactly a class equivalence. Counting it as evidence meant two data
+     * properties related only by {@code EquivalentDataProperties} were written with no
+     * statement and read back as object properties. Anything else — a restriction, a domain
+     * or range, a characteristic, a chain, an inverse — puts the name somewhere only a role
+     * can go.
+     */
+    private static boolean pinsTheKind(OWLAxiom axiom) {
+        if (axiom instanceof OWLDeclarationAxiom
+                || axiom instanceof OWLSubObjectPropertyOfAxiom
+                || axiom instanceof OWLSubDataPropertyOfAxiom
+                || axiom instanceof OWLAnnotationAssertionAxiom) {
+            return false;
+        }
+        if (axiom instanceof OWLEquivalentObjectPropertiesAxiom) {
+            return ((OWLEquivalentObjectPropertiesAxiom) axiom).properties()
+                .anyMatch(OWLPropertyExpression::isAnonymous);
+        }
+        if (axiom instanceof OWLEquivalentDataPropertiesAxiom) {
+            return false;   // a data property expression is always named
+        }
+        return true;
+    }
+
+    /**
      * Whether the reader's own case guess can take this name for a role.
      *
      * <p>This must mirror {@code EntityTypeScanner} exactly, and it did not. The reader
@@ -529,10 +571,7 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
         Boolean known = roleEvidence.get(entity);
         if (known != null) return known;
         boolean answer = currentOntology.referencingAxioms(entity)
-            .anyMatch(ax -> !(ax instanceof OWLDeclarationAxiom)
-                && !(ax instanceof OWLSubObjectPropertyOfAxiom)
-                && !(ax instanceof OWLSubDataPropertyOfAxiom)
-                && !(ax instanceof OWLAnnotationAssertionAxiom));
+            .anyMatch(DLESyntaxStorerBase::pinsTheKind);
         roleEvidence.put(entity, answer);
         return answer;
     }
@@ -890,7 +929,6 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
     protected void endWritingOntology(OWLOntology ontology, PrintWriter writer) {
         // Write any annotation assertions whose subject was not a named entity
         // in the ontology signature (e.g. annotations on external IRIs, blank nodes).
-        // dle:comment annotations are internal and are never emitted standalone.
         Set<OWLAnnotationAssertionAxiom> already = writtenAnnotations != null
             ? writtenAnnotations : new HashSet<>();
         ontology.axioms(AxiomType.ANNOTATION_ASSERTION).sorted()
@@ -902,6 +940,45 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
                 writeAxiom(null, ax, writer);
                 endWritingAxiom(writer);
             });
+
+        // A comment whose subject never got a block of its own would otherwise be dropped
+        // here: the entity-block pass never saw it, and this pass used to filter every
+        // dle:comment out as internal. That is silent loss of something the author wrote,
+        // so it is written as # lines instead. It loses its attachment — there is no
+        // statement left to sit above — but the text survives.
+        ontology.axioms(AxiomType.ANNOTATION_ASSERTION).sorted()
+            .filter(ax -> !already.contains(ax))
+            .filter(ax -> DLESyntaxAxiomVisitor.DLE_COMMENT_IRI.equals(ax.getProperty().getIRI())
+                       || DLESyntaxAxiomVisitor.DLE_INLINE_COMMENT_IRI.equals(ax.getProperty().getIRI()))
+            .forEach(ax -> {
+                if (ax.getValue() instanceof OWLLiteral) {
+                    writeCommentLines(((OWLLiteral) ax.getValue()).getLiteral(), writer);
+                }
+            });
+
+        // And the document's own trailing comment block, which belongs to no entity at all.
+        ontology.annotations()
+            .filter(a -> DLESyntaxAxiomVisitor.DLE_COMMENT_IRI.equals(a.getProperty().getIRI()))
+            .sorted()
+            .forEach(a -> {
+                if (a.getValue() instanceof OWLLiteral) {
+                    writeCommentLines(((OWLLiteral) a.getValue()).getLiteral(), writer);
+                }
+            });
+    }
+
+    /**
+     * Writes a stored comment literal back out as one {@code #} line per line of it.
+     *
+     * <p>Followed by a blank line, matching what the entity-block path produces. Without it
+     * the same comment written through the two paths differed by one trailing newline, so a
+     * comment that moved from a block to here on one pass changed the file on the next.
+     */
+    private static void writeCommentLines(String literal, PrintWriter writer) {
+        for (String line : literal.split("\n", -1)) {
+            writer.println(line.isEmpty() ? "#" : "# " + line);
+        }
+        writer.println();
     }
 
     @Override

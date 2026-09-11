@@ -155,4 +155,85 @@ class CommentPreservationTest {
         lost.removeAll(after);
         assertTrue(lost.isEmpty(), "comment lines lost when writing: " + lost);
     }
+
+    /** The document body, with the generated explanatory header stripped. */
+    private static String bodyOf(String document) {
+        StringBuilder out = new StringBuilder();
+        boolean header = true;
+        for (String line : document.split("\n", -1)) {
+            if (header && !line.isEmpty() && line.charAt(0) != '#') header = false;
+            if (!header) out.append(line).append('\n');
+        }
+        return out.toString();
+    }
+
+    /**
+     * A comment after the last statement survives.
+     *
+     * <p>Every other comment is found by looking left from the statement below it, and a
+     * trailing block has nothing to look from — so it was read and discarded. It now
+     * belongs to the document rather than to an entity, and is written back at the end.
+     */
+    @Test
+    void aTrailingCommentSurvives() throws Exception {
+        String written = rewrite(PREFIX + "A ⊑ B\n# a closing note\n");
+        assertTrue(bodyOf(written).contains("# a closing note"),
+            () -> "the trailing comment must be written back:\n" + written);
+        assertEquals(bodyOf(written), bodyOf(rewrite(written)),
+            () -> "and must be stable, not merely present once:\n" + written);
+    }
+
+    /**
+     * A comment on an entity that gets no block of its own survives.
+     *
+     * <p>`b ⊑ A` is written in `A`'s block, because the base storer writes each axiom in
+     * the first block that reaches it. So `b`'s own block holds nothing but this comment,
+     * and if that block is written last the comment lands at the end of the file — where
+     * the next read used to discard it. Two passes destroyed it.
+     */
+    @Test
+    void aCommentOnAnEntityWithNoBlockOfItsOwnSurvives() throws Exception {
+        String first = rewrite(PREFIX + "A ⊑ ⊤\n# about b\nb ⊑ A\n");
+        assertTrue(bodyOf(first).contains("# about b"),
+            () -> "written on the first pass:\n" + first);
+        String second = rewrite(first);
+        assertTrue(bodyOf(second).contains("# about b"),
+            () -> "and must still be there after a second:\n" + second);
+        // From the first pass, not merely from the second. The comment moves from an empty
+        // entity block to the document's trailing block on the way through, and the two
+        // paths used to differ by one blank line — so this is what pins them together.
+        assertEquals(bodyOf(first), bodyOf(second),
+            () -> "the first pass must already agree with the second:\n" + first);
+    }
+
+    /**
+     * A comment whose subject is not in the signature at all is still written.
+     *
+     * <p>The standalone annotation pass filtered every {@code dle:comment} out, on the
+     * grounds that they are internal and written with their entity. One whose subject has
+     * no entity — an IRI that appears nowhere else, which RDF sources do produce — had no
+     * entity to be written with, so it was discarded without trace.
+     */
+    @Test
+    void aCommentOnAnIriOutsideTheSignatureIsStillWritten() throws Exception {
+        OWLOntologyManager manager = OWLManager.createOWLOntologyManager();
+        OWLOntology o = manager.createOntology();
+        org.semanticweb.owlapi.model.OWLDataFactory df = manager.getOWLDataFactory();
+        manager.addAxiom(o, df.getOWLSubClassOfAxiom(
+            df.getOWLClass(org.semanticweb.owlapi.model.IRI.create("http://example.org/t#A")),
+            df.getOWLClass(org.semanticweb.owlapi.model.IRI.create("http://example.org/t#B"))));
+        manager.addAxiom(o, df.getOWLAnnotationAssertionAxiom(
+            df.getOWLAnnotationProperty(DLESyntaxAxiomVisitor.DLE_COMMENT_IRI),
+            org.semanticweb.owlapi.model.IRI.create("http://example.org/absent#Ghost"),
+            df.getOWLLiteral("a note with nowhere to live")));
+
+        DLESyntaxDocumentFormat format = new DLESyntaxDocumentFormat();
+        format.setDefaultPrefix("http://example.org/t#");
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        manager.saveOntology(o, format, new StreamDocumentTarget(out));
+        String written = new String(out.toByteArray(), StandardCharsets.UTF_8);
+
+        assertTrue(bodyOf(written).contains("# a note with nowhere to live"),
+            () -> "it must not be discarded silently:\n" + written);
+    }
 }

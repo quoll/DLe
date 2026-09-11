@@ -282,10 +282,18 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
     @Override
     public Void visitSubClassAxiom(DLESyntaxParser.SubClassAxiomContext ctx) {
         // DisjointObjectProperties: p ⊓ q ⊑ ⊥
+        //
+        // Through classifyUnknownRole, not addAll. Disjointness holds between properties of
+        // either kind, so this line says "roles" and not which — and adding to the object
+        // set unconditionally overwrote a data classification the document had already
+        // made. Which answer you got then depended on where this line sat: with the
+        // datatype restrictions above it the names came out object properties, below it
+        // data ones, from the same three axioms. The `Disj(p, q)` spelling of the same
+        // axiom now routes by kind, and this one has to agree with it.
         List<String> intersected = allIntersectedBareNames(ctx.classExpr(0));
         if (intersected != null && isBottomClassExpr(ctx.classExpr(1))
                 && intersected.stream().allMatch(n -> Character.isLowerCase(n.charAt(0)))) {
-            objectPropertyNames.addAll(intersected);
+            intersected.forEach(this::classifyUnknownRole);
         }
 
         String lhs = singleBareName(ctx.classExpr(0));

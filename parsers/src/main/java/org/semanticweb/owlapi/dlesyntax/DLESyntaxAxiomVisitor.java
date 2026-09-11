@@ -76,6 +76,8 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
     private IRI ontologyIRI = null;
     /** Version IRI from {@code @version}, null if not declared. */
     private IRI versionIRI  = null;
+    /** Comment lines after the last statement, which belong to no entity. */
+    private final List<String> trailingComments = new ArrayList<>();
     /** Where @version was declared, so a refusal raised after the parse can point at it. */
     private int versionLine = -1;
     private int versionColumn;
@@ -105,6 +107,7 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
 
     /** Problems that did not stop the parse; see {@link #warnings}. */
     List<String> getWarnings()        { return warnings; }
+    List<String> getTrailingComments() { return trailingComments; }
     Map<String, String> getPrefixes() { return prefixes; }
 
     /** IRIs whose kind the document stated; see {@link #statedKindIRIs}. */
@@ -626,7 +629,7 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
 
     @Override
     public OWLObject visitTransitiveRoleAxiom(DLESyntaxParser.TransitiveRoleAxiomContext ctx) {
-        axioms.add(df.getOWLTransitiveObjectPropertyAxiom(objectProp(ctx.name())));
+        axioms.add(df.getOWLTransitiveObjectPropertyAxiom(objectOnlyProp("Trans", ctx.name())));
         return null;
     }
 
@@ -644,35 +647,77 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
 
     @Override
     public OWLObject visitReflexiveRoleAxiom(DLESyntaxParser.ReflexiveRoleAxiomContext ctx) {
-        axioms.add(df.getOWLReflexiveObjectPropertyAxiom(objectProp(ctx.name())));
+        axioms.add(df.getOWLReflexiveObjectPropertyAxiom(objectOnlyProp("Ref", ctx.name())));
         return null;
     }
 
     @Override
     public OWLObject visitIrreflexiveRoleAxiom(DLESyntaxParser.IrreflexiveRoleAxiomContext ctx) {
-        axioms.add(df.getOWLIrreflexiveObjectPropertyAxiom(objectProp(ctx.name())));
+        axioms.add(df.getOWLIrreflexiveObjectPropertyAxiom(objectOnlyProp("Irref", ctx.name())));
         return null;
     }
 
     @Override
     public OWLObject visitSymmetricRoleAxiom(DLESyntaxParser.SymmetricRoleAxiomContext ctx) {
-        axioms.add(df.getOWLSymmetricObjectPropertyAxiom(objectProp(ctx.name())));
+        axioms.add(df.getOWLSymmetricObjectPropertyAxiom(objectOnlyProp("Sym", ctx.name())));
         return null;
     }
 
     @Override
     public OWLObject visitAsymmetricRoleAxiom(DLESyntaxParser.AsymmetricRoleAxiomContext ctx) {
-        axioms.add(df.getOWLAsymmetricObjectPropertyAxiom(objectProp(ctx.name())));
+        axioms.add(df.getOWLAsymmetricObjectPropertyAxiom(objectOnlyProp("Asym", ctx.name())));
         return null;
     }
 
     @Override
     public OWLObject visitDisjointRoleAxiom(DLESyntaxParser.DisjointRoleAxiomContext ctx) {
+        // Disjointness, unlike the characteristics above, has both forms. It used to build
+        // the object one whatever the names were, so `Disj(p, q)` over two data properties
+        // declared them as object properties as well — the same illegal punning. The
+        // intersection spelling `p ⊓ q ⊑ ⊥` already routed by kind; this now matches it.
+        List<String> names = ctx.name().stream()
+            .map(org.antlr.v4.runtime.RuleContext::getText).collect(Collectors.toList());
+        if (names.stream().anyMatch(dataPropertyNames::contains)) {
+            if (!names.stream().allMatch(dataPropertyNames::contains)) {
+                throw new DLESemanticException(
+                    "Disj mixes a data property with an object property: " + names
+                        + ". Disjointness holds between properties of one kind.",
+                    ctx.start.getLine(), ctx.start.getCharPositionInLine());
+            }
+            List<OWLDataPropertyExpression> dataProps = ctx.name().stream()
+                .map(n -> (OWLDataPropertyExpression) df.getOWLDataProperty(expandName(n)))
+                .collect(Collectors.toList());
+            axioms.add(df.getOWLDisjointDataPropertiesAxiom(dataProps));
+            return null;
+        }
         List<OWLObjectPropertyExpression> props = ctx.name().stream()
             .map(n -> (OWLObjectPropertyExpression) df.getOWLObjectProperty(expandName(n)))
             .collect(Collectors.toList());
         axioms.add(df.getOWLDisjointObjectPropertiesAxiom(props));
         return null;
+    }
+
+    /**
+     * The object property a characteristic is about, refusing a data property.
+     *
+     * <p>Transitivity, symmetry, asymmetry, reflexivity and irreflexivity are relations
+     * between two individuals; OWL defines them for object properties only, and there is no
+     * data-property counterpart to fall back on. Every one of these built an object
+     * property regardless, so a document applying {@code Trans} to a name the rest of it
+     * used with a datatype produced an ontology declaring that name as both kinds at once —
+     * punning OWL 2 DL forbids, which no reasoner will load and which DLe cannot write
+     * back. Functionality is the exception, and has both forms.
+     */
+    private OWLObjectProperty objectOnlyProp(String keyword, DLESyntaxParser.NameContext ctx) {
+        String name = ctx.getText();
+        if (dataPropertyNames.contains(name)) {
+            throw new DLESemanticException(
+                keyword + " applies to object properties only, and " + name + " is used as a"
+                    + " data property in this document. There is no " + keyword + " for data"
+                    + " properties; Func is the only characteristic that has both forms.",
+                ctx.start.getLine(), ctx.start.getCharPositionInLine());
+        }
+        return objectProp(ctx);
     }
 
     private OWLObjectProperty objectProp(DLESyntaxParser.NameContext ctx) {
@@ -989,6 +1034,43 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
      * precede it and attach them as {@code dle:comment} annotation assertions on the
      * first named entity referenced in the statement.
      */
+    /**
+     * Captures the comment block after the last statement.
+     *
+     * <p>Every other comment is found by looking left from the statement below it, which
+     * leaves a trailing block with nothing to look from: it was read, discarded, and gone.
+     * That mattered more than it sounds, because the writer puts a comment at the head of
+     * its entity's block and an entity whose axioms were all claimed by earlier blocks has
+     * nothing else in it — so a comment could be written last and then be destroyed by the
+     * very next read.
+     *
+     * <p>It has no entity to belong to, so it is kept on the ontology and written back at
+     * the end of the document, which is where it was.
+     */
+    @Override
+    public OWLObject visitOntology(DLESyntaxParser.OntologyContext ctx) {
+        OWLObject result = visitChildren(ctx);
+        if (tokenStream == null || ctx.statement().isEmpty()) return result;
+        DLESyntaxParser.StatementContext last = ctx.statement(ctx.statement().size() - 1);
+        if (last.stop == null) return result;
+        List<Token> hidden = tokenStream.getHiddenTokensToRight(
+            last.stop.getTokenIndex(), Token.HIDDEN_CHANNEL);
+        if (hidden == null) return result;
+        StringBuilder sb = new StringBuilder();
+        for (Token tok : hidden) {
+            // An inline comment on the last statement's own line is already captured as
+            // one, by visitStatement, and must not be taken twice.
+            if (tok.getLine() == last.stop.getLine()) continue;
+            String text = tok.getText();
+            if (text.startsWith("#")) text = text.substring(1);
+            if (!text.isEmpty() && text.charAt(0) == ' ') text = text.substring(1);
+            if (sb.length() > 0) sb.append('\n');
+            sb.append(text);
+        }
+        if (sb.length() > 0) trailingComments.add(sb.toString());
+        return result;
+    }
+
     @Override
     public OWLObject visitStatement(DLESyntaxParser.StatementContext ctx) {
         currentLine = ctx.start.getLine();

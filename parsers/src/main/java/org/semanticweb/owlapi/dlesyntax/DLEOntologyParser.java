@@ -27,6 +27,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.semanticweb.owlapi.model.UnloadableImportException;
 import org.semanticweb.owlapi.model.OWLOntologyCreationException;
+import org.semanticweb.owlapi.model.AddOntologyAnnotation;
 import org.semanticweb.owlapi.model.IRI;
 import org.semanticweb.owlapi.model.OWLDocumentFormat;
 import org.semanticweb.owlapi.model.OWLDocumentFormatFactory;
@@ -135,6 +136,17 @@ public class DLEOntologyParser extends AbstractOWLParser {
             // first would disable the resolver silently, with no test to notice.
             DualDeclarationResolver.resolve(ontology, visitor.getStatedKindIRIs());
             DefaultLabelAdder.addDefaultLabels(ontology);
+
+            // A trailing comment belongs to the document, not to an entity, so it is kept
+            // as an ontology annotation and written back at the end.
+            for (String comment : visitor.getTrailingComments()) {
+                ontology.getOWLOntologyManager().applyChange(new AddOntologyAnnotation(ontology,
+                    ontology.getOWLOntologyManager().getOWLDataFactory().getOWLAnnotation(
+                        ontology.getOWLOntologyManager().getOWLDataFactory()
+                            .getOWLAnnotationProperty(DLESyntaxAxiomVisitor.DLE_COMMENT_IRI),
+                        ontology.getOWLOntologyManager().getOWLDataFactory()
+                            .getOWLLiteral(comment))));
+            }
 
             // Apply the ontology ID. A document that declares no @ontology is anonymous —
             // it does not name itself, and nothing should claim it did.

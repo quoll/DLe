@@ -129,6 +129,81 @@ class KindStatementFidelityTest {
             () -> "the data sub-property axiom must survive:\n" + written);
     }
 
+    /**
+     * A data property hierarchy in bare lower-case names survives.
+     *
+     * <p>This one is quiet and total. `a ⊑ b` between two data properties is exactly what
+     * the reader's case guess claims — and that guess yields an <em>object</em> property,
+     * always. The writer asked only "will the reader guess a role?", saw that it would, and
+     * said nothing. Two data properties went in and two object properties came out, with
+     * the subsumption rewritten to match.
+     */
+    @Test
+    void aBareLowerCaseDataPropertyHierarchySurvives() throws Exception {
+        OWLOntologyManager manager = OWLManager.createOWLOntologyManager();
+        OWLOntology o = manager.createOntology();
+        OWLDataFactory df = manager.getOWLDataFactory();
+        String ns = "http://example.org/d#";
+        OWLDataProperty sub = df.getOWLDataProperty(IRI.create(ns + "a"));
+        OWLDataProperty sup = df.getOWLDataProperty(IRI.create(ns + "b"));
+        manager.addAxiom(o, df.getOWLSubDataPropertyOfAxiom(sub, sup));
+
+        String written = write(o, ns);
+        OWLOntology back = parse(written);
+        assertTrue(back.containsDataPropertyInSignature(sub.getIRI())
+                && back.containsDataPropertyInSignature(sup.getIRI()),
+            () -> "both must come back data properties:\n" + written);
+        assertFalse(back.containsObjectPropertyInSignature(sub.getIRI()),
+            () -> "and neither may become an object property:\n" + written);
+        assertEquals(o.getLogicalAxioms(), back.getLogicalAxioms(),
+            () -> "the axiom must survive unchanged:\n" + written);
+    }
+
+    /**
+     * A data property equivalence survives too.
+     *
+     * <p>Not covered by the fix above, because an {@code EquivalentDataProperties} axiom
+     * counted as evidence that the name was a role. Rendered, it is `p ≡ q` — which is
+     * exactly a class equivalence, and tells the reader nothing. Only a use that a class
+     * could not have counts.
+     */
+    @Test
+    void aDataPropertyEquivalenceSurvives() throws Exception {
+        OWLOntologyManager manager = OWLManager.createOWLOntologyManager();
+        OWLOntology o = manager.createOntology();
+        OWLDataFactory df = manager.getOWLDataFactory();
+        String ns = "http://example.org/d#";
+        manager.addAxiom(o, df.getOWLEquivalentDataPropertiesAxiom(
+            df.getOWLDataProperty(IRI.create(ns + "p")),
+            df.getOWLDataProperty(IRI.create(ns + "q"))));
+
+        String written = write(o, ns);
+        assertEquals(o.getLogicalAxioms(), parse(written).getLogicalAxioms(),
+            () -> "the equivalence must stay a data property equivalence:\n" + written);
+    }
+
+    /**
+     * An object property with only an equivalence, and a name the guess cannot reach.
+     *
+     * <p>The control for the test above: excluding equivalences from the evidence must not
+     * silently stop applying to object properties. A prefixed name gets no help from the
+     * reader's guess either, so it needs the statement just as much.
+     */
+    @Test
+    void aPrefixedObjectPropertyEquivalenceSurvives() throws Exception {
+        OWLOntologyManager manager = OWLManager.createOWLOntologyManager();
+        OWLOntology o = manager.createOntology();
+        OWLDataFactory df = manager.getOWLDataFactory();
+        String ns = "http://example.org/ex#";
+        manager.addAxiom(o, df.getOWLEquivalentObjectPropertiesAxiom(
+            df.getOWLObjectProperty(IRI.create(ns + "p")),
+            df.getOWLObjectProperty(IRI.create(ns + "q"))));
+
+        String written = write(o, "http://example.org/d#", "ex:", ns);
+        assertEquals(o.getLogicalAxioms(), parse(written).getLogicalAxioms(),
+            () -> "the equivalence must stay an object property equivalence:\n" + written);
+    }
+
     // ── Classes the reader could never misread ──────────────────────────────
 
     /**
