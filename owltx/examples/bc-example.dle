@@ -15,6 +15,8 @@
 # Naming conventions:
 # - Every entity has an implicit label equal to its identifier unless @label is declared
 # - Unprefixed names (e.g., Application) are in the default namespace (:Application)
+# - A name whose local part begins with a digit keeps the colon — :762705008 — because
+#   the bare form would read as a number. Every other default-namespace name is bare
 # - Prefixed names use declared prefixes (e.g., xsd:string) 
 # - All standard prefixes are implicitly declared: owl, rdfs, rdf, xsd, skos, dcterms
 # - Concept/class identifiers conventionally begin with an upper-case letter
