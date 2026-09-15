@@ -105,4 +105,34 @@ class RoleCharacteristicKindTest {
         assertTrue(message.contains("mixes a data property with an object property"),
             () -> "got: " + message);
     }
+
+    /**
+     * The object-only positions count as evidence, so a contradiction is reported.
+     *
+     * <p>A chain's super-property and either side of an inverse are object-only by
+     * construction, but they classified the name without recording it — so the conflict
+     * check was blind to them and a document naming one IRI as both kinds was accepted
+     * silently, producing an ontology OWL 2 DL forbids and no reasoner will load.
+     */
+    @Test
+    void theObjectOnlyPositionsAreEvidence() {
+        for (String contradiction : new String[] {
+                "p ∘ q ⊑ d", "q ≡ d⁻", "e ⊑ d⁻", "A ⊑ ∃d⁻.B"}) {
+            String message = refusal(PREFIX + "(a,\"5\"):d\n" + contradiction + "\n");
+            assertTrue(message.contains("object property") && message.contains("data property"),
+                () -> contradiction + " must be reported, got: " + message);
+        }
+    }
+
+    /** And the same shapes are untouched when there is no contradiction. */
+    @Test
+    void theObjectOnlyPositionsStillWorkAlone() throws Exception {
+        OWLOntology chain = parse(PREFIX + "A ⊑ ∃p.B\nA ⊑ ∃q.B\np ∘ q ⊑ d\n");
+        assertEquals(1, chain.getAxioms(AxiomType.SUB_PROPERTY_CHAIN_OF).size(),
+            () -> chain.getLogicalAxioms().toString());
+
+        OWLOntology inverse = parse(PREFIX + "A ⊑ ∃r.B\nq ≡ r⁻\n");
+        assertEquals(1, inverse.getAxioms(AxiomType.EQUIVALENT_OBJECT_PROPERTIES).size(),
+            () -> inverse.getLogicalAxioms().toString());
+    }
 }

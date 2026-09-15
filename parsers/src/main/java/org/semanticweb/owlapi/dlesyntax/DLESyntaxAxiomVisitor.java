@@ -699,6 +699,15 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
         // intersection spelling `p ⊓ q ⊑ ⊥` already routed by kind; this now matches it.
         List<String> names = ctx.name().stream()
             .map(org.antlr.v4.runtime.RuleContext::getText).collect(Collectors.toList());
+        // Disjointness needs two distinct properties. `Disj(p, p)` built a unary axiom,
+        // which OWL rejects as a profile violation and which the writer then emitted as
+        // `Disj(p)` — a form the grammar does not accept, so the document would not reload.
+        if (new java.util.LinkedHashSet<>(names).size() < names.size()) {
+            throw new DLESemanticException(
+                "a property is named twice in this disjointness statement. Disjointness"
+                    + " holds between different properties; name each one once.",
+                ctx.start.getLine(), ctx.start.getCharPositionInLine());
+        }
         if (names.stream().anyMatch(dataPropertyNames::contains)) {
             if (!names.stream().allMatch(dataPropertyNames::contains)) {
                 throw new DLESemanticException(
@@ -1169,6 +1178,15 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
 
     /** Returns the IRI of the first name token in the statement, or null. */
     private IRI findFirstNameIRI(DLESyntaxParser.StatementContext ctx) {
+        // An assertion is the exception, because its first name is not what the statement
+        // is about. `(bob,ann):knows` opens with an individual, so a comment above it was
+        // attached to `bob` — and the writer puts a comment at the head of the block of the
+        // entity it belongs to, which for that line is `knows`. The comment therefore
+        // changed subject on every round trip. The class and property of an assertion are
+        // where its block is, so they are what a comment above it is about.
+        IRI subject = assertionSubject(ctx);
+        if (subject != null) return subject;
+
         int start = ctx.start.getTokenIndex();
         int stop  = ctx.stop != null ? ctx.stop.getTokenIndex() : start;
         for (int i = start; i <= stop; i++) {
@@ -1178,6 +1196,38 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
                     || type == DLESyntaxLexer.DEFAULT_NAME) {
                 return expandNameText(tok.getText());
             }
+        }
+        return null;
+    }
+
+    /**
+     * The entity an assertion statement is about, or null if this is not an assertion.
+     *
+     * <p>The property for the tuple forms, the class for a class assertion — matching the
+     * entity block the writer places the statement in.
+     */
+    @Nullable
+    private IRI assertionSubject(DLESyntaxParser.StatementContext ctx) {
+        if (ctx.axiom() == null) return null;
+        DLESyntaxParser.AxiomContext axiom = ctx.axiom();
+        if (axiom instanceof DLESyntaxParser.ObjectAssertionAxiomContext) {
+            return expandName(((DLESyntaxParser.ObjectAssertionAxiomContext) axiom).name(2));
+        }
+        if (axiom instanceof DLESyntaxParser.NegativeObjectAssertionAxiomContext) {
+            return expandName(
+                ((DLESyntaxParser.NegativeObjectAssertionAxiomContext) axiom).name(2));
+        }
+        if (axiom instanceof DLESyntaxParser.DataAssertionAxiomContext) {
+            return expandName(((DLESyntaxParser.DataAssertionAxiomContext) axiom).name(1));
+        }
+        if (axiom instanceof DLESyntaxParser.NegativeDataAssertionAxiomContext) {
+            return expandName(
+                ((DLESyntaxParser.NegativeDataAssertionAxiomContext) axiom).name(1));
+        }
+        if (axiom instanceof DLESyntaxParser.ClassAssertionAxiomContext) {
+            String cls = loneName(
+                ((DLESyntaxParser.ClassAssertionAxiomContext) axiom).classExpr());
+            return cls == null ? null : expandNameText(cls);
         }
         return null;
     }
@@ -1207,6 +1257,7 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
     @Override
     public OWLObject visitObjectAssertionAxiom(
             DLESyntaxParser.ObjectAssertionAxiomContext ctx) {
+        requireBareSeparator(ctx.PNAME_NS(), ctx);
         axioms.add(df.getOWLObjectPropertyAssertionAxiom(
             df.getOWLObjectProperty(expandName(ctx.name(2))),
             df.getOWLNamedIndividual(expandName(ctx.name(0))),
@@ -1217,6 +1268,7 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
     @Override
     public OWLObject visitNegativeObjectAssertionAxiom(
             DLESyntaxParser.NegativeObjectAssertionAxiomContext ctx) {
+        requireBareSeparator(ctx.PNAME_NS(), ctx);
         axioms.add(df.getOWLNegativeObjectPropertyAssertionAxiom(
             df.getOWLObjectProperty(expandName(ctx.name(2))),
             df.getOWLNamedIndividual(expandName(ctx.name(0))),
@@ -1226,6 +1278,7 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
 
     @Override
     public OWLObject visitDataAssertionAxiom(DLESyntaxParser.DataAssertionAxiomContext ctx) {
+        requireBareSeparator(ctx.PNAME_NS(), ctx);
         axioms.add(df.getOWLDataPropertyAssertionAxiom(
             df.getOWLDataProperty(expandName(ctx.name(1))),
             df.getOWLNamedIndividual(expandName(ctx.name(0))),
@@ -1236,6 +1289,7 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
     @Override
     public OWLObject visitNegativeDataAssertionAxiom(
             DLESyntaxParser.NegativeDataAssertionAxiomContext ctx) {
+        requireBareSeparator(ctx.PNAME_NS(), ctx);
         axioms.add(df.getOWLNegativeDataPropertyAssertionAxiom(
             df.getOWLDataProperty(expandName(ctx.name(1))),
             df.getOWLNamedIndividual(expandName(ctx.name(0))),
@@ -1250,8 +1304,13 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
         // individual ex of class a:C. The prefixes the document declares decide it, and
         // they are all known by now: the grammar puts every prefixDecl before every
         // statement, so this is a guarantee rather than a scan-order accident.
+        requireBareSeparator(ctx.PNAME_NS(), ctx);
         String first = ctx.name().getText();
-        String second = ctx.classExpr().getText();
+        // The class side's own name, not its raw text: the reading-B gate below uses
+        // loneName, which sees through parentheses, so building the IRI from getText()
+        // disagreed with the gate — `ex:a:(C)` minted the IRI `…#(C)`.
+        String loneClassName = loneName(ctx.classExpr());
+        String second = loneClassName != null ? loneClassName : ctx.classExpr().getText();
         boolean spaced = !adjacent(ctx.name().getStop(), ctx.PNAME_NS().getSymbol())
             || !adjacent(ctx.PNAME_NS().getSymbol(), ctx.classExpr().getStart());
 
@@ -1259,7 +1318,7 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
         // to move the first name's local part onto otherwise.
         int colon = first.indexOf(':');
         boolean readingBPossible = !spaced && colon > 0 && second.indexOf(':') < 0
-            && loneName(ctx.classExpr()) != null;
+            && loneClassName != null;
         if (readingBPossible) {
             boolean aValid = prefixes.containsKey(first.substring(0, colon + 1));
             String bPrefix = first.substring(colon + 1) + ":";
@@ -1336,6 +1395,14 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
         for (DLESyntaxParser.NameContext name : names) {
             result.add(df.getOWLNamedIndividual(expandName(name)));
         }
+        // `a ≠ b ≠ a` contains the unsatisfiable pair `a ≠ a`, and collapsing it silently
+        // dropped exactly that. `=` is idempotent, so a repeat there is harmless.
+        if (!same && result.size() != names.size()) {
+            throw new DLESemanticException(
+                "an individual is named twice in this distinctness statement, which says it"
+                    + " is distinct from itself. Name each individual once.",
+                ctx.start.getLine(), ctx.start.getCharPositionInLine());
+        }
         if (result.size() < 2) {
             throw new DLESemanticException(same
                 ? "this says an individual is the same as itself, which states nothing."
@@ -1358,6 +1425,16 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
     private void assertNamedClass(String individual, String className,
                                   org.antlr.v4.runtime.ParserRuleContext ctx) {
         IRI classIri = expandNameText(className);
+        if (classIri != null
+                && EntityTypeScanner.isDatatypeIri(classIri.toString())) {
+            // The spaced form refuses this through asClass; these paths built the class
+            // directly and so accepted what the spaced spelling rejects — and then wrote
+            // the spaced spelling back out, producing a document this reader will not read.
+            throw new DLESemanticException(
+                "expected a class expression here, but found the datatype " + className
+                    + ". An individual cannot be asserted to be a datatype.",
+                ctx.start.getLine(), ctx.start.getCharPositionInLine());
+        }
         if (classIri == null) {
             throw new DLESemanticException(
                 "unknown prefix in the assertion '" + individual + " : " + className
@@ -1378,6 +1455,27 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
                 ctx.start.getLine(), ctx.start.getCharPositionInLine());
         }
         return df.getOWLNamedIndividual(iri);
+    }
+
+    /**
+     * Requires the assertion separator to be a bare colon.
+     *
+     * <p>The grammar spells it {@code PNAME_NS}, which is {@code NameChar* ':'} — so it also
+     * matches {@code foo:}. Nothing checked the label was empty, and all five forms
+     * therefore accepted and silently discarded one: {@code a foo: C} built
+     * {@code ClassAssertion(:C :a)}, and {@code (a,b) zz: r} the object assertion.
+     */
+    private void requireBareSeparator(org.antlr.v4.runtime.tree.TerminalNode separator,
+                                      org.antlr.v4.runtime.ParserRuleContext ctx) {
+        String text = separator.getText();
+        if (!":".equals(text)) {
+            throw new DLESemanticException(
+                "'" + text + "' is not the separator of an assertion; write a bare ':'."
+                    + " The colon here separates the parts of the statement and is not part"
+                    + " of a name.",
+                separator.getSymbol().getLine(),
+                separator.getSymbol().getCharPositionInLine());
+        }
     }
 
     /** Whether the second token begins immediately after the first ends. */
@@ -1524,8 +1622,13 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
         // but data classification is definitive when a name ends up in both sets.
         if (dataPropertyNames.contains(text))   return df.getOWLDataProperty(iri);
         if (objectPropertyNames.contains(text)) return df.getOWLObjectProperty(iri);
-        // xsd:* and the specific RDF 1.2 datatype CURIEs are data ranges.
-        if (EntityTypeScanner.isDataTypeName(text)) return df.getOWLDatatype(iri);
+        // Datatypes are data ranges. Decided on the resolved IRI, which is the same test
+        // the classifier and the writer use — it used to be a text match on the `xsd:`
+        // prefix, so the XSD namespace under another prefix was missed and owl:real and
+        // owl:rational were not datatypes here at all.
+        if (EntityTypeScanner.isDatatypeIri(iri == null ? null : iri.toString())) {
+            return df.getOWLDatatype(iri);
+        }
         // For remaining rdf:/rdfs: names, use case convention:
         //   lower-case local part → object property  (e.g. rdf:type, rdfs:subClassOf)
         //   upper-case local part → class            (e.g. rdfs:Resource, rdfs:Class)

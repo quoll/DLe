@@ -248,6 +248,26 @@ public class DLESyntaxObjectRenderer extends DLSyntaxObjectRenderer {
     }
 
     /** Renders an OWLLiteral as a DLE literal token: NUMBER/BOOL unquoted, strings quoted. */
+    /**
+     * Writes a literal, wherever the visitor reaches one.
+     *
+     * <p>Without this override, {@code accept(this)} on a literal fell through to the
+     * inherited DL renderer, which writes the bare lexical form: no quotes, no language tag,
+     * no escaping. The new assertion forms render their value that way, so
+     * {@code DataPropertyAssertion(:p :bob "Robert")} was written {@code (bob,Robert):p} and
+     * read back as an <em>object</em> property assertion with an invented individual — and
+     * a value containing a space produced a document that would not load at all. Integers
+     * and booleans were the only kinds that survived, which is what a test using
+     * {@code getOWLLiteral(7)} could not see.
+     *
+     * <p>Every literal now goes through {@link #renderLiteral}, so a new call site cannot
+     * reintroduce this by forgetting to ask.
+     */
+    @Override
+    public void visit(OWLLiteral node) {
+        write(renderLiteral(node));
+    }
+
     private String renderLiteral(OWLLiteral lit) {
         if (lit.isInteger() || lit.isDouble() || lit.isFloat()) return lit.getLiteral();
         if (lit.isBoolean()) return lit.getLiteral();
@@ -633,14 +653,10 @@ public class DLESyntaxObjectRenderer extends DLSyntaxObjectRenderer {
         write("{");
         List<OWLLiteral> values = node.values().collect(java.util.stream.Collectors.toList());
         for (Iterator<OWLLiteral> it = values.iterator(); it.hasNext();) {
-            OWLLiteral lit = it.next();
-            if (lit.isInteger() || lit.isDouble() || lit.isFloat() || lit.isBoolean()) {
-                write(lit.getLiteral());
-            } else {
-                write("\"");
-                write(lit.getLiteral());
-                write("\"");
-            }
+            // Through renderLiteral, not by hand. Quoting it here dropped the language tag
+            // and escaped nothing, so `DataOneOf("say \"hi\"" "b"@fr)` was written
+            // `{"b","say "hi""}` — the tag gone and the document unreadable.
+            write(renderLiteral(it.next()));
             if (it.hasNext()) {
                 write(",");
             }
@@ -679,8 +695,12 @@ public class DLESyntaxObjectRenderer extends DLSyntaxObjectRenderer {
                 if (labelText.startsWith(subject + "(") && labelText.endsWith(")")) {
                     return;
                 }
-                // Suppress default labels whose value is the entity's own IRI local name.
-                if (axiom.getSubject() instanceof IRI) {
+                // Suppress a default label whose value is the entity's own local name,
+                // since DefaultLabelAdder puts it back on the way in. Only an untagged one:
+                // `rdfs:label :C "C"@en` is not the label that gets regenerated — that one
+                // comes back plain — so suppressing it silently changed the literal, and
+                // with it the axiom.
+                if (axiom.getSubject() instanceof IRI && !((OWLLiteral) value).hasLang()) {
                     String localName = ((IRI) axiom.getSubject()).getRemainder().orElse(null);
                     if (labelText.equals(localName)) {
                         return;

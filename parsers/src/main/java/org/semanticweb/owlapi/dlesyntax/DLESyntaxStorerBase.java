@@ -30,6 +30,10 @@ import org.semanticweb.owlapi.model.OWLAnnotationAssertionAxiom;
 import org.semanticweb.owlapi.model.OWLAxiom;
 import org.semanticweb.owlapi.model.OWLDeclarationAxiom;
 import org.semanticweb.owlapi.model.OWLEquivalentDataPropertiesAxiom;
+import org.semanticweb.owlapi.model.OWLDataPropertyDomainAxiom;
+import org.semanticweb.owlapi.model.OWLDisjointDataPropertiesAxiom;
+import org.semanticweb.owlapi.model.OWLFunctionalDataPropertyAxiom;
+import org.semanticweb.owlapi.model.OWLHasKeyAxiom;
 import org.semanticweb.owlapi.model.OWLEquivalentObjectPropertiesAxiom;
 import org.semanticweb.owlapi.model.OWLPropertyExpression;
 import org.semanticweb.owlapi.model.OWLDocumentFormat;
@@ -245,6 +249,11 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
     private boolean writeKindStatements(OWLEntity entity) {
         if (currentOntology == null) return false;
         IRI iri = entity.getIRI();
+        // Never about the built-in vocabulary. Its kind is fixed by OWL, so a statement
+        // says nothing — and one of these is the super of every punned property, which made
+        // the writer emit `owl:topObjectProperty ⊑ owl:topObjectProperty` once the rule
+        // about the super of a pun was added.
+        if (RESERVED_KINDS.contains(iri)) return false;
         boolean isClass = currentOntology.containsClassInSignature(iri);
         boolean isObjectProperty = currentOntology.containsObjectPropertyInSignature(iri);
         boolean isDataProperty = currentOntology.containsDataPropertyInSignature(iri);
@@ -317,7 +326,11 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
         // never rescue a data property: `a ⊑ b` between two data properties came back as
         // two object properties, silently, with no statement written because the name
         // looked like a role and the writer asked no further.
-        boolean caseCanRescue = readerCanGuessRole(name, iri) && !entity.isOWLDataProperty();
+        // ...and not where a punned sub-property has already put this name inside the
+        // reader's class barrier. The guess needs both sides of the pair to look like
+        // roles, and a pun has been explicitly marked a concept.
+        boolean caseCanRescue = readerCanGuessRole(name, iri) && !entity.isOWLDataProperty()
+            && !supersAPunnedProperty(entity);
         boolean propertyContradictsCase = isProperty && !caseCanRescue
             && ((startsUpperCase(name) && propertySubsumedByAPun(entity))
                 || !hasRoleEvidence(entity));
@@ -361,6 +374,15 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
         }
         return wrote;
     }
+
+    /** The built-in entities whose kind OWL already fixes; never worth a statement. */
+    private static final Set<IRI> RESERVED_KINDS = Set.of(
+        OWLRDFVocabulary.OWL_TOP_OBJECT_PROPERTY.getIRI(),
+        OWLRDFVocabulary.OWL_TOP_DATA_PROPERTY.getIRI(),
+        OWLRDFVocabulary.OWL_BOTTOM_OBJECT_PROPERTY.getIRI(),
+        OWLRDFVocabulary.OWL_BOTTOM_DATA_PROPERTY.getIRI(),
+        OWLRDFVocabulary.OWL_THING.getIRI(),
+        OWLRDFVocabulary.OWL_NOTHING.getIRI());
 
     /**
      * The name to write for a top property, or null if this document cannot spell it.
@@ -464,7 +486,7 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
      * or range, a characteristic, a chain, an inverse — puts the name somewhere only a role
      * can go.
      */
-    private static boolean pinsTheKind(OWLAxiom axiom) {
+    private static boolean pinsTheKind(OWLAxiom axiom, boolean dataProperty) {
         if (axiom instanceof OWLDeclarationAxiom
                 || axiom instanceof OWLSubObjectPropertyOfAxiom
                 || axiom instanceof OWLSubDataPropertyOfAxiom
@@ -477,6 +499,23 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
         }
         if (axiom instanceof OWLEquivalentDataPropertiesAxiom) {
             return false;   // a data property expression is always named
+        }
+        // A data property needs evidence of WHICH KIND of role it is, and three forms give
+        // none: `Func(p)`, `Disj(p, q)` and the domain idiom `∃p.⊤ ⊑ C` are written exactly
+        // the same way for both kinds. An object property can rely on them, because a role
+        // with no data evidence is what the reader guesses object from — but for a data
+        // property they say only "role", and the reader then guesses wrong.
+        //
+        // This is the same error as counting the case convention as a rescue for a data
+        // property: role evidence is not kind evidence. It cost a silent, stable
+        // DataProperty → ObjectProperty on any document whose only mention of a data
+        // property was one of these three.
+        if (dataProperty
+                && (axiom instanceof OWLFunctionalDataPropertyAxiom
+                    || axiom instanceof OWLDisjointDataPropertiesAxiom
+                    || axiom instanceof OWLDataPropertyDomainAxiom
+                    || axiom instanceof OWLHasKeyAxiom)) {
+            return false;
         }
         return true;
     }
@@ -513,6 +552,35 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
                 .filter(sup -> !sup.isAnonymous())
                 .map(sup -> sup.getNamedProperty().getIRI());
         return supers.anyMatch(currentOntology::containsClassInSignature);
+    }
+
+    /**
+     * Whether some sub-property of this one is punned.
+     *
+     * <p>The mirror of {@link #propertySubsumedByAPun}, and needed for the same reason from
+     * the other end. A punned name carries a concept statement, which puts it in the
+     * reader's class barrier; the barrier then propagates <em>up</em> the hierarchy, so the
+     * property above a pun is read as a concept and the sub-property axiom between them
+     * becomes a subsumption.
+     *
+     * <p>The case convention cannot rescue it: that guess needs both sides of the pair to
+     * look like roles, and a punned name has been explicitly marked as a concept. So the
+     * super has to say what it is, however ordinary its name looks.
+     */
+    private boolean supersAPunnedProperty(OWLEntity entity) {
+        OWLDataFactory df = currentOntology.getOWLOntologyManager().getOWLDataFactory();
+        IRI iri = entity.getIRI();
+        Stream<IRI> subs = entity.isOWLDataProperty()
+            ? currentOntology.dataSubPropertyAxiomsForSuperProperty(df.getOWLDataProperty(iri))
+                .map(OWLSubDataPropertyOfAxiom::getSubProperty)
+                .filter(sub -> !sub.isAnonymous())
+                .map(sub -> sub.asOWLDataProperty().getIRI())
+            : currentOntology
+                .objectSubPropertyAxiomsForSuperProperty(df.getOWLObjectProperty(iri))
+                .map(OWLSubObjectPropertyOfAxiom::getSubProperty)
+                .filter(sub -> !sub.isAnonymous())
+                .map(sub -> sub.getNamedProperty().getIRI());
+        return subs.anyMatch(currentOntology::containsClassInSignature);
     }
 
     /**
@@ -566,8 +634,9 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
     private boolean usedAsARole(OWLEntity entity) {
         Boolean known = roleEvidence.get(entity);
         if (known != null) return known;
+        boolean data = entity.isOWLDataProperty();
         boolean answer = currentOntology.referencingAxioms(entity)
-            .anyMatch(DLESyntaxStorerBase::pinsTheKind);
+            .anyMatch(ax -> pinsTheKind(ax, data));
         roleEvidence.put(entity, answer);
         return answer;
     }

@@ -287,20 +287,53 @@ class KindStatementFidelityTest {
      * namespace.
      */
     @Test
-    void aLowerCaseDatatypeIsNotReadAsARole() throws Exception {
-        for (String datatype : new String[] {"owl:real", "owl:rational"}) {
-            OWLOntology o = parse("@prefix : <http://example.org/t#>\nmytype ≡ " + datatype + "\n");
-            IRI mytype = IRI.create("http://example.org/t#mytype");
-            assertFalse(o.containsObjectPropertyInSignature(mytype),
-                () -> datatype + " must not make mytype a role: " + o.getLogicalAxioms());
+    void aLowerCaseDatatypeIsRecognisedAsADatatype() {
+        // Refused as a class expression, exactly as xsd:string is — which is the positive
+        // statement the old version of this test could not make. It asserted only that
+        // `mytype` did not become a *role*, and passed while `owl:real` was being read as a
+        // CLASS: the third wrong answer. A datatype is neither, and each of these is now
+        // decided on its resolved IRI rather than on the `xsd:` prefix text.
+        for (String datatype : new String[] {
+                "xsd:string", "owl:real", "owl:rational",
+                "rdf:langString", "rdf:dirLangString", "rdfs:Literal"}) {
+            Throwable t = assertThrows(Throwable.class,
+                () -> parse("@prefix : <http://example.org/t#>\nmytype ≡ " + datatype + "\n"),
+                () -> datatype + " is a datatype and cannot be a class expression");
+            assertTrue(String.valueOf(t.getMessage()).contains("datatype " + datatype),
+                () -> "the diagnostic must name it: " + t.getMessage());
         }
+    }
 
-        OWLOntology aliased = parse("@prefix xs2: <http://www.w3.org/2001/XMLSchema#>\n"
-            + "@prefix : <http://example.org/t#>\nmytype ≡ xs2:string\n");
-        assertFalse(aliased.containsObjectPropertyInSignature(
-                IRI.create("http://example.org/t#mytype")),
-            () -> "the XSD namespace is the XSD namespace under any prefix: "
-                + aliased.getLogicalAxioms());
+    /** The XSD namespace is the XSD namespace whatever prefix reaches it. */
+    @Test
+    void theXsdNamespaceIsRecognisedUnderAnyPrefix() throws Exception {
+        OWLOntology o = parse("@prefix xs2: <http://www.w3.org/2001/XMLSchema#>\n"
+            + "@prefix : <http://example.org/t#>\nPerson ⊑ ∃name.xs2:string\n");
+        assertTrue(o.containsDataPropertyInSignature(IRI.create("http://example.org/t#name")),
+            () -> "a datatype filler makes the property a data property: "
+                + o.getLogicalAxioms());
+        assertFalse(o.containsObjectPropertyInSignature(
+                IRI.create("http://example.org/t#name")),
+            () -> o.getLogicalAxioms().toString());
+    }
+
+    /**
+     * A document that rebinds {@code xsd:} elsewhere must not have its own names captured.
+     *
+     * <p>Nothing in that namespace is a datatype, so the exclusion must not apply and the
+     * ordinary case convention decides — two lower-case local parts, therefore roles. The
+     * point is that the test is on the resolved IRI: a text match on the `xsd:` prefix
+     * would have called these datatypes.
+     */
+    @Test
+    void aReboundXsdPrefixDoesNotMakeNamesDatatypes() throws Exception {
+        OWLOntology o = parse("@prefix xsd: <http://example.org/dt/>\n"
+            + "@prefix : <http://example.org/t#>\nmytype ≡ xsd:notAType\n");
+        IRI notAType = IRI.create("http://example.org/dt/notAType");
+        assertFalse(o.containsDatatypeInSignature(notAType),
+            () -> "not a datatype: " + o.getLogicalAxioms());
+        assertTrue(o.containsObjectPropertyInSignature(notAType),
+            () -> "the case convention applies instead: " + o.getLogicalAxioms());
     }
 
     /** The control: a lower-case name that is not a datatype still reads as a role. */
@@ -309,6 +342,89 @@ class KindStatementFidelityTest {
         OWLOntology o = parse("@prefix : <http://example.org/t#>\nmytype ≡ otherthing\n");
         assertTrue(o.containsObjectPropertyInSignature(IRI.create("http://example.org/t#mytype")),
             () -> "the convention must still apply: " + o.getLogicalAxioms());
+    }
+
+    /**
+     * Three role-shaped forms are not evidence of <em>which</em> kind of role.
+     *
+     * <p>{@code Func(p)}, {@code Disj(p, q)} and the domain idiom {@code ∃p.⊤ ⊑ C} are
+     * written identically for object and data properties. An object property can rely on
+     * them, because a role with no data evidence is what the reader guesses object from —
+     * but for a data property they say only "role", and the reader then guesses wrong. Each
+     * of these silently and stably turned a data property into an object property.
+     */
+    @Test
+    void aDataPropertyIsStatedDespiteRoleShapedEvidence() throws Exception {
+        for (String extra : new String[] {"Func(p)", "Disj(p, q)", "∃p.⊤ ⊑ C"}) {
+            OWLOntologyManager m = OWLManager.createOWLOntologyManager();
+            OWLOntology o = m.createOntology();
+            OWLDataFactory df = m.getOWLDataFactory();
+            String ns = "http://example.org/d#";
+            OWLDataProperty p = df.getOWLDataProperty(IRI.create(ns + "p"));
+            m.addAxiom(o, df.getOWLDeclarationAxiom(p));
+            if (extra.startsWith("Func")) {
+                m.addAxiom(o, df.getOWLFunctionalDataPropertyAxiom(p));
+            } else if (extra.startsWith("Disj")) {
+                m.addAxiom(o, df.getOWLDisjointDataPropertiesAxiom(p,
+                    df.getOWLDataProperty(IRI.create(ns + "q"))));
+            } else {
+                m.addAxiom(o, df.getOWLDataPropertyDomainAxiom(p,
+                    df.getOWLClass(IRI.create(ns + "C"))));
+            }
+
+            String written = write(o, ns);
+            OWLOntology back = parse(written);
+            assertTrue(back.containsDataPropertyInSignature(p.getIRI()),
+                () -> "p must stay a data property with " + extra + ":\n" + written);
+            assertFalse(back.containsObjectPropertyInSignature(p.getIRI()),
+                () -> "and must not become an object property with " + extra + ":\n" + written);
+        }
+    }
+
+    /**
+     * The property above a pun is told what it is.
+     *
+     * <p>A punned name carries a concept statement, which puts it in the reader's class
+     * barrier — and that barrier propagates <em>up</em>, so the property above the pun was
+     * read as a concept and the sub-property axiom between them became a subsumption. The
+     * case convention cannot rescue it: that guess needs both sides of the pair to look
+     * like roles, and a pun has been explicitly marked a concept.
+     */
+    @Test
+    void thePropertyAboveAPunIsStated() throws Exception {
+        OWLOntologyManager m = OWLManager.createOWLOntologyManager();
+        OWLOntology o = m.createOntology();
+        OWLDataFactory df = m.getOWLDataFactory();
+        String ns = "http://example.org/d#";
+        IRI pun = IRI.create(ns + "P");
+        OWLObjectProperty r = df.getOWLObjectProperty(IRI.create(ns + "r"));
+        m.addAxiom(o, df.getOWLDeclarationAxiom(df.getOWLClass(pun)));
+        m.addAxiom(o, df.getOWLDeclarationAxiom(df.getOWLObjectProperty(pun)));
+        m.addAxiom(o, df.getOWLSubObjectPropertyOfAxiom(df.getOWLObjectProperty(pun), r));
+
+        String written = write(o, ns);
+        assertTrue(statementsOnly(written).contains("r ⊑ owl:topObjectProperty"),
+            () -> "the super needs its kind stated:\n" + written);
+        assertTrue(parse(written).getAxioms(AxiomType.SUB_OBJECT_PROPERTY).stream()
+                .anyMatch(ax -> ax.getSuperProperty().equals(r)),
+            () -> "so the sub-property axiom survives:\n" + written);
+    }
+
+    /** The built-in vocabulary never gets a kind statement about itself. */
+    @Test
+    void theBuiltInVocabularyIsNeverStated() throws Exception {
+        OWLOntologyManager m = OWLManager.createOWLOntologyManager();
+        OWLOntology o = m.createOntology();
+        OWLDataFactory df = m.getOWLDataFactory();
+        String ns = "http://example.org/d#";
+        IRI pun = IRI.create(ns + "Attr");
+        m.addAxiom(o, df.getOWLDeclarationAxiom(df.getOWLClass(pun)));
+        m.addAxiom(o, df.getOWLSubObjectPropertyOfAxiom(
+            df.getOWLObjectProperty(pun), df.getOWLTopObjectProperty()));
+
+        String body = statementsOnly(write(o, ns));
+        assertFalse(body.contains("owl:topObjectProperty ⊑"),
+            () -> "OWL already fixes its kind:\n" + body);
     }
 
     // ── Statements that cannot be spelled, or must not be written ───────────

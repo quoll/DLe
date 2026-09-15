@@ -340,4 +340,86 @@ class AssertionSyntaxTest {
         assertEquals(1, o.getAxioms(AxiomType.FUNCTIONAL_OBJECT_PROPERTY).size(),
             () -> o.getLogicalAxioms().toString());
     }
+
+    // ── Validation the new forms used to route around ───────────────────────
+
+    /**
+     * The separator must be a bare colon.
+     *
+     * <p>The grammar spells it {@code PNAME_NS}, which is {@code NameChar* ':'} and so also
+     * matches {@code foo:}. Nothing checked the label was empty, so every form accepted one
+     * and silently discarded it.
+     */
+    @Test
+    void anythingOtherThanABareColonIsRefused() {
+        for (String statement : new String[] {
+                "a foo: C", "(a,b) foo: r", "(a,7) zz: d", "¬(a,b) zz: r"}) {
+            String message = refusal(PREFIX + statement + "\n");
+            assertTrue(message.contains("is not the separator of an assertion"),
+                () -> statement + " — got: " + message);
+        }
+    }
+
+    /**
+     * A datatype cannot be the class of an assertion, in any spelling.
+     *
+     * <p>The spaced form refused this through the ordinary class coercion; the compact and
+     * re-split paths built the class directly and so accepted it — and then wrote the spaced
+     * spelling back out, producing a document this very reader rejects.
+     */
+    @Test
+    void anIndividualCannotBeAssertedToBeADatatype() {
+        for (String statement : new String[] {"bob:xsd:string", "bob : xsd:string"}) {
+            String message = refusal(PREFIX + statement + "\n");
+            assertTrue(message.contains("datatype"),
+                () -> statement + " — got: " + message);
+        }
+    }
+
+    /**
+     * The class IRI comes from the class side's name, not its raw text.
+     *
+     * <p>The reading-B gate uses {@code loneName}, which sees through parentheses, but the
+     * IRI was built from {@code getText()} — so {@code ex:a:(C)} minted an IRI with a
+     * parenthesis in it.
+     */
+    @Test
+    void parenthesesAroundTheClassDoNotReachTheIri() throws Exception {
+        OWLOntology o = parse("@prefix a: <http://example.org/A#>\n" + PREFIX + "ex:a:(C)\n");
+        assertTrue(o.containsClassInSignature(IRI.create("http://example.org/A#C")),
+            () -> "the class is a:C — " + o.getLogicalAxioms());
+        assertTrue(o.getAxioms(AxiomType.DECLARATION).stream()
+                .noneMatch(ax -> ax.getEntity().getIRI().toString().contains("(")),
+            () -> "and no IRI may contain a parenthesis: " + o.getAxioms(AxiomType.DECLARATION));
+    }
+
+    /**
+     * A repeated name in a distinctness chain is refused.
+     *
+     * <p>{@code a ≠ b ≠ a} contains the unsatisfiable pair {@code a ≠ a}, and the set
+     * silently collapsed to {@code DifferentIndividuals(:a :b)} — dropping exactly that.
+     * {@code =} is idempotent, so a repeat there is harmless and stays allowed.
+     */
+    @Test
+    void aRepeatedNameInADistinctnessChainIsRefused() throws Exception {
+        String message = refusal(PREFIX + "a ≠ b ≠ a\n");
+        assertTrue(message.contains("named twice"), () -> message);
+        assertTrue(message.contains("distinct from itself"), () -> message);
+
+        OWLOntology same = parse(PREFIX + "a = b = a\n");
+        assertEquals(1, same.getAxioms(AxiomType.SAME_INDIVIDUAL).size(),
+            () -> "identity is idempotent, so this is fine: " + same.getLogicalAxioms());
+    }
+
+    /**
+     * A repeated property in a disjointness statement is refused.
+     *
+     * <p>{@code Disj(p, p)} built a unary axiom — a profile violation — which the writer
+     * then emitted as {@code Disj(p)}, a form the grammar does not accept.
+     */
+    @Test
+    void aRepeatedPropertyInDisjointnessIsRefused() {
+        String message = refusal(PREFIX + "A ⊑ ∃p.B\nDisj(p, p)\n");
+        assertTrue(message.contains("named twice"), () -> message);
+    }
 }

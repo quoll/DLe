@@ -236,4 +236,33 @@ class CommentPreservationTest {
         assertTrue(bodyOf(written).contains("# a note with nowhere to live"),
             () -> "it must not be discarded silently:\n" + written);
     }
+
+    /**
+     * A comment above an assertion belongs to the entity whose block it is in.
+     *
+     * <p>A comment attaches to the first name of the statement below it, and an assertion's
+     * first name is not what the statement is about: {@code (bob,ann):knows} opens with an
+     * individual. The writer puts a comment at the head of the block of the entity it
+     * belongs to — {@code knows} for that line — so the comment changed subject on every
+     * round trip, from the role to an individual.
+     */
+    @Test
+    void aCommentAboveAnAssertionKeepsItsSubject() throws Exception {
+        String first = rewrite(PREFIX + "# about the knows role\n(bob,ann):knows\n");
+        assertTrue(bodyOf(first).contains("# about the knows role"),
+            () -> "written back:\n" + first);
+        assertEquals(bodyOf(first), bodyOf(rewrite(first)),
+            () -> "and stable, which it is not if the subject moves:\n" + first);
+
+        OWLOntologyManager manager = OWLManager.createOWLOntologyManager();
+        OWLOntology o = manager.createOntology();
+        new DLEOntologyParser().parse(new StringDocumentSource(first), o,
+            manager.getOntologyLoaderConfiguration());
+        assertTrue(o.axioms(org.semanticweb.owlapi.model.AxiomType.ANNOTATION_ASSERTION)
+                .anyMatch(ax -> DLESyntaxAxiomVisitor.DLE_COMMENT_IRI
+                        .equals(ax.getProperty().getIRI())
+                    && ax.getSubject().toString().contains("knows")),
+            () -> "the subject is the role, not an individual: "
+                + o.getAxioms(org.semanticweb.owlapi.model.AxiomType.ANNOTATION_ASSERTION));
+    }
 }

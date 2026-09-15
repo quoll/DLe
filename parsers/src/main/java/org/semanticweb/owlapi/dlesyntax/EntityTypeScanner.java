@@ -309,6 +309,24 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
     }
 
 
+    /**
+     * Classifies a name as an object property and records that as evidence.
+     *
+     * <p>For the positions that are object-only by construction — a chain's super-property,
+     * and either side of an inverse. They used to call {@code objectPropertyNames.add}
+     * directly, so {@code recordKindEvidence} was never reached and the conflict check could
+     * not see them.
+     */
+    private void recordObjectOnly(String name, org.antlr.v4.runtime.ParserRuleContext ctx) {
+        objectPropertyNames.add(name);
+        recordKindEvidence(name, false, ctx.start.getLine());
+    }
+
+    private void recordObjectOnly(DLESyntaxParser.NameContext nameCtx,
+                                  org.antlr.v4.runtime.ParserRuleContext ctx) {
+        recordObjectOnly(nameCtx.getText(), ctx);
+    }
+
     /** Notes that structure forced this name to one kind, keeping the first line for each. */
     private void recordKindEvidence(String name, boolean isData, int line) {
         (isData ? dataEvidence : objectEvidence).putIfAbsent(name, line);
@@ -356,13 +374,16 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
         for (DLESyntaxParser.PropertyExprContext propCtx : ctx.chainExpr().propertyExpr()) {
             classifyProp(propCtx, false, true);
         }
-        objectPropertyNames.add(ctx.name().getText());
+        // The super of a chain is object-only, exactly as the members are, so it is
+        // evidence too. It used not to be recorded, which left the conflict check blind: a
+        // document with `(a,"5"):d` and `p ∘ q ⊑ d` declared `d` as both kinds in silence.
+        recordObjectOnly(ctx.name(), ctx);
         return visitChildren(ctx);
     }
 
     @Override
     public Void visitPropertyChainEquivAxiom(DLESyntaxParser.PropertyChainEquivAxiomContext ctx) {
-        objectPropertyNames.add(ctx.name().getText());
+        recordObjectOnly(ctx.name(), ctx);
         for (DLESyntaxParser.PropertyExprContext propCtx : ctx.chainExpr().propertyExpr()) {
             classifyProp(propCtx, false, true);
         }
@@ -384,8 +405,11 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
 
     @Override
     public Void visitInversePropertyAtom(DLESyntaxParser.InversePropertyAtomContext ctx) {
-        // The base name is always an object property
-        objectPropertyNames.add(PropertyExprs.coreNameText(ctx.propertyExpr()));
+        // The base name is always an object property — a data property cannot have an
+        // inverse, since that would put a literal in the subject position. Recording it as
+        // evidence is what makes a contradiction reportable: without it, `(a,"5"):d` beside
+        // `q ≡ d⁻` produced an ontology declaring `d` as both kinds, in silence.
+        recordObjectOnly(PropertyExprs.coreNameText(ctx.propertyExpr()), ctx);
         return visitChildren(ctx);
     }
 
@@ -395,12 +419,14 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
     public Void visitEquivAxiom(DLESyntaxParser.EquivAxiomContext ctx) {
         String lhs = singleBareName(ctx.classExpr(0));
         String rhs = singleBareName(ctx.classExpr(1));
-        // p ≡ q⁻  (or q⁻ ≡ p) — both sides are object properties
+        // p ≡ q⁻  (or q⁻ ≡ p) — both sides are object properties. An inverse is object-only,
+        // so this is evidence; recording it is what lets a contradiction be reported rather
+        // than resolved into a dual-kind ontology.
         if (lhs != null && singleInverseAtom(ctx.classExpr(1)) != null) {
-            objectPropertyNames.add(lhs);
+            recordObjectOnly(lhs, ctx);
         }
         if (rhs != null && singleInverseAtom(ctx.classExpr(0)) != null) {
-            objectPropertyNames.add(rhs);
+            recordObjectOnly(rhs, ctx);
         }
         // p ≡ q (both lower-case local parts) — treat as object properties.
         if (lhs != null && rhs != null
@@ -473,9 +499,10 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
                 objectPropertyNames.add(rhs);
             }
         }
-        // A ⊑ B⁻ — lhs must be an object property (inverse forces the interpretation)
+        // A ⊑ B⁻ — lhs must be an object property (inverse forces the interpretation),
+        // which makes it evidence.
         if (lhs != null && singleInverseAtom(ctx.classExpr(1)) != null) {
-            objectPropertyNames.add(lhs);
+            recordObjectOnly(lhs, ctx);
         }
         // A ⊑ (complex) → A is definitively a class; (complex) ⊑ B → B is a class.
         // Exclude inverse-atom RHS/LHS since those are property expressions.
@@ -620,23 +647,9 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
 
     /** The XSD namespace, whose members are datatypes however their names are spelled. */
     private static final String XSD_NS = "http://www.w3.org/2001/XMLSchema#";
+    private static final String RDF_NS = "http://www.w3.org/1999/02/22-rdf-syntax-ns#";
+    private static final String RDFS_NS = "http://www.w3.org/2000/01/rdf-schema#";
 
-    /**
-     * The four datatypes outside {@code xsd:} whose names begin with a lower-case letter.
-     *
-     * <p>Every other datatype and class in the vocabularies DLe seeds is capitalised, so the
-     * convention classifies them correctly on its own. These do not follow it, and there is
-     * no more of them: {@code owl:Thing}, {@code owl:Nothing}, {@code rdfs:Literal},
-     * {@code rdf:PlainLiteral}, {@code rdf:XMLLiteral} and the SKOS and Dublin Core classes
-     * are all upper case, and the lower-case names in those namespaces — {@code rdfs:label},
-     * {@code owl:sameAs}, {@code owl:topObjectProperty} — really are properties, which is
-     * what the convention would call them anyway.
-     */
-    private static final Set<String> LOWER_CASE_DATATYPES = Set.of(
-        "http://www.w3.org/1999/02/22-rdf-syntax-ns#langString",
-        "http://www.w3.org/1999/02/22-rdf-syntax-ns#dirLangString",
-        OWL_NS + "rational",
-        OWL_NS + "real");
 
     /**
      * Whether the case convention offers this name as a role.
@@ -656,10 +669,7 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
      * disagreeing is what the kind statements are for, so they share this one method.
      */
     static boolean caseSuggestsRole(String name, @Nullable String resolvedIri) {
-        if (resolvedIri != null
-                && (resolvedIri.startsWith(XSD_NS) || LOWER_CASE_DATATYPES.contains(resolvedIri))) {
-            return false;
-        }
+        if (isDatatypeIri(resolvedIri)) return false;
         int colon = name.lastIndexOf(':');
         String local = colon < 0 ? name : name.substring(colon + 1);
         return !local.isEmpty() && Character.isLowerCase(local.charAt(0));
@@ -883,25 +893,40 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
         return false;
     }
 
+    /** The datatypes outside the XSD namespace, by IRI. */
+    private static final Set<String> NON_XSD_DATATYPES = Set.of(
+        RDF_NS + "PlainLiteral", RDF_NS + "langString", RDF_NS + "dirLangString",
+        RDF_NS + "HTML", RDF_NS + "XMLLiteral", RDF_NS + "JSON",
+        RDFS_NS + "Literal",
+        OWL_NS + "rational", OWL_NS + "real");
+
     /**
-     * Returns true if {@code name} (a CURIE or bare name as written in the DLE source)
-     * denotes an OWL datatype.  All {@code xsd:} names are datatypes; from the RDF/RDFS
-     * namespaces only the specific RDF 1.2 datatype names qualify.
+     * Whether a resolved IRI names an OWL datatype.
+     *
+     * <p>The single answer to that question. There used to be two, and they disagreed in
+     * both directions. This one is keyed on the resolved IRI; the other was keyed on the
+     * text — {@code name.startsWith("xsd:")} plus a switch on seven CURIE spellings — so:
+     *
+     * <ul>
+     * <li>{@code owl:real} and {@code owl:rational} were excluded from the case convention
+     *     as datatypes but were not recognised <em>as</em> datatypes, so they came out
+     *     classes. A valid {@code DataPropertyRange(:ratio owl:real)} was written
+     *     {@code ⊤ ⊑ ∀ratio.owl:real} by this very tool and read back as an
+     *     ObjectPropertyRange — a round trip DLe itself broke.
+     * <li>The XSD namespace under any other prefix went unrecognised, putting a datatype
+     *     IRI in a class position, which OWL 2 DL forbids.
+     * <li>A document rebinding {@code xsd:} elsewhere had its own names treated as
+     *     datatypes.
+     * </ul>
      */
-    static boolean isDataTypeName(String name) {
-        if (name.startsWith("xsd:")) return true;
-        switch (name) {
-            case "rdf:PlainLiteral":
-            case "rdf:langString":
-            case "rdf:dirLangString":
-            case "rdf:HTML":
-            case "rdf:XMLLiteral":
-            case "rdf:JSON":
-            case "rdfs:Literal":
-                return true;
-            default:
-                return false;
-        }
+    static boolean isDatatypeIri(@Nullable String resolvedIri) {
+        return resolvedIri != null
+            && (resolvedIri.startsWith(XSD_NS) || NON_XSD_DATATYPES.contains(resolvedIri));
+    }
+
+    /** Whether a name, as written in the source, denotes a datatype in this document. */
+    boolean isDataTypeName(String name) {
+        return isDatatypeIri(resolve(name));
     }
 
     /**
