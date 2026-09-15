@@ -261,4 +261,83 @@ class AssertionSyntaxTest {
         assertTrue(body.contains("bob : Animal"), () -> body);
         assertFalse(body.contains("bob:Animal"), () -> "never the ambiguous spelling:\n" + body);
     }
+
+    // ── Identity and distinctness ───────────────────────────────────────────
+
+    /**
+     * {@code a = b} and {@code a ≠ b}, both n-ary.
+     *
+     * <p>`=` reuses the token that exists for the cardinality operator in {@code =n r.C},
+     * because two lexer rules matching `=` would be a conflict and the first would silently
+     * win. There is no parser ambiguity: a cardinality begins with the operator and this
+     * begins with a name. `≠` needed a token of its own — nothing used U+2260 before.
+     */
+    @Test
+    void identityAndDistinctnessAreRead() throws Exception {
+        OWLOntology same = parse(PREFIX + "bob = rex\n");
+        assertEquals(1, same.getAxioms(AxiomType.SAME_INDIVIDUAL).size(),
+            () -> same.getLogicalAxioms().toString());
+
+        OWLOntology different = parse(PREFIX + "bob ≠ rex\n");
+        assertEquals(1, different.getAxioms(AxiomType.DIFFERENT_INDIVIDUALS).size(),
+            () -> different.getLogicalAxioms().toString());
+    }
+
+    /** Both are n-ary in OWL, so the operator chains. */
+    @Test
+    void theOperatorsChain() throws Exception {
+        OWLOntology o = parse(PREFIX + "bob = rex = fido\nzed ≠ ada ≠ eve\n");
+        assertEquals(3, o.getAxioms(AxiomType.SAME_INDIVIDUAL).iterator().next()
+            .getIndividuals().size(), () -> o.getLogicalAxioms().toString());
+        assertEquals(3, o.getAxioms(AxiomType.DIFFERENT_INDIVIDUALS).iterator().next()
+            .getIndividuals().size(), () -> o.getLogicalAxioms().toString());
+    }
+
+    /**
+     * One individual named twice is refused, and the two statements fail differently.
+     *
+     * <p>OWL API requires at least two members, so a collapsed set has to be caught rather
+     * than handed over. {@code a = a} states nothing; {@code a ≠ a} states something no
+     * interpretation can satisfy, and saying "the same as itself" for that would be wrong.
+     */
+    @Test
+    void oneIndividualNamedTwiceIsRefusedAndDescribedCorrectly() {
+        assertTrue(refusal(PREFIX + "bob = bob\n").contains("same as itself"),
+            () -> refusal(PREFIX + "bob = bob\n"));
+        String distinct = refusal(PREFIX + "bob ≠ bob\n");
+        assertTrue(distinct.contains("distinct from itself"), () -> distinct);
+        assertFalse(distinct.contains("same as itself"),
+            () -> "a contradiction is not a tautology: " + distinct);
+    }
+
+    /** Both forms round-trip, including the chained spelling. */
+    @Test
+    void identityRoundTrips() throws Exception {
+        OWLOntologyManager m = OWLManager.createOWLOntologyManager();
+        OWLOntology o = m.createOntology();
+        OWLDataFactory df = m.getOWLDataFactory();
+        m.addAxiom(o, df.getOWLSameIndividualAxiom(
+            df.getOWLNamedIndividual(iri("bob")), df.getOWLNamedIndividual(iri("rex")),
+            df.getOWLNamedIndividual(iri("fido"))));
+        m.addAxiom(o, df.getOWLDifferentIndividualsAxiom(
+            df.getOWLNamedIndividual(iri("zed")), df.getOWLNamedIndividual(iri("ada"))));
+
+        String written = write(o);
+        OWLOntology back = assertDoesNotThrow(() -> parse(written),
+            () -> "the writer must not produce something it cannot read:\n" + written);
+        assertEquals(o.getLogicalAxioms(), back.getLogicalAxioms(),
+            () -> "and nothing may change:\n" + written);
+        assertEquals(statementsOnly(written), statementsOnly(write(back)),
+            () -> "idempotent from the first pass:\n" + written);
+    }
+
+    /** The cardinality operator still works, sharing the `=` token. */
+    @Test
+    void theCardinalityOperatorIsUnaffected() throws Exception {
+        OWLOntology o = parse(PREFIX + "A ⊑ =2 hasPet.Cat\n=1 hasPet.⊤\n");
+        assertTrue(o.getLogicalAxioms().stream().anyMatch(ax -> ax.toString().contains("Exact")),
+            () -> o.getLogicalAxioms().toString());
+        assertEquals(1, o.getAxioms(AxiomType.FUNCTIONAL_OBJECT_PROPERTY).size(),
+            () -> o.getLogicalAxioms().toString());
+    }
 }

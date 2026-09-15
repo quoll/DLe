@@ -282,6 +282,22 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
         return null;
     }
 
+    // Identity and distinctness name individuals only. An individual is neither a class
+    // nor a role, so there is nothing to classify and nothing to propagate — and visiting
+    // the children would be worse than useless, since a name in one of these positions
+    // must not be drawn into the class or role hierarchy by some later guess.
+
+    @Override
+    public Void visitSameIndividualAxiom(DLESyntaxParser.SameIndividualAxiomContext ctx) {
+        return null;
+    }
+
+    @Override
+    public Void visitDifferentIndividualsAxiom(
+            DLESyntaxParser.DifferentIndividualsAxiomContext ctx) {
+        return null;
+    }
+
     @Override
     public Void visitClassAssertionAxiom(DLESyntaxParser.ClassAssertionAxiomContext ctx) {
         // Whichever way the visitor resolves the split, the class side is a class either

@@ -107,9 +107,22 @@ axiom
     // as a single PREFIXED_NAME, and whether that is an assertion or a prefixed name is
     // decided after lexing, from the prefixes the document declares. See
     // DLESyntaxAxiomVisitor#classAssertionOf.
+    | name EXACT     name (EXACT     name)*         # SameIndividualAxiom
+    | name NOT_EQUAL name (NOT_EQUAL name)*         # DifferentIndividualsAxiom
     | name PNAME_NS classExpr                       # ClassAssertionAxiom
     | PREFIXED_NAME                                 # PrefixedClassAssertionAxiom
     ;
+
+// a = b   and   a ≠ b   — identity and distinctness of individuals. Both are n-ary in OWL
+// and are written operator-separated, so `a = b = c` names one individual three ways and
+// `a ≠ b ≠ c` says all three are pairwise distinct.
+//
+// `=` is spelled with the EXACT token, which reads oddly here: that token exists for the
+// cardinality operator in `=n r.C`. It is reused rather than duplicated because two lexer
+// rules matching `=` would be a conflict, and the first would silently win. There is no
+// parser ambiguity — a cardinality begins with the operator and this begins with a name.
+//
+// `≠` needed a token of its own; nothing in the language used it before.
 
 // A property chain: q ∘ r⁻ (∘ is U+2218 RING OPERATOR).
 chainExpr
@@ -279,7 +292,8 @@ INTERSECTION : '\u2293' | '\u2A05' ;   // ⊓ or ⨅ (N-ARY SQUARE INTERSECTION)
 COMPLEMENT   : '\u00AC' ;   // ¬
 MIN          : '\u2265' ;   // ≥  (at least n)
 MAX          : '\u2264' ;   // ≤  (at most n)
-EXACT        : '='      ;   //    (exactly n)
+EXACT        : '='      ;   //    (exactly n), and identity of individuals: a = b
+NOT_EQUAL    : '\u2260' ;   // ≠  distinctness of individuals: a ≠ b
 INVERSE      : '\u207B' ;   // ⁻  (superscript minus, inverse property)
 DOT          : '.'      ;   // restriction filler separator
 // ≝ followed by the rest of the line — captured as a single token so the FOL

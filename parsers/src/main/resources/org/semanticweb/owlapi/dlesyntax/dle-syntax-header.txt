@@ -65,6 +65,10 @@
 # - The colon in a class assertion is a separator, not part of a name. `a:C` without the
 #   space is the same sequence of characters as a prefixed name, so it is read as an
 #   assertion only when `a:` is not a declared prefix. Written output always spaces it.
+# - a = b          a and b are the same individual
+# - a ≠ b          a and b are different individuals
+# - Both chain, since OWL takes any number: a = b = c, and a ≠ b ≠ c means all three
+#   are pairwise distinct
 # - A digit-initial property is spelled with its own colon, so the statement carries two:
 #   (a,b)::116676008. A digit-initial class likewise needs the space: a : :116676008
 #

@@ -1288,6 +1288,43 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
         return null;
     }
 
+    @Override
+    public OWLObject visitSameIndividualAxiom(DLESyntaxParser.SameIndividualAxiomContext ctx) {
+        axioms.add(df.getOWLSameIndividualAxiom(individuals(ctx.name(), true, ctx)));
+        return null;
+    }
+
+    @Override
+    public OWLObject visitDifferentIndividualsAxiom(
+            DLESyntaxParser.DifferentIndividualsAxiomContext ctx) {
+        axioms.add(df.getOWLDifferentIndividualsAxiom(
+            individuals(ctx.name(), false, ctx)));
+        return null;
+    }
+
+    /** Resolves the names of an identity or distinctness statement to named individuals. */
+    private Set<OWLIndividual> individuals(List<DLESyntaxParser.NameContext> names,
+                                           boolean same,
+                                           org.antlr.v4.runtime.ParserRuleContext ctx) {
+        // A LinkedHashSet, so a repeated name collapses without disturbing the order of the
+        // rest. Collapsing to one member has to be caught: OWL API requires at least two,
+        // and the two statements fail differently, so they are described differently.
+        // `a = a` states nothing; `a ≠ a` states something that cannot hold.
+        Set<OWLIndividual> result = new java.util.LinkedHashSet<>();
+        for (DLESyntaxParser.NameContext name : names) {
+            result.add(df.getOWLNamedIndividual(expandName(name)));
+        }
+        if (result.size() < 2) {
+            throw new DLESemanticException(same
+                ? "this says an individual is the same as itself, which states nothing."
+                    + " Name two individuals, or remove the statement."
+                : "this says an individual is distinct from itself, which nothing can"
+                    + " satisfy. Name two individuals, or remove the statement.",
+                ctx.start.getLine(), ctx.start.getCharPositionInLine());
+        }
+        return result;
+    }
+
     /** Builds the assertion with a class expression on the right, as the textbook allows. */
     private void assertClass(String individual, DLESyntaxParser.ClassExprContext cls,
                              org.antlr.v4.runtime.ParserRuleContext ctx) {
