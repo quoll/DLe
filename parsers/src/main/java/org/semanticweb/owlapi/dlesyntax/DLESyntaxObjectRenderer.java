@@ -27,6 +27,12 @@ import org.semanticweb.owlapi.model.OWLSubObjectPropertyOfAxiom;
 import org.semanticweb.owlapi.model.OWLSubPropertyChainOfAxiom;
 import org.semanticweb.owlapi.model.OWLTransitiveObjectPropertyAxiom;
 import org.semanticweb.owlapi.model.IRI;
+import org.semanticweb.owlapi.model.OWLClassAssertionAxiom;
+import org.semanticweb.owlapi.model.OWLDataPropertyAssertionAxiom;
+import org.semanticweb.owlapi.model.OWLNegativeDataPropertyAssertionAxiom;
+import org.semanticweb.owlapi.model.OWLNegativeObjectPropertyAssertionAxiom;
+import org.semanticweb.owlapi.model.OWLObject;
+import org.semanticweb.owlapi.model.OWLObjectPropertyAssertionAxiom;
 import org.semanticweb.owlapi.vocab.OWLFacet;
 import org.semanticweb.owlapi.model.OWLAnnotation;
 import org.semanticweb.owlapi.model.OWLHasKeyAxiom;
@@ -333,6 +339,62 @@ public class DLESyntaxObjectRenderer extends DLSyntaxObjectRenderer {
         axiom.getProperty().accept(this);
         write(".");
         writeNested(axiom.getRange());
+    }
+
+    // ── Assertions about individuals ────────────────────────────────────────
+    //
+    // The textbook spelling, from Introduction to Description Logic: `a:C`, `(a,b):r`,
+    // `¬(a,b):r`, and the data forms. The inherited renderer writes the functional-ish
+    // `C(a)` and `r(a,b)`, which DLe's grammar cannot read at all — `Animal(bob)` is the
+    // head of a predicate definition and fails asking for `≝`.
+    //
+    // The class assertion is always written spaced. `a:C` is the same sequence of
+    // characters as a prefixed name, and the reader resolves it from the declared
+    // prefixes — but it can only do so when the individual's name is not itself a declared
+    // prefix. Writing the space means the output never depends on that.
+    //
+    // Writing these also removes the doubled negation the inherited renderer produces:
+    // its visit method writes ¬ and then calls writePropertyAssertion, which tests the
+    // axiom type and writes ¬ again. Two signs for one negation reads as no negation at
+    // all, so every negative assertion it emitted meant the opposite of the axiom.
+
+    @Override
+    public void visit(OWLClassAssertionAxiom axiom) {
+        axiom.getIndividual().accept(this);
+        write(" : ");
+        writeNested(axiom.getClassExpression());
+    }
+
+    @Override
+    public void visit(OWLObjectPropertyAssertionAxiom axiom) {
+        writeAssertion(axiom.getSubject(), axiom.getObject(), axiom.getProperty(), false);
+    }
+
+    @Override
+    public void visit(OWLNegativeObjectPropertyAssertionAxiom axiom) {
+        writeAssertion(axiom.getSubject(), axiom.getObject(), axiom.getProperty(), true);
+    }
+
+    @Override
+    public void visit(OWLDataPropertyAssertionAxiom axiom) {
+        writeAssertion(axiom.getSubject(), axiom.getObject(), axiom.getProperty(), false);
+    }
+
+    @Override
+    public void visit(OWLNegativeDataPropertyAssertionAxiom axiom) {
+        writeAssertion(axiom.getSubject(), axiom.getObject(), axiom.getProperty(), true);
+    }
+
+    /** Writes {@code (subject,object):property}, negated or not. */
+    private void writeAssertion(OWLObject subject, OWLObject object, OWLObject property,
+                                boolean negated) {
+        if (negated) write(DLSyntax.NOT);
+        write("(");
+        subject.accept(this);
+        write(",");
+        object.accept(this);
+        write("):");
+        property.accept(this);
     }
 
     // -----------------------------------------------------------------------

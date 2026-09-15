@@ -56,6 +56,18 @@
 #   import defines as a concept, used here only in a subsumption pair, is read by the rules
 #   above and can come out a role. State its kind in this document to settle it.
 #
+# Assertions about individuals:
+# - a : C          a is a C. C may be any concept expression, e.g. a : Cat ⊓ Pet
+# - (a,b):r        a is related to b by the role r
+# - ¬(a,b):r       a is not related to b by r
+# - (a,v):d        a's data property d has the value v, e.g. (bob,7):age
+# - ¬(a,v):d       a's d does not have the value v
+# - The colon in a class assertion is a separator, not part of a name. `a:C` without the
+#   space is the same sequence of characters as a prefixed name, so it is read as an
+#   assertion only when `a:` is not a declared prefix. Written output always spaces it.
+# - A digit-initial property is spelled with its own colon, so the statement carries two:
+#   (a,b)::116676008. A digit-initial class likewise needs the space: a : :116676008
+#
 # Database convention:
 # - Resources only appear explicitly in the database if they have an @db annotation
 #

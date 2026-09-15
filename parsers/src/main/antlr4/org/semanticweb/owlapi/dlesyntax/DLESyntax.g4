@@ -48,8 +48,45 @@ annotationValue
 // AnnProp*Axiom) are listed first.  ANTLR4 LL(*) disambiguates the remaining
 // SubClassAxiom / EquivAxiom alternatives via adaptive lookahead.
 
+// ── Assertions about individuals (ABox) ──────────────────────────────────────
+//
+// The spelling is the textbook one, from Introduction to Description Logic:
+//
+//     a:C          C(a)              a is a C
+//     (a,b):r      r(a,b)            a is related to b by r
+//     ¬(a,b):r     ¬r(a,b)           a is not related to b by r
+//     (a,v):d      d(a,v)            a's d is the value v
+//     ¬(a,v):d     ¬d(a,v)
+//
+// The colon is a separator here, not part of a name, which is why these need care.
+// `PNAME_NS` is `NameChar* ':'` and so matches a bare `:` — the tuple forms need no new
+// token at all. Two consequences are easy to miss:
+//
+//   * A digit-initial property in the default namespace is spelled `:116676008`, so the
+//     whole statement carries two colons: `(a,b)::116676008`. That lexes as
+//     `PNAME_NS DEFAULT_NAME`, and `name` already admits `DEFAULT_NAME`, so it is covered.
+//     `(a,b):116676008` is NOT the same thing and is correctly rejected: `116676008` bare
+//     is a NUMBER, and a number cannot be a property.
+//
+//   * `PNAME_NS` is greedy, so the unspaced `a::116676008` lexes as `PNAME_NS("a:")`
+//     followed by `DEFAULT_NAME` — two tokens, not three — and so does NOT match the
+//     class-assertion rule below. Write that one spaced: `a : :116676008`. An alternative
+//     beginning with a bare `PNAME_NS` would accept it, but `:` alone is also a PNAME_NS,
+//     so `:A ⊑ ⊤` would then parse as an assertion with no individual and fail on the `⊑`
+//     — losing the diagnostic that explains why `:A` needs a digit after the colon. A
+//     semantic predicate could require a non-empty prefix, but this grammar is shared with
+//     a Python implementation and cannot carry target-language code.
+//
+// These alternatives come before the subsumption ones because a statement may already
+// begin with `(` — `(A ⊓ B) ⊑ C` — and with `¬`. What separates them is the comma at
+// depth one, which no parenthesised class or property expression admits, so ANTLR's
+// adaptive lookahead settles it.
 axiom
-    : classExpr SUBCLASS keyExpr                    # HasKeyAxiom
+    : '(' name ',' name ')'    PNAME_NS name        # ObjectAssertionAxiom
+    | '(' name ',' literal ')' PNAME_NS name        # DataAssertionAxiom
+    | COMPLEMENT '(' name ',' name ')'    PNAME_NS name  # NegativeObjectAssertionAxiom
+    | COMPLEMENT '(' name ',' literal ')' PNAME_NS name  # NegativeDataAssertionAxiom
+    | classExpr SUBCLASS keyExpr                    # HasKeyAxiom
     | cardSymbol NUMBER propertyExpr DOT classExpr  # FunctionalPropertyAxiom
     | TRANS '(' name ')'                            # TransitiveRoleAxiom
     | FUNC  '(' name ')'                            # FunctionalRoleAxiom
@@ -65,6 +102,13 @@ axiom
     | propertyExpr EQUIV propertyExpr SUBCLASS propertyExpr # ChainedEquivSubAxiom
     | classExpr SUBCLASS classExpr                  # SubClassAxiom
     | classExpr EQUIV    classExpr                  # EquivAxiom
+    // Last, so that everything with a distinguishing operator is tried first. A lone name
+    // has never been a legal statement, which is what leaves room for these: `a:C` arrives
+    // as a single PREFIXED_NAME, and whether that is an assertion or a prefixed name is
+    // decided after lexing, from the prefixes the document declares. See
+    // DLESyntaxAxiomVisitor#classAssertionOf.
+    | name PNAME_NS classExpr                       # ClassAssertionAxiom
+    | PREFIXED_NAME                                 # PrefixedClassAssertionAxiom
     ;
 
 // A property chain: q ∘ r⁻ (∘ is U+2218 RING OPERATOR).
@@ -302,9 +346,13 @@ PREFIXED_NAME : NameStart NameChar* ':' (NameStart | [0-9]) NameChar* ;
 // A bare NAME must start with NameStart, which excludes digits, so the two token languages
 // are disjoint and this adds no second spelling for a name that already had one.
 //
-// It cannot collide with PNAME_NS, which appears in exactly one rule — prefixDecl — where
-// the colon is always followed by whitespace or `<`, never a digit. (Longest-match settles
-// it in any case: `:1` matches two characters here and one as PNAME_NS.)
+// It cannot collide with PNAME_NS. Longest-match settles it wherever the two meet: at a
+// colon followed by a digit this matches two characters or more and PNAME_NS matches one,
+// so this wins. That is what makes `(a,b)::116676008` work — the first colon is the
+// separator, taken by PNAME_NS, and the second begins the name. (PNAME_NS used to appear
+// in prefixDecl alone, where the colon is always followed by whitespace or `<`; the
+// assertion forms above now use it too, which is why the argument is by longest match
+// rather than by where the token occurs.)
 DEFAULT_NAME : ':' [0-9] NameChar* ;
 
 // Bare local name

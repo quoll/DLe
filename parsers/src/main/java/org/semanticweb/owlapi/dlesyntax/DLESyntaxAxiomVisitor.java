@@ -1180,6 +1180,153 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
         return IRI.create(base + text);
     }
 
+    // ── Assertions about individuals ────────────────────────────────────────
+
+    @Override
+    public OWLObject visitObjectAssertionAxiom(
+            DLESyntaxParser.ObjectAssertionAxiomContext ctx) {
+        axioms.add(df.getOWLObjectPropertyAssertionAxiom(
+            df.getOWLObjectProperty(expandName(ctx.name(2))),
+            df.getOWLNamedIndividual(expandName(ctx.name(0))),
+            df.getOWLNamedIndividual(expandName(ctx.name(1)))));
+        return null;
+    }
+
+    @Override
+    public OWLObject visitNegativeObjectAssertionAxiom(
+            DLESyntaxParser.NegativeObjectAssertionAxiomContext ctx) {
+        axioms.add(df.getOWLNegativeObjectPropertyAssertionAxiom(
+            df.getOWLObjectProperty(expandName(ctx.name(2))),
+            df.getOWLNamedIndividual(expandName(ctx.name(0))),
+            df.getOWLNamedIndividual(expandName(ctx.name(1)))));
+        return null;
+    }
+
+    @Override
+    public OWLObject visitDataAssertionAxiom(DLESyntaxParser.DataAssertionAxiomContext ctx) {
+        axioms.add(df.getOWLDataPropertyAssertionAxiom(
+            df.getOWLDataProperty(expandName(ctx.name(1))),
+            df.getOWLNamedIndividual(expandName(ctx.name(0))),
+            literalOf(ctx.literal())));
+        return null;
+    }
+
+    @Override
+    public OWLObject visitNegativeDataAssertionAxiom(
+            DLESyntaxParser.NegativeDataAssertionAxiomContext ctx) {
+        axioms.add(df.getOWLNegativeDataPropertyAssertionAxiom(
+            df.getOWLDataProperty(expandName(ctx.name(1))),
+            df.getOWLNamedIndividual(expandName(ctx.name(0))),
+            literalOf(ctx.literal())));
+        return null;
+    }
+
+    @Override
+    public OWLObject visitClassAssertionAxiom(DLESyntaxParser.ClassAssertionAxiomContext ctx) {
+        // Two readings are possible when the pieces were written without a space and the
+        // first names a prefix — `ex:a:C` is either individual ex:a of class C, or
+        // individual ex of class a:C. The prefixes the document declares decide it, and
+        // they are all known by now: the grammar puts every prefixDecl before every
+        // statement, so this is a guarantee rather than a scan-order accident.
+        String first = ctx.name().getText();
+        String second = ctx.classExpr().getText();
+        boolean spaced = !adjacent(ctx.name().getStop(), ctx.PNAME_NS().getSymbol())
+            || !adjacent(ctx.PNAME_NS().getSymbol(), ctx.classExpr().getStart());
+
+        // Reading B only exists when the class side is a single bare name: there is nothing
+        // to move the first name's local part onto otherwise.
+        int colon = first.indexOf(':');
+        boolean readingBPossible = !spaced && colon > 0 && second.indexOf(':') < 0
+            && loneName(ctx.classExpr()) != null;
+        if (readingBPossible) {
+            boolean aValid = prefixes.containsKey(first.substring(0, colon + 1));
+            String bPrefix = first.substring(colon + 1) + ":";
+            boolean bValid = prefixes.containsKey(bPrefix);
+            if (aValid && bValid) {
+                throw new DLESemanticException(
+                    "'" + first + ":" + second + "' is ambiguous: both '"
+                        + first.substring(0, colon + 1) + "' and '" + bPrefix
+                        + "' are declared prefixes, so this is either the individual "
+                        + first + " of class " + second + ", or the individual "
+                        + first.substring(0, colon) + " of class "
+                        + first.substring(colon + 1) + ":" + second
+                        + ". Put a space around the colon to say which.",
+                    ctx.start.getLine(), ctx.start.getCharPositionInLine());
+            }
+            if (bValid) {
+                // The individual is the part before the colon, in the default namespace.
+                assertNamedClass(first.substring(0, colon),
+                    first.substring(colon + 1) + ":" + second, ctx);
+                return null;
+            }
+        }
+        assertClass(first, ctx.classExpr(), ctx);
+        return null;
+    }
+
+
+    @Override
+    public OWLObject visitPrefixedClassAssertionAxiom(
+            DLESyntaxParser.PrefixedClassAssertionAxiomContext ctx) {
+        // `a:C` arrives as one token, indistinguishable from a prefixed name. A lone
+        // prefixed name has never been a statement, so if the prefix is declared this is
+        // simply not a statement; if it is not declared, the only reading left is the
+        // assertion, and that is the textbook spelling.
+        String text = ctx.PREFIXED_NAME().getText();
+        int colon = text.indexOf(':');
+        String prefix = text.substring(0, colon + 1);
+        if (prefixes.containsKey(prefix)) {
+            throw new DLESemanticException(
+                "'" + text + "' on its own is not a statement. '" + prefix + "' is a"
+                    + " declared prefix, so this reads as a name rather than as the"
+                    + " assertion " + text.substring(colon + 1) + "("
+                    + text.substring(0, colon) + "); put a space around the colon if the"
+                    + " assertion is what was meant.",
+                ctx.start.getLine(), ctx.start.getCharPositionInLine());
+        }
+        assertNamedClass(text.substring(0, colon), text.substring(colon + 1), ctx);
+        return null;
+    }
+
+    /** Builds the assertion with a class expression on the right, as the textbook allows. */
+    private void assertClass(String individual, DLESyntaxParser.ClassExprContext cls,
+                             org.antlr.v4.runtime.ParserRuleContext ctx) {
+        axioms.add(df.getOWLClassAssertionAxiom(
+            asClass(visit(cls)), individualOf(individual, cls.getText(), ctx)));
+    }
+
+    /** Builds the assertion where the class side has been re-split into a bare name. */
+    private void assertNamedClass(String individual, String className,
+                                  org.antlr.v4.runtime.ParserRuleContext ctx) {
+        IRI classIri = expandNameText(className);
+        if (classIri == null) {
+            throw new DLESemanticException(
+                "unknown prefix in the assertion '" + individual + " : " + className
+                    + "'. Declare it with @prefix, or check for a typo.",
+                ctx.start.getLine(), ctx.start.getCharPositionInLine());
+        }
+        axioms.add(df.getOWLClassAssertionAxiom(
+            df.getOWLClass(classIri), individualOf(individual, className, ctx)));
+    }
+
+    private OWLNamedIndividual individualOf(String individual, String className,
+                                            org.antlr.v4.runtime.ParserRuleContext ctx) {
+        IRI iri = expandNameText(individual);
+        if (iri == null) {
+            throw new DLESemanticException(
+                "unknown prefix in the assertion '" + individual + " : " + className
+                    + "'. Declare it with @prefix, or check for a typo.",
+                ctx.start.getLine(), ctx.start.getCharPositionInLine());
+        }
+        return df.getOWLNamedIndividual(iri);
+    }
+
+    /** Whether the second token begins immediately after the first ends. */
+    private static boolean adjacent(Token left, Token right) {
+        return left != null && right != null
+            && left.getStopIndex() + 1 == right.getStartIndex();
+    }
+
     // ── Private helpers ──────────────────────────────────────────────────────
 
     /** Expands an iriRef (either angle-bracket IRI or prefixed/bare name) to a full IRI. */
@@ -1602,6 +1749,11 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
     }
 
     private OWLLiteral buildFacetLiteral(DLESyntaxParser.LiteralContext lit) {
+        return literalOf(lit);
+    }
+
+    /** Builds a literal from any of the three spellings the grammar admits. */
+    private OWLLiteral literalOf(DLESyntaxParser.LiteralContext lit) {
         if (lit instanceof DLESyntaxParser.StringLiteralContext) {
             return stringLiteral(lit.getText());
         }

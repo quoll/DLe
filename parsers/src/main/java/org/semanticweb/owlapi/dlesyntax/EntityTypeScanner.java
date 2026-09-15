@@ -235,6 +235,64 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
         return atom instanceof DLESyntaxParser.TopAtomContext;
     }
 
+    // ── Assertions about individuals ────────────────────────────────────────
+    //
+    // These are the strongest evidence in the language. `(a,b):r` can only be an object
+    // property assertion and `(a,v):d` can only be a data property one, so the property's
+    // kind is settled outright — no case convention, no propagation, no guess. The class in
+    // `a:C` is likewise definitively a class.
+    //
+    // The individuals are deliberately left unclassified. An individual is neither a class
+    // nor a role, and the visitor builds it as a named individual from the axiom itself;
+    // putting it in mustBeClass would make it a barrier to role propagation for no reason.
+
+    @Override
+    public Void visitObjectAssertionAxiom(DLESyntaxParser.ObjectAssertionAxiomContext ctx) {
+        String property = ctx.name(2).getText();
+        classifyUnknownRole(property);
+        recordKindEvidence(property, false, ctx.start.getLine());
+        return null;
+    }
+
+    @Override
+    public Void visitNegativeObjectAssertionAxiom(
+            DLESyntaxParser.NegativeObjectAssertionAxiomContext ctx) {
+        String property = ctx.name(2).getText();
+        classifyUnknownRole(property);
+        recordKindEvidence(property, false, ctx.start.getLine());
+        return null;
+    }
+
+    @Override
+    public Void visitDataAssertionAxiom(DLESyntaxParser.DataAssertionAxiomContext ctx) {
+        String property = ctx.name(1).getText();
+        dataPropertyNames.add(property);
+        objectPropertyNames.remove(property);
+        recordKindEvidence(property, true, ctx.start.getLine());
+        return null;
+    }
+
+    @Override
+    public Void visitNegativeDataAssertionAxiom(
+            DLESyntaxParser.NegativeDataAssertionAxiomContext ctx) {
+        String property = ctx.name(1).getText();
+        dataPropertyNames.add(property);
+        objectPropertyNames.remove(property);
+        recordKindEvidence(property, true, ctx.start.getLine());
+        return null;
+    }
+
+    @Override
+    public Void visitClassAssertionAxiom(DLESyntaxParser.ClassAssertionAxiomContext ctx) {
+        // Whichever way the visitor resolves the split, the class side is a class either
+        // way, and that is all this pass needs. Only a bare name is recorded; a complex
+        // expression is already unambiguous and its parts are classified by visiting it.
+        String cls = singleBareName(ctx.classExpr());
+        if (cls != null) mustBeClass.add(cls);
+        return visitChildren(ctx);
+    }
+
+
     /** Notes that structure forced this name to one kind, keeping the first line for each. */
     private void recordKindEvidence(String name, boolean isData, int line) {
         (isData ? dataEvidence : objectEvidence).putIfAbsent(name, line);
