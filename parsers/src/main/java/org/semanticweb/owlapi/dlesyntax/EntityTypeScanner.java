@@ -458,7 +458,12 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
         // axiom now routes by kind, and this one has to agree with it.
         List<String> intersected = allIntersectedBareNames(ctx.classExpr(0));
         if (intersected != null && isBottomClassExpr(ctx.classExpr(1))
-                && intersected.stream().allMatch(n -> Character.isLowerCase(n.charAt(0)))) {
+                // caseSuggestsRole, not a hand-written case test. This was the last place
+                // in the file spelling the convention itself, and it spelled a different
+                // one: charAt(0) on the whole name, so a prefixed or digit-initial name
+                // failed it. `EX:p ⊓ EX:q ⊑ ⊥` therefore read as a class intersection
+                // while `Disj(EX:p, EX:q)` — the same axiom — read as properties.
+                && intersected.stream().allMatch(this::caseSuggestsRole)) {
             intersected.forEach(this::classifyUnknownRole);
         }
 

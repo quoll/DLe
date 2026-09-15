@@ -98,6 +98,38 @@ class RoleCharacteristicKindTest {
         }
     }
 
+    /**
+     * They agree for a prefixed name, which the convention reaches through its local part.
+     *
+     * <p>The intersection spelling tested the case itself — {@code charAt(0)} on the whole
+     * name — rather than calling the shared rule, so any prefixed name failed it:
+     * {@code EX:p ⊓ EX:q ⊑ ⊥} read as a class intersection while {@code Disj(EX:p, EX:q)},
+     * the same axiom, read as properties.
+     *
+     * <p>A digit-initial name is deliberately not included. {@code Disj(…)} is role-only
+     * syntax, so its keyword settles the kind by itself, whereas {@code p ⊓ q ⊑ ⊥} is an
+     * ordinary class expression that only the convention can reclassify — and a digit says
+     * nothing either way. The two spellings therefore cannot agree for such a name without
+     * a kind statement, which is exactly what kind statements are for.
+     */
+    @Test
+    void bothSpellingsAgreeForAPrefixedName() throws Exception {
+        String prefixes = "@prefix EX: <http://ex2.org/>\n" + PREFIX;
+        for (String[] pair : new String[][] {{"EX:p", "EX:q"}}) {
+            for (String disj : new String[] {
+                    "Disj(" + pair[0] + ", " + pair[1] + ")\n",
+                    pair[0] + " ⊓ " + pair[1] + " ⊑ ⊥\n"}) {
+                // The disjointness alone. Giving the names a restriction as well would
+                // classify them independently, and the seeding under test would then be
+                // redundant — which is how the first version of this test passed against
+                // the hand-written case check it was written to catch.
+                OWLOntology o = parse(prefixes + disj);
+                assertEquals(1, o.getAxioms(AxiomType.DISJOINT_OBJECT_PROPERTIES).size(),
+                    () -> disj.trim() + " must be a disjointness: " + o.getLogicalAxioms());
+            }
+        }
+    }
+
     /** Disjointness holds within one kind, so a mixture is a contradiction, not a choice. */
     @Test
     void disjointnessMixingKindsIsRefused() {
