@@ -251,8 +251,21 @@ public class DLESyntaxObjectRenderer extends DLSyntaxObjectRenderer {
     private String renderLiteral(OWLLiteral lit) {
         if (lit.isInteger() || lit.isDouble() || lit.isFloat()) return lit.getLiteral();
         if (lit.isBoolean()) return lit.getLiteral();
+        return quoted(lit);
+    }
+
+    /**
+     * A string literal, with its language tag when it has one.
+     *
+     * <p>The tag used to be dropped, silently and everywhere: 177 of the 292 annotation
+     * assertions in one corpus document are tagged, and every one came back as a plain
+     * string — a different literal, and a different axiom. Any multilingual vocabulary lost
+     * every language it had.
+     */
+    private String quoted(OWLLiteral lit) {
         String escaped = lit.getLiteral().replace("\\", "\\\\").replace("\"", "\\\"");
-        return "\"" + escaped + "\"";
+        String text = "\"" + escaped + "\"";
+        return lit.hasLang() ? text + "@" + lit.getLang() : text;
     }
 
     private String renderSubject(OWLAnnotationSubject subject) {
@@ -265,10 +278,7 @@ public class DLESyntaxObjectRenderer extends DLSyntaxObjectRenderer {
 
     private String renderValue(OWLAnnotationValue value) {
         if (value instanceof OWLLiteral) {
-            String escaped = ((OWLLiteral) value).getLiteral()
-                .replace("\\", "\\\\")
-                .replace("\"", "\\\"");
-            return "\"" + escaped + "\"";
+            return quoted((OWLLiteral) value);
         }
         if (value instanceof IRI) {
             return shortFormIRI((IRI) value);

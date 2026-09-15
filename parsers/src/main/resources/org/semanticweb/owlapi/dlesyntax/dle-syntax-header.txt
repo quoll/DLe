@@ -56,6 +56,15 @@
 #   import defines as a concept, used here only in a subsumption pair, is read by the rules
 #   above and can come out a role. State its kind in this document to settle it.
 #
+# Language tags:
+# - A string may carry one, as Turtle spells it: @label A "Neoplasm"@en
+# - The tag must follow the closing quote with nothing between them. A tag on its own,
+#   separated by a space, is not a tag
+# - Any BCP 47 tag works, subtags included — @en, @pt-BR, @zh-Hant — and so does one that
+#   happens to spell an annotation keyword, since @doc and @ann are real language codes
+# - Not allowed where it could not mean anything: on a facet value, which compares against
+#   a typed value, or on an @import reference, which names a document rather than text
+#
 # Assertions about individuals:
 # - a : C          a is a C. C may be any concept expression, e.g. a : Cat ⊓ Pet
 # - (a,b):r        a is related to b by the role r

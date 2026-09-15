@@ -327,8 +327,17 @@ DISJ  : 'Disj'  ;
 // Boolean literals — must precede NAME
 BOOL : 'true' | 'false' ;
 
-// Strings — may span multiple lines (annotation values often do)
-STRING : '"' (~["\\] | '\\' .)* '"' ;
+// Strings — may span multiple lines (annotation values often do), and may carry a
+// language tag as Turtle spells it: "Neoplasm"@en, "nordfriisk"@frr, "Hanzi"@zh-Hant.
+//
+// The tag is part of this token rather than a token of its own, which settles two problems
+// at once. A separate `'@' [a-zA-Z]+ …` rule would collide with every annotation keyword —
+// @label, @doc, @db — and `doc` and `ann` are real ISO 639-3 codes, so the collision is not
+// hypothetical. And a tag must abut its string: `"x"@en` is a tagged literal, while a "x"
+// ending one line and a @label opening the next are two separate things. A token is a run
+// of contiguous characters by definition, so including the tag here gives that for free,
+// whereas a separate token would need a lexer mode to know where it may appear.
+STRING : '"' (~["\\] | '\\' .)* '"' ('@' [a-zA-Z]+ ('-' [a-zA-Z0-9]+)*)? ;
 
 // IRI in angle brackets  <http://example.org/>
 IRI : '<' (~[<>"{}|^`\\\u0000-\u0020])* '>' ;

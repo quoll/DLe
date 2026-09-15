@@ -279,7 +279,14 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
         // can actually retrieve; otherwise it is a file path, taken literally. The caller
         // resolves it, because only the caller knows where this document is.
         if (ctx.STRING() != null) {
-            quotedImportRefs.add(unquote(ctx.STRING().getText()));
+            String ref = ctx.STRING().getText();
+            if (languageTag(ref) != null) {
+                throw new DLESemanticException(
+                    "an import reference cannot carry a language tag: " + ref
+                        + ". It names a document, not text.",
+                    ctx.start.getLine(), ctx.start.getCharPositionInLine());
+            }
+            quotedImportRefs.add(unquote(ref));
         } else {
             iriImportRefs.add(expandIriRef(ctx.iriRef()).toString());
         }
@@ -295,9 +302,24 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
      * its separator.
      */
     static String unquote(String token) {
-        return token.substring(1, token.length() - 1)
+        // The closing quote is not necessarily the last character: a STRING token may carry
+        // a language tag after it. No tag can contain a quote, so the last one in the token
+        // is the closing one either way.
+        int close = token.lastIndexOf('"');
+        return token.substring(1, close)
             .replace("\\\"", "\"")
             .replace("\\\\", "\\");
+    }
+
+    /**
+     * The language tag of a STRING token, or null if it has none.
+     *
+     * <p>Everything after the closing quote, without the {@code @}.
+     */
+    @Nullable
+    static String languageTag(String token) {
+        int close = token.lastIndexOf('"');
+        return close + 1 < token.length() ? token.substring(close + 2) : null;
     }
 
     // ── Predicate definitions ────────────────────────────────────────────────
@@ -1786,6 +1808,16 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
     }
 
     private OWLLiteral buildFacetLiteral(DLESyntaxParser.LiteralContext lit) {
+        // A facet value is a typed literal. OWL has no facet that compares against a
+        // language, so a tag here cannot mean anything — and silently keeping it produced a
+        // datatype restriction no reasoner will accept.
+        if (lit instanceof DLESyntaxParser.StringLiteralContext
+                && languageTag(lit.getText()) != null) {
+            throw new DLESemanticException(
+                "a facet value cannot carry a language tag: " + lit.getText()
+                    + ". Facets compare against a typed value, so drop the tag.",
+                lit.start.getLine(), lit.start.getCharPositionInLine());
+        }
         return literalOf(lit);
     }
 
@@ -1804,6 +1836,8 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
 
     /** Strips surrounding double-quotes and unescapes basic sequences. */
     private OWLLiteral stringLiteral(String tokenText) {
-        return df.getOWLLiteral(unquote(tokenText));
+        String tag = languageTag(tokenText);
+        return tag == null ? df.getOWLLiteral(unquote(tokenText))
+                           : df.getOWLLiteral(unquote(tokenText), tag);
     }
 }
