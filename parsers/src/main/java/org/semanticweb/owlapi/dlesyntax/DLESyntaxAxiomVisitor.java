@@ -1278,6 +1278,18 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
                 }
             }
             hidden = hidden.subList(realStart, hidden.size());
+            // Drop anything sitting on the previous statement's own line. A comment there
+            // is that statement's inline comment, and the branch below has already taken
+            // it — so claiming it here as well wrote it out twice, once in each entity's
+            // block. `A ⊑ B  # NOTE` followed by `C ⊑ D` produced a dle:inlineComment on A
+            // and a dle:comment on C from the same six characters.
+            int previousLine = previousStatementLine(ctx);
+            int afterPrevious = 0;
+            while (afterPrevious < hidden.size()
+                    && hidden.get(afterPrevious).getLine() == previousLine) {
+                afterPrevious++;
+            }
+            hidden = hidden.subList(afterPrevious, hidden.size());
             if (!hidden.isEmpty()) {
                 subjectIRI = findFirstNameIRI(ctx);
                 if (subjectIRI != null) {
@@ -1320,6 +1332,24 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
         }
 
         return result;
+    }
+
+    /**
+     * The line the previous statement ended on, or -1 when this is the first.
+     *
+     * <p>Only needed to tell a comment that follows a statement from one that precedes the
+     * next: both are hidden tokens to the left of this statement's first token, and only
+     * the line number distinguishes them.
+     */
+    private int previousStatementLine(DLESyntaxParser.StatementContext ctx) {
+        if (tokenStream == null) return -1;
+        for (int i = ctx.start.getTokenIndex() - 1; i >= 0; i--) {
+            Token token = tokenStream.get(i);
+            if (token.getChannel() != Token.HIDDEN_CHANNEL) {
+                return token.getLine();
+            }
+        }
+        return -1;
     }
 
     /** Returns the IRI of the first name token in the statement, or null. */

@@ -267,6 +267,57 @@ class CommentPreservationTest {
     }
 
     /**
+     * A comment on a statement's own line belongs to that statement, and only to it.
+     *
+     * <p>Both captures look at the same token. An inline comment is a hidden token to the
+     * right of its own statement, and also a hidden token to the left of the next one, so
+     * both branches claimed it: {@code A ⊑ B  # NOTE} followed by {@code C ⊑ D} produced a
+     * {@code dle:inlineComment} on {@code :A} and a {@code dle:comment} on {@code :C} from
+     * the same six characters, and the comment was then written out twice, once in each
+     * entity's block. Only the line number distinguishes the two cases.
+     */
+    @Test
+    void anInlineCommentIsNotAlsoTheNextStatementsBlockComment() throws Exception {
+        String document = PREFIX + "A ⊑ B  # INLINE NOTE\nC ⊑ D\n";
+        OWLOntologyManager manager = OWLManager.createOWLOntologyManager();
+        OWLOntology o = manager.createOntology();
+        new DLEOntologyParser().parse(new StringDocumentSource(document), o,
+            manager.getOntologyLoaderConfiguration());
+
+        java.util.List<org.semanticweb.owlapi.model.OWLAnnotationAssertionAxiom> notes =
+            o.axioms(org.semanticweb.owlapi.model.AxiomType.ANNOTATION_ASSERTION)
+                .filter(ax -> String.valueOf(ax.getValue()).contains("INLINE NOTE"))
+                .collect(java.util.stream.Collectors.toList());
+        assertEquals(1, notes.size(),
+            () -> "one comment, one annotation: " + notes);
+        assertTrue(notes.get(0).getSubject().toString().contains("#A"),
+            () -> "and it belongs to the statement it sits on: " + notes);
+
+        // And it is written once, not once per claimant.
+        String written = rewrite(document);
+        int occurrences = bodyOf(written).split("INLINE NOTE", -1).length - 1;
+        assertEquals(1, occurrences,
+            () -> "written once:\n" + bodyOf(written));
+    }
+
+    /** A comment on its own line above a statement is still that statement's. */
+    @Test
+    void aBlockCommentIsStillClaimed() throws Exception {
+        OWLOntologyManager manager = OWLManager.createOWLOntologyManager();
+        OWLOntology o = manager.createOntology();
+        new DLEOntologyParser().parse(new StringDocumentSource(
+            PREFIX + "A ⊑ B\n\n# BLOCK NOTE\nC ⊑ D\n"), o,
+            manager.getOntologyLoaderConfiguration());
+        assertTrue(o.axioms(org.semanticweb.owlapi.model.AxiomType.ANNOTATION_ASSERTION)
+                .anyMatch(ax -> DLESyntaxAxiomVisitor.DLE_COMMENT_IRI
+                        .equals(ax.getProperty().getIRI())
+                    && String.valueOf(ax.getValue()).contains("BLOCK NOTE")
+                    && ax.getSubject().toString().contains("#C")),
+            () -> "the block comment belongs to the statement below it: "
+                + o.getAxioms(org.semanticweb.owlapi.model.AxiomType.ANNOTATION_ASSERTION));
+    }
+
+    /**
      * The compact spelling of a class assertion keeps its comment too.
      *
      * <p>Every other assertion form was given a subject and this one was overlooked, so a
