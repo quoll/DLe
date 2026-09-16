@@ -584,25 +584,42 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
 
     @Override
     public OWLObject visitEquivAxiom(DLESyntaxParser.EquivAxiomContext ctx) {
-        OWLObject lhs = visit(ctx.classExpr(0));
-        OWLObject rhs = visit(ctx.classExpr(1));
-        // If one side is a property expression and the other is a bare OWLClass,
-        // the class must be a property that the scanner didn't classify (e.g. uppercase).
-        if (lhs instanceof OWLClass && rhs instanceof OWLObjectPropertyExpression) {
-            lhs = df.getOWLObjectProperty(((OWLClass) lhs).getIRI());
+        List<OWLObject> operands = ctx.classExpr().stream()
+            .map(this::visit).collect(Collectors.toList());
+
+        // Equivalence holds within one kind, so the whole statement is a property
+        // equivalence if any operand can only be a property. A bare OWLClass among them is
+        // a property the scanner did not classify — an upper-case name, most often — and is
+        // coerced rather than allowed to split the statement across two kinds.
+        boolean objects = operands.stream().anyMatch(OWLObjectPropertyExpression.class::isInstance);
+        boolean data = operands.stream().anyMatch(OWLDataPropertyExpression.class::isInstance);
+
+        if (objects && !data) {
+            List<OWLObjectPropertyExpression> props = operands.stream()
+                .map(o -> o instanceof OWLClass
+                    ? df.getOWLObjectProperty(((OWLClass) o).getIRI())
+                    : (OWLObjectPropertyExpression) o)
+                .collect(Collectors.toList());
+            axioms.add(df.getOWLEquivalentObjectPropertiesAxiom(props));
+            return null;
         }
-        if (rhs instanceof OWLClass && lhs instanceof OWLObjectPropertyExpression) {
-            rhs = df.getOWLObjectProperty(((OWLClass) rhs).getIRI());
+        if (data && !objects) {
+            List<OWLDataPropertyExpression> props = operands.stream()
+                .map(o -> o instanceof OWLClass
+                    ? df.getOWLDataProperty(((OWLClass) o).getIRI())
+                    : (OWLDataPropertyExpression) o)
+                .collect(Collectors.toList());
+            axioms.add(df.getOWLEquivalentDataPropertiesAxiom(props));
+            return null;
         }
-        if (lhs instanceof OWLObjectPropertyExpression && rhs instanceof OWLObjectPropertyExpression) {
-            axioms.add(df.getOWLEquivalentObjectPropertiesAxiom(
-                (OWLObjectPropertyExpression) lhs, (OWLObjectPropertyExpression) rhs));
-        } else if (lhs instanceof OWLDataPropertyExpression && rhs instanceof OWLDataPropertyExpression) {
-            axioms.add(df.getOWLEquivalentDataPropertiesAxiom(
-                (OWLDataPropertyExpression) lhs, (OWLDataPropertyExpression) rhs));
-        } else {
-            axioms.add(df.getOWLEquivalentClassesAxiom(asClass(lhs), asClass(rhs)));
+        if (objects && data) {
+            throw new DLESemanticException(
+                "this equivalence mixes a data property with an object property."
+                    + " Equivalence holds between properties of one kind.",
+                ctx.start.getLine(), ctx.start.getCharPositionInLine());
         }
+        axioms.add(df.getOWLEquivalentClassesAxiom(
+            operands.stream().map(this::asClass).collect(Collectors.toList())));
         return null;
     }
 

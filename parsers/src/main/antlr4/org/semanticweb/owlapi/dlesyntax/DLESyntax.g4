@@ -101,7 +101,11 @@ axiom
     | name EQUIV chainExpr                          # PropertyChainEquivAxiom
     | propertyExpr EQUIV propertyExpr SUBCLASS propertyExpr # ChainedEquivSubAxiom
     | classExpr SUBCLASS classExpr                  # SubClassAxiom
-    | classExpr EQUIV    classExpr                  # EquivAxiom
+    // Chained, because the writer chains it: `EquivalentClasses(:A :B :C)` is written
+    // `A \u2261 B \u2261 C`, and while this rule took exactly two operands that document
+    // could not be read back. The identity operators `=` and `\u2260` are chained for the
+    // same reason, and leaving `\u2261` out made the inconsistency internal to the syntax.
+    | classExpr EQUIV    classExpr (EQUIV classExpr)*  # EquivAxiom
     // Last, so that everything with a distinguishing operator is tried first. A lone name
     // has never been a legal statement, which is what leaves room for these: `a:C` arrives
     // as a single PREFIXED_NAME, and whether that is an assertion or a prefixed name is

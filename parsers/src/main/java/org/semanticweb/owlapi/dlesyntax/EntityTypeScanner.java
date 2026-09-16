@@ -37,6 +37,15 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
     // these nodes, preventing the attribute hierarchy from bleeding into the concept hierarchy.
     private final Set<String> mustBeClass = new HashSet<>();
     /**
+     * Names tied together by an equivalence, as groups.
+     *
+     * <p>Resolved in {@link #propagatePropertyTypes()} rather than as each statement is
+     * visited, because the evidence that settles a group's kind may appear anywhere in the
+     * document — including below the equivalence. Classifying on sight would make the answer
+     * depend on statement order, which is the defect filed as #27.
+     */
+    private final List<Set<String>> equivalenceGroups = new ArrayList<>();
+    /**
      * Where a name was first forced to one property kind by structure, per kind.
      *
      * <p>Only direct evidence goes in: a filler that is a datatype or a class, a domain or
@@ -417,29 +426,60 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
 
     @Override
     public Void visitEquivAxiom(DLESyntaxParser.EquivAxiomContext ctx) {
-        String lhs = singleBareName(ctx.classExpr(0));
-        String rhs = singleBareName(ctx.classExpr(1));
-        // p ≡ q⁻  (or q⁻ ≡ p) — both sides are object properties. An inverse is object-only,
-        // so this is evidence; recording it is what lets a contradiction be reported rather
-        // than resolved into a dual-kind ontology.
-        if (lhs != null && singleInverseAtom(ctx.classExpr(1)) != null) {
-            recordObjectOnly(lhs, ctx);
+        // Every operand, not just the first two: `≡` chains, so `A ≡ B ≡ C` has three and
+        // the third used to be invisible here while the reader built an axiom from it.
+        List<DLESyntaxParser.ClassExprContext> operands = ctx.classExpr();
+        int n = operands.size();
+
+        // p ≡ q⁻ — an inverse is object-only, so each bare name beside one is evidence.
+        // Recording it is what lets a contradiction be reported rather than resolved
+        // silently into the dual-kind ontology OWL 2 DL forbids.
+        boolean anyInverse = false;
+        for (int i = 0; i < n; i++) {
+            if (singleInverseAtom(operands.get(i)) != null) anyInverse = true;
         }
-        if (rhs != null && singleInverseAtom(ctx.classExpr(0)) != null) {
-            recordObjectOnly(rhs, ctx);
+        if (anyInverse) {
+            for (int i = 0; i < n; i++) {
+                String bare = singleBareName(operands.get(i));
+                if (bare != null && singleInverseAtom(operands.get(i)) == null) {
+                    recordObjectOnly(bare, ctx);
+                }
+            }
         }
-        // p ≡ q (both lower-case local parts) — treat as object properties.
-        if (lhs != null && rhs != null
-                && caseSuggestsRole(lhs) && caseSuggestsRole(rhs)) {
-            classifyUnknownRole(lhs);
-            classifyUnknownRole(rhs);
+
+        // All bare, all spelled like roles — `p ≡ q ≡ r`. Says "roles", not which kind, so
+        // it goes through classifyUnknownRole and the group below settles the kind.
+        List<String> bare = new ArrayList<>();
+        boolean allBare = true;
+        for (int i = 0; i < n; i++) {
+            String name = singleBareName(operands.get(i));
+            if (name == null) allBare = false; else bare.add(name);
         }
-        // A ≡ (complex) → A is a class; (complex) ≡ B → B is a class.
-        // Exclude inverse-atom RHS/LHS since those are property expressions, not complex classes.
-        if (lhs != null && rhs == null && singleInverseAtom(ctx.classExpr(1)) == null)
-            mustBeClass.add(lhs);
-        if (rhs != null && lhs == null && singleInverseAtom(ctx.classExpr(0)) == null)
-            mustBeClass.add(rhs);
+        if (allBare && bare.stream().allMatch(this::caseSuggestsRole)) {
+            bare.forEach(this::classifyUnknownRole);
+        }
+        // Tied together whatever their spelling, so evidence on any one of them reaches the
+        // rest. Only groups that are entirely bare names can be properties at all.
+        if (allBare && bare.size() > 1) {
+            equivalenceGroups.add(new java.util.LinkedHashSet<>(bare));
+        }
+
+        // A ≡ (complex) → A is a class. An inverse atom is a property expression, not a
+        // complex class, so a name beside one is excluded.
+        if (!allBare) {
+            for (int i = 0; i < n; i++) {
+                String name = singleBareName(operands.get(i));
+                if (name == null) continue;
+                boolean besideAComplexClass = false;
+                for (int j = 0; j < n; j++) {
+                    if (j != i && singleBareName(operands.get(j)) == null
+                            && singleInverseAtom(operands.get(j)) == null) {
+                        besideAComplexClass = true;
+                    }
+                }
+                if (besideAComplexClass) mustBeClass.add(name);
+            }
+        }
         return visitChildren(ctx);
     }
 
@@ -538,6 +578,51 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
         // Before anything is propagated: a contradiction in the direct evidence has to be
         // reported from the evidence itself, because propagation resolves it silently.
         reportKindConflicts();
+
+        // Equivalence groups first, and to a fixpoint, because they chain: `d ≡ e` with
+        // `e ≡ f` elsewhere makes all three one kind. Equivalence holds within a kind, so
+        // evidence on any member settles every member — and two members with opposite
+        // evidence is a contradiction in the document, not something to resolve by guessing.
+        boolean settled = true;
+        while (settled) {
+            settled = false;
+            for (Set<String> group : equivalenceGroups) {
+                String dataMember = null;
+                String objectMember = null;
+                for (String name : group) {
+                    if (dataEvidence.containsKey(name)) dataMember = name;
+                    if (objectEvidence.containsKey(name)) objectMember = name;
+                }
+                if (dataMember != null && objectMember != null) {
+                    throw new DLESemanticException(
+                        "this equivalence makes " + objectMember + ", an object property on"
+                            + " line " + objectEvidence.get(objectMember) + ", equivalent to "
+                            + dataMember + ", a data property on line "
+                            + dataEvidence.get(dataMember) + ". Equivalence holds between"
+                            + " properties of one kind.",
+                        Math.max(objectEvidence.get(objectMember),
+                                 dataEvidence.get(dataMember)), 0);
+                }
+                // Nothing in the group is a property, so it is a class equivalence.
+                if (dataMember == null && objectMember == null) continue;
+                boolean isData = dataMember != null;
+                int line = isData ? dataEvidence.get(dataMember)
+                                  : objectEvidence.get(objectMember);
+                for (String name : group) {
+                    if (mustBeClass.contains(name)) continue;
+                    if (isData) {
+                        settled |= dataPropertyNames.add(name);
+                        settled |= objectPropertyNames.remove(name);
+                    } else {
+                        settled |= objectPropertyNames.add(name);
+                    }
+                    if (!(isData ? dataEvidence : objectEvidence).containsKey(name)) {
+                        recordKindEvidence(name, isData, line);
+                        settled = true;
+                    }
+                }
+            }
+        }
 
         // Phase 1: propagate mustBeClass upward through sub-property chains.
         boolean changed = true;

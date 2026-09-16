@@ -58,6 +58,9 @@ import org.semanticweb.owlapi.model.OWLDataPropertyExpression;
 import org.semanticweb.owlapi.model.OWLDataPropertyRangeAxiom;
 import org.semanticweb.owlapi.model.OWLDataRange;
 import org.semanticweb.owlapi.model.OWLDataSomeValuesFrom;
+import org.semanticweb.owlapi.model.OWLEquivalentClassesAxiom;
+import org.semanticweb.owlapi.model.OWLEquivalentObjectPropertiesAxiom;
+import org.semanticweb.owlapi.model.OWLEquivalentDataPropertiesAxiom;
 import org.semanticweb.owlapi.model.OWLFunctionalDataPropertyAxiom;
 import org.semanticweb.owlapi.model.OWLFunctionalObjectPropertyAxiom;
 import org.semanticweb.owlapi.model.OWLLiteral;
@@ -479,6 +482,33 @@ public class DLESyntaxObjectRenderer extends DLSyntaxObjectRenderer {
     @Override
     public void visit(OWLFunctionalObjectPropertyAxiom axiom) {
         writeUnaryRoleAxiom("Func", axiom.getProperty());
+    }
+
+    /**
+     * An equivalence of one operand is not written, because a lone name is not a statement.
+     *
+     * <p>{@code EquivalentClasses(:A :A)} is vacuous and OWL API collapses it to a single
+     * operand, whereupon the inherited renderer wrote a bare {@code A} on its own line and
+     * the document stopped loading — the same shape of defect as the one-property
+     * {@code Disj(p)}, from the same cause. Two or more operands delegate unchanged, so the
+     * chained form {@code A \u2261 B \u2261 C} is untouched.
+     */
+    @Override
+    public void visit(OWLEquivalentClassesAxiom axiom) {
+        if (axiom.classExpressions().limit(2).count() < 2) return;
+        super.visit(axiom);
+    }
+
+    @Override
+    public void visit(OWLEquivalentObjectPropertiesAxiom axiom) {
+        if (axiom.properties().limit(2).count() < 2) return;
+        super.visit(axiom);
+    }
+
+    @Override
+    public void visit(OWLEquivalentDataPropertiesAxiom axiom) {
+        if (axiom.properties().limit(2).count() < 2) return;
+        super.visit(axiom);
     }
 
     @Override
