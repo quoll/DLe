@@ -63,6 +63,8 @@ import org.semanticweb.owlapi.model.OWLEquivalentObjectPropertiesAxiom;
 import org.semanticweb.owlapi.model.OWLEquivalentDataPropertiesAxiom;
 import org.semanticweb.owlapi.model.OWLFunctionalDataPropertyAxiom;
 import org.semanticweb.owlapi.model.OWLFunctionalObjectPropertyAxiom;
+import org.semanticweb.owlapi.model.OWLIndividual;
+import org.semanticweb.owlapi.model.OWLObjectOneOf;
 import org.semanticweb.owlapi.model.OWLLiteral;
 import org.semanticweb.owlapi.model.OWLObjectAllValuesFrom;
 import org.semanticweb.owlapi.model.OWLObjectCardinalityRestriction;
@@ -729,6 +731,36 @@ public class DLESyntaxObjectRenderer extends DLSyntaxObjectRenderer {
             case LANG_RANGE:       return "langRange";
             default:               return facet.getShortForm();
         }
+    }
+
+    /**
+     * An enumeration of individuals, as one set.
+     *
+     * <p>The inherited renderer wrote it as a union of singletons — {@code ObjectOneOf(:b
+     * :c)} became <code>{b} &sqcup; {c}</code> — which is a fair reading of the semantics
+     * and a different axiom. Re-reading gave
+     * {@code ObjectUnionOf(ObjectOneOf(:b) ObjectOneOf(:c))}, and because each pass wrapped
+     * the operands again the text grew a parenthesis level at a time:
+     * <code>({b}) &sqcup; ({c})</code>, then <code>(({b})) &sqcup; (({c}))</code>.
+     *
+     * <p>The class assertion count never changed, so the regression job could not see it.
+     *
+     * <p>The reader has always understood <code>{b, c}</code> as a single enumeration; this
+     * is the writer catching up with it. {@link #visit(OWLDataOneOf)} did so already, which
+     * is why the value form never had the problem.
+     */
+    @Override
+    public void visit(OWLObjectOneOf node) {
+        write("{");
+        List<OWLIndividual> individuals =
+            node.individuals().collect(java.util.stream.Collectors.toList());
+        for (Iterator<OWLIndividual> it = individuals.iterator(); it.hasNext();) {
+            it.next().accept(this);
+            if (it.hasNext()) {
+                write(",");
+            }
+        }
+        write("}");
     }
 
     @Override

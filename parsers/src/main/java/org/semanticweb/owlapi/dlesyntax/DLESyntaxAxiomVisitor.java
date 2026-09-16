@@ -501,6 +501,39 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
             return null;
         }
 
+        // Inverse functional: ⊤ ⊑ ≤ 1 r⁻ , and functional: ⊤ ⊑ ≤ 1 r
+        //
+        // Read back as the axiom they came from, rather than as the subsumption of owl:Thing
+        // they are written as. This is the same recognition the domain, range, reflexivity
+        // and irreflexivity idioms below and above already do: DL has one way to say these
+        // things and OWL has a dedicated axiom for each, so without it
+        // `InverseFunctionalObjectProperty(:r)` came back as
+        // `SubClassOf(owl:Thing ObjectMaxCardinality(1 ObjectInverseOf(:r)))` — the axiom
+        // type gone and owl:Thing added to the signature for good measure.
+        //
+        // The general subsumption is still expressible: any filler, or any cardinality other
+        // than one, falls through to it, as does a bound on anything but ⊤.
+        if (isOWLThing(lhs) && rhs instanceof OWLObjectMaxCardinality) {
+            OWLObjectMaxCardinality max = (OWLObjectMaxCardinality) rhs;
+            if (max.getCardinality() == 1 && max.getFiller().isOWLThing()) {
+                OWLObjectPropertyExpression property = max.getProperty();
+                if (property.isAnonymous()) {
+                    axioms.add(df.getOWLInverseFunctionalObjectPropertyAxiom(
+                        property.getInverseProperty().getSimplified()));
+                } else {
+                    axioms.add(df.getOWLFunctionalObjectPropertyAxiom(property));
+                }
+                return null;
+            }
+        }
+        if (isOWLThing(lhs) && rhs instanceof OWLDataMaxCardinality) {
+            OWLDataMaxCardinality max = (OWLDataMaxCardinality) rhs;
+            if (max.getCardinality() == 1 && max.getFiller().isTopDatatype()) {
+                axioms.add(df.getOWLFunctionalDataPropertyAxiom(max.getProperty()));
+                return null;
+            }
+        }
+
         // Domain: ∃r.⊤ ⊑ C
         if (lhs instanceof OWLObjectSomeValuesFrom) {
             OWLObjectSomeValuesFrom svf = (OWLObjectSomeValuesFrom) lhs;

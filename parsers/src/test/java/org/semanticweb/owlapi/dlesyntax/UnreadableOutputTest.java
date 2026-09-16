@@ -401,6 +401,55 @@ class UnreadableOutputTest {
         }
     }
 
+    /**
+     * An enumeration of individuals is written as one set, not a union of singletons.
+     *
+     * <p>The inherited renderer wrote {@code ObjectOneOf(:b :c)} as
+     * <code>{b} &sqcup; {c}</code>. That is a fair reading of the semantics and a different
+     * axiom: it came back {@code ObjectUnionOf(ObjectOneOf(:b) ObjectOneOf(:c))}, and since
+     * each pass wrapped the operands again the text grew a parenthesis level at a time. The
+     * class-assertion count never changed, so the regression job could not see any of it.
+     */
+    @Test
+    void anEnumerationOfIndividualsIsWrittenAsOneSet() throws Exception {
+        OWLIndividual[] members = {
+            df.getOWLNamedIndividual(IRI.create(NS + "b")),
+            df.getOWLNamedIndividual(IRI.create(NS + "c")),
+        };
+        OWLOntology o = ontology(df.getOWLSubClassOfAxiom(
+            df.getOWLClass(IRI.create(NS + "A")), df.getOWLObjectOneOf(members)));
+
+        String body = roundTrip(o);
+        assertTrue(body.contains("{b,c}"),
+            () -> "one set, not a union of singletons:\n" + body);
+        assertFalse(body.contains("⊔"),
+            () -> "there is no union in this axiom:\n" + body);
+        // Idempotent, which the parenthesis growth was not.
+        assertEquals(body, statementsOnly(write(read(write(o)))),
+            () -> "and stable on a second pass:\n" + body);
+    }
+
+    /** Including when it is nested inside something else. */
+    @Test
+    void aNestedEnumerationIsAlsoOneSet() throws Exception {
+        OWLOntology o = ontology(df.getOWLSubClassOfAxiom(
+            df.getOWLClass(IRI.create(NS + "C")),
+            df.getOWLObjectUnionOf(
+                df.getOWLObjectOneOf(df.getOWLNamedIndividual(IRI.create(NS + "d")),
+                                     df.getOWLNamedIndividual(IRI.create(NS + "e"))),
+                df.getOWLClass(IRI.create(NS + "F")))));
+        assertTrue(roundTrip(o).contains("{d,e}"));
+    }
+
+    /** A singleton is still a singleton, and still an enumeration. */
+    @Test
+    void aSingletonEnumerationSurvives() throws Exception {
+        OWLOntology o = ontology(df.getOWLSubClassOfAxiom(
+            df.getOWLClass(IRI.create(NS + "A")),
+            df.getOWLObjectOneOf(df.getOWLNamedIndividual(IRI.create(NS + "b")))));
+        assertTrue(roundTrip(o).contains("{b}"));
+    }
+
     /** A uniform enumeration of either kind still works. */
     @Test
     void aUniformEnumerationIsUnaffected() throws Exception {
