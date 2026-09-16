@@ -228,9 +228,16 @@ class ChainedEquivalenceTest {
     /** The forms that share the operator must not have been broken by the chaining. */
     @Test
     void theOtherUsesOfTheOperatorStillWork() throws Exception {
+        // `q ≡ r⁻` is read as the dedicated inverse axiom: DL spells
+        // InverseObjectProperties and an inverse-shaped EquivalentObjectProperties the same
+        // way, so one of them has to be the answer, and it is the more specific.
         OWLOntology inverse = read(PREFIX + "A ⊑ ∃r.B\nq ≡ r⁻\n");
-        assertEquals(1, inverse.getAxioms(AxiomType.EQUIVALENT_OBJECT_PROPERTIES).size(),
+        assertEquals(1, inverse.getAxioms(AxiomType.INVERSE_OBJECT_PROPERTIES).size(),
             () -> inverse.getLogicalAxioms().toString());
+        // And a chain of inverses on both sides is not that shape, so it stays general.
+        OWLOntology both = read(PREFIX + "A ⊑ ∃r.B\nA ⊑ ∃s.B\nr⁻ ≡ s⁻\n");
+        assertEquals(1, both.getAxioms(AxiomType.EQUIVALENT_OBJECT_PROPERTIES).size(),
+            () -> both.getLogicalAxioms().toString());
 
         OWLOntology chain = read(PREFIX + "A ⊑ ∃p.B\nA ⊑ ∃q.B\nd ≡ p ∘ q\n");
         assertEquals(1, chain.getAxioms(AxiomType.SUB_PROPERTY_CHAIN_OF).size(),

@@ -590,6 +590,28 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
                 currentLine, 0);
         }
 
+        // Disjointness: X ⊑ ¬ Y
+        //
+        // DL says disjointness with a subsumption of a complement, which is how the writer
+        // spells it, so reading it literally lost the axiom type on every round trip. There
+        // is one spelling and two OWL axioms, so only one of them can survive; the
+        // disjointness is the more specific of the two and is what the writer started from.
+        //
+        // A disjointness of three or more is written as its pairs, and comes back as those
+        // pairs — the same statement, since that is what disjointness of a set means.
+        if (rhs instanceof OWLObjectComplementOf && lhs instanceof OWLClassExpression) {
+            OWLClassExpression complemented = ((OWLObjectComplementOf) rhs).getOperand();
+            OWLClassExpression subject = asClass(lhs);
+            // Not when the two sides are the same class. `A ⊑ ¬A` says A is empty, which is
+            // a real thing to say; `DisjointClasses(:A :A)` is a set of one class and says
+            // nothing at all, so the conversion would throw the axiom away — and OWL API
+            // collapses the pair, leaving a degenerate axiom the writer cannot spell either.
+            if (!subject.equals(complemented)) {
+                axioms.add(df.getOWLDisjointClassesAxiom(subject, complemented));
+                return null;
+            }
+        }
+
         // Mixed: one side is a named property and the other resolved as a class.
         // This occurs at the boundary of dual-use hierarchies (e.g. SNOMED-CT attribute root).
         // Coerce the property side to a class so the class node keeps its class identity.
@@ -626,6 +648,39 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
         // coerced rather than allowed to split the statement across two kinds.
         boolean objects = operands.stream().anyMatch(OWLObjectPropertyExpression.class::isInstance);
         boolean data = operands.stream().anyMatch(OWLDataPropertyExpression.class::isInstance);
+
+        // Inverse properties: r ≡ s⁻
+        //
+        // The same choice as the disjointness idiom above. DLe writes both
+        // `InverseObjectProperties(:r :s)` and
+        // `EquivalentObjectProperties(:r ObjectInverseOf(:s))` as `r ≡ s⁻`, so one of them
+        // has to be what it reads back as, and the dedicated axiom is the more specific.
+        //
+        // Both sides named, exactly two operands: `r⁻ ≡ s⁻` says r and s are equivalent
+        // rather than inverse, and stays the general equivalence it is.
+        if (operands.size() == 2) {
+            OWLObject first = operands.get(0);
+            OWLObject second = operands.get(1);
+            OWLObjectPropertyExpression named = null;
+            OWLObjectPropertyExpression inverted = null;
+            for (int i = 0; i < 2; i++) {
+                OWLObject candidate = i == 0 ? first : second;
+                OWLObject other = i == 0 ? second : first;
+                if (candidate instanceof OWLObjectProperty
+                        && other instanceof OWLObjectPropertyExpression
+                        && ((OWLObjectPropertyExpression) other).isAnonymous()
+                        && !((OWLObjectPropertyExpression) other)
+                            .getInverseProperty().getSimplified().isAnonymous()) {
+                    named = (OWLObjectPropertyExpression) candidate;
+                    inverted = ((OWLObjectPropertyExpression) other)
+                        .getInverseProperty().getSimplified();
+                }
+            }
+            if (named != null) {
+                axioms.add(df.getOWLInverseObjectPropertiesAxiom(named, inverted));
+                return null;
+            }
+        }
 
         if (objects && !data) {
             List<OWLObjectPropertyExpression> props = operands.stream()

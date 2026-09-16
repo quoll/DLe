@@ -191,8 +191,10 @@ class RoleCharacteristicKindTest {
         assertEquals(1, chain.getAxioms(AxiomType.SUB_PROPERTY_CHAIN_OF).size(),
             () -> chain.getLogicalAxioms().toString());
 
+        // The dedicated inverse axiom; see ChainedEquivalenceTest for why this spelling
+        // resolves to InverseObjectProperties rather than the general equivalence.
         OWLOntology inverse = parse(PREFIX + "A ⊑ ∃r.B\nq ≡ r⁻\n");
-        assertEquals(1, inverse.getAxioms(AxiomType.EQUIVALENT_OBJECT_PROPERTIES).size(),
+        assertEquals(1, inverse.getAxioms(AxiomType.INVERSE_OBJECT_PROPERTIES).size(),
             () -> inverse.getLogicalAxioms().toString());
     }
 }

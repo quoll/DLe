@@ -13,6 +13,7 @@ import org.semanticweb.owlapi.model.AxiomType;
 import org.semanticweb.owlapi.model.OWLDatatypeRestriction;
 import org.semanticweb.owlapi.model.OWLFacetRestriction;
 import org.semanticweb.owlapi.model.OWLAsymmetricObjectPropertyAxiom;
+import org.semanticweb.owlapi.model.OWLDisjointClassesAxiom;
 import org.semanticweb.owlapi.model.OWLDisjointDataPropertiesAxiom;
 import org.semanticweb.owlapi.model.OWLDisjointObjectPropertiesAxiom;
 import org.semanticweb.owlapi.model.OWLIrreflexiveObjectPropertyAxiom;
@@ -511,6 +512,49 @@ public class DLESyntaxObjectRenderer extends DLSyntaxObjectRenderer {
     public void visit(OWLEquivalentDataPropertiesAxiom axiom) {
         if (axiom.properties().limit(2).count() < 2) return;
         super.visit(axiom);
+    }
+
+    /**
+     * Class disjointness, written pairwise as {@code X \u2291 \u00ac Y}.
+     *
+     * <p>The inherited renderer had two faults here, and each produced a document that said
+     * the wrong thing or nothing at all.
+     *
+     * <p>It wrote the complemented operand without nesting it, so a complex one lost its
+     * parentheses and changed meaning completely:
+     * {@code DisjointClasses(ObjectIntersectionOf(:A :B) :C)} became
+     * <code>C &sqsube; &not; A &sqcap; B</code>, which reads as
+     * <code>C &sqsube; (&not;A) &sqcap; B</code> — C is a B that is not an A, rather than C
+     * being disjoint from A-and-B. Exit 0, document loads, different axiom. The direct
+     * {@code SubClassOf(:C ObjectComplementOf(ObjectIntersectionOf(:A :B)))} was written
+     * correctly as <code>C &sqsube; &not;(A &sqcap; B)</code>, which is where the shape for
+     * this came from.
+     *
+     * <p>And it joined the pairs with commas on one line —
+     * <code>A &sqsube; &not; B, A &sqsube; &not; C, B &sqsube; &not; C</code> — which is not
+     * a statement DLe has, so a three-way disjointness stopped the document loading. One
+     * statement per line reads back as the pairwise axioms, which is what a disjointness of
+     * three or more means.
+     */
+    @Override
+    public void visit(OWLDisjointClassesAxiom axiom) {
+        List<OWLClassExpression> operands =
+            axiom.classExpressions().collect(java.util.stream.Collectors.toList());
+        // Vacuous, and `A` alone is not a statement; see visit(OWLEquivalentClassesAxiom).
+        if (operands.size() < 2) return;
+        boolean firstPair = true;
+        for (int i = 0; i < operands.size(); i++) {
+            for (int j = i + 1; j < operands.size(); j++) {
+                if (!firstPair) write("\n");
+                firstPair = false;
+                writeNested(operands.get(i));
+                write(" ");
+                write(DLSyntax.SUBCLASS);
+                write(" ");
+                write(DLSyntax.NOT);
+                writeNested(operands.get(j));
+            }
+        }
     }
 
     @Override
