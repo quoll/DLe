@@ -731,12 +731,16 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
     @Override
     public OWLObject visitHasKeyAxiom(DLESyntaxParser.HasKeyAxiomContext ctx) {
         OWLClassExpression ce = asClass(visit(ctx.classExpr()));
-        List<OWLPropertyExpression> keys = ctx.keyExpr().name().stream()
-            .map(n -> {
+        List<OWLPropertyExpression> keys = ctx.keyExpr().propertyExpr().stream()
+            .map(expr -> {
+                DLESyntaxParser.NameContext n = PropertyExprs.coreName(expr);
                 OWLObject obj = nameToPropertyOrClass(n);
-                if (obj instanceof OWLPropertyExpression) return (OWLPropertyExpression) obj;
-                // Unclassified name in key context: default to object property
-                return (OWLPropertyExpression) df.getOWLObjectProperty(expandName(n));
+                if (obj instanceof OWLDataPropertyExpression) {
+                    refuseInverseOnDataProperty("key", expr);
+                    return (OWLPropertyExpression) obj;
+                }
+                // An object property, or an unclassified name — which defaults to one.
+                return (OWLPropertyExpression) buildObjectProp(expr);
             })
             .collect(Collectors.toList());
         axioms.add(df.getOWLHasKeyAxiom(ce, keys));
@@ -776,43 +780,45 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
 
     @Override
     public OWLObject visitTransitiveRoleAxiom(DLESyntaxParser.TransitiveRoleAxiomContext ctx) {
-        axioms.add(df.getOWLTransitiveObjectPropertyAxiom(objectOnlyProp("Trans", ctx.name())));
+        axioms.add(df.getOWLTransitiveObjectPropertyAxiom(objectOnlyProp("Trans", ctx.propertyExpr())));
         return null;
     }
 
     @Override
     public OWLObject visitFunctionalRoleAxiom(DLESyntaxParser.FunctionalRoleAxiomContext ctx) {
-        String name = ctx.name().getText();
+        String name = PropertyExprs.coreNameText(ctx.propertyExpr());
         if (dataPropertyNames.contains(name)) {
+            refuseInverseOnDataProperty("Func", ctx.propertyExpr());
             axioms.add(df.getOWLFunctionalDataPropertyAxiom(
-                df.getOWLDataProperty(expandName(ctx.name()))));
+                df.getOWLDataProperty(expandName(PropertyExprs.coreName(ctx.propertyExpr())))));
         } else {
-            axioms.add(df.getOWLFunctionalObjectPropertyAxiom(objectProp(ctx.name())));
+            axioms.add(df.getOWLFunctionalObjectPropertyAxiom(
+                buildObjectProp(ctx.propertyExpr())));
         }
         return null;
     }
 
     @Override
     public OWLObject visitReflexiveRoleAxiom(DLESyntaxParser.ReflexiveRoleAxiomContext ctx) {
-        axioms.add(df.getOWLReflexiveObjectPropertyAxiom(objectOnlyProp("Ref", ctx.name())));
+        axioms.add(df.getOWLReflexiveObjectPropertyAxiom(objectOnlyProp("Ref", ctx.propertyExpr())));
         return null;
     }
 
     @Override
     public OWLObject visitIrreflexiveRoleAxiom(DLESyntaxParser.IrreflexiveRoleAxiomContext ctx) {
-        axioms.add(df.getOWLIrreflexiveObjectPropertyAxiom(objectOnlyProp("Irref", ctx.name())));
+        axioms.add(df.getOWLIrreflexiveObjectPropertyAxiom(objectOnlyProp("Irref", ctx.propertyExpr())));
         return null;
     }
 
     @Override
     public OWLObject visitSymmetricRoleAxiom(DLESyntaxParser.SymmetricRoleAxiomContext ctx) {
-        axioms.add(df.getOWLSymmetricObjectPropertyAxiom(objectOnlyProp("Sym", ctx.name())));
+        axioms.add(df.getOWLSymmetricObjectPropertyAxiom(objectOnlyProp("Sym", ctx.propertyExpr())));
         return null;
     }
 
     @Override
     public OWLObject visitAsymmetricRoleAxiom(DLESyntaxParser.AsymmetricRoleAxiomContext ctx) {
-        axioms.add(df.getOWLAsymmetricObjectPropertyAxiom(objectOnlyProp("Asym", ctx.name())));
+        axioms.add(df.getOWLAsymmetricObjectPropertyAxiom(objectOnlyProp("Asym", ctx.propertyExpr())));
         return null;
     }
 
@@ -822,12 +828,16 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
         // the object one whatever the names were, so `Disj(p, q)` over two data properties
         // declared them as object properties as well — the same illegal punning. The
         // intersection spelling `p ⊓ q ⊑ ⊥` already routed by kind; this now matches it.
-        List<String> names = ctx.name().stream()
-            .map(ParserRuleContext::getText).collect(Collectors.toList());
+        List<String> names = ctx.propertyExpr().stream()
+            .map(PropertyExprs::coreNameText).collect(Collectors.toList());
         // Deduped on the resolved IRI, not the spelling: with two prefixes bound to one
         // namespace, `Disj(e1:p, e2:p)` named one property twice, passed a text-based
         // check, and OWL then collapsed the pair into the unary axiom this rejects.
-        List<IRI> resolved = ctx.name().stream().map(this::expandName)
+        // The resolved IRI and whether it is inverted: `Disj(r, r⁻)` names two different
+        // property expressions, so it is not the repeat that `Disj(r, r)` is.
+        List<String> resolved = ctx.propertyExpr().stream()
+            .map(p -> expandName(PropertyExprs.coreName(p))
+                + (PropertyExprs.isInverse(p) ? "\u207b" : ""))
             .collect(Collectors.toList());
         // Disjointness needs two distinct properties. `Disj(p, p)` built a unary axiom,
         // which OWL rejects as a profile violation and which the writer then emitted as
@@ -845,15 +855,16 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
                         + ". Disjointness holds between properties of one kind.",
                     ctx.start.getLine(), ctx.start.getCharPositionInLine());
             }
-            List<OWLDataPropertyExpression> dataProps = ctx.name().stream()
-                .map(n -> (OWLDataPropertyExpression) df.getOWLDataProperty(expandName(n)))
+            ctx.propertyExpr().forEach(p -> refuseInverseOnDataProperty("Disj", p));
+            List<OWLDataPropertyExpression> dataProps = ctx.propertyExpr().stream()
+                .map(p -> (OWLDataPropertyExpression) df.getOWLDataProperty(
+                    expandName(PropertyExprs.coreName(p))))
                 .collect(Collectors.toList());
             axioms.add(df.getOWLDisjointDataPropertiesAxiom(dataProps));
             return null;
         }
-        List<OWLObjectPropertyExpression> props = ctx.name().stream()
-            .map(n -> (OWLObjectPropertyExpression) df.getOWLObjectProperty(expandName(n)))
-            .collect(Collectors.toList());
+        List<OWLObjectPropertyExpression> props = ctx.propertyExpr().stream()
+            .map(this::buildObjectProp).collect(Collectors.toList());
         axioms.add(df.getOWLDisjointObjectPropertiesAxiom(props));
         return null;
     }
@@ -869,6 +880,36 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
      * punning OWL 2 DL forbids, which no reasoner will load and which DLe cannot write
      * back. Functionality is the exception, and has both forms.
      */
+    /**
+     * An object property expression for a characteristic that is object-only.
+     *
+     * <p>OWL permits an expression here, and the writer emits one — {@code Trans(r⁻)} comes
+     * out of any ontology with an inverse in that position — so the reader has to accept it.
+     */
+    private OWLObjectPropertyExpression objectOnlyProp(
+            String keyword, DLESyntaxParser.PropertyExprContext ctx) {
+        objectOnlyProp(keyword, PropertyExprs.coreName(ctx));
+        return buildObjectProp(ctx);
+    }
+
+    /**
+     * Refuses an inverse on a data property.
+     *
+     * <p>OWL has no inverse for a data property: a value is not a thing that can point back.
+     * The characteristics with both forms therefore have to check, because the expression is
+     * legal syntax and only the property's kind makes it wrong.
+     */
+    private void refuseInverseOnDataProperty(
+            String keyword, DLESyntaxParser.PropertyExprContext ctx) {
+        if (PropertyExprs.isInverse(ctx)) {
+            throw new DLESemanticException(
+                keyword + " is applied to the inverse of " + PropertyExprs.coreNameText(ctx)
+                    + ", which is used as a data property in this document. A data property"
+                    + " has no inverse in OWL — a value cannot point back at what holds it.",
+                ctx.start.getLine(), ctx.start.getCharPositionInLine());
+        }
+    }
+
     private OWLObjectProperty objectOnlyProp(String keyword, DLESyntaxParser.NameContext ctx) {
         String name = ctx.getText();
         if (dataPropertyNames.contains(name)) {
@@ -887,7 +928,7 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
 
     @Override
     public OWLObject visitSubPropertyChainAxiom(DLESyntaxParser.SubPropertyChainAxiomContext ctx) {
-        OWLObjectProperty superProp = df.getOWLObjectProperty(expandName(ctx.name()));
+        OWLObjectPropertyExpression superProp = buildObjectProp(ctx.propertyExpr());
         List<OWLObjectPropertyExpression> chain = ctx.chainExpr().propertyExpr().stream()
             .map(p -> buildObjectProp(p))
             .collect(Collectors.toList());

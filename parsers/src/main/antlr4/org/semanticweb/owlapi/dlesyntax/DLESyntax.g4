@@ -88,16 +88,23 @@ axiom
     | COMPLEMENT '(' name ',' literal ')' PNAME_NS name  # NegativeDataAssertionAxiom
     | classExpr SUBCLASS keyExpr                    # HasKeyAxiom
     | cardSymbol NUMBER propertyExpr DOT classExpr  # FunctionalPropertyAxiom
-    | TRANS '(' name ')'                            # TransitiveRoleAxiom
-    | FUNC  '(' name ')'                            # FunctionalRoleAxiom
-    | REF   '(' name ')'                            # ReflexiveRoleAxiom
-    | IRREF '(' name ')'                            # IrreflexiveRoleAxiom
-    | SYM   '(' name ')'                            # SymmetricRoleAxiom
-    | ASYM  '(' name ')'                            # AsymmetricRoleAxiom
-    | DISJ  '(' name (',' name)+ ')'               # DisjointRoleAxiom
+    // propertyExpr, not name: OWL permits an object property expression in every one of
+    // these, and the writer emits `r⁻` into all of them. The reader took a bare name, so
+    // each was a save-then-fail-to-load — `Func(r⁻)` came out of any ontology with an
+    // inverse-functional or inverse-characteristic axiom and would not read back.
+    //
+    // A data property has no inverse in OWL, so the semantic layer refuses one where the
+    // characteristic has both forms.
+    | TRANS '(' propertyExpr ')'                    # TransitiveRoleAxiom
+    | FUNC  '(' propertyExpr ')'                    # FunctionalRoleAxiom
+    | REF   '(' propertyExpr ')'                    # ReflexiveRoleAxiom
+    | IRREF '(' propertyExpr ')'                    # IrreflexiveRoleAxiom
+    | SYM   '(' propertyExpr ')'                    # SymmetricRoleAxiom
+    | ASYM  '(' propertyExpr ')'                    # AsymmetricRoleAxiom
+    | DISJ  '(' propertyExpr (',' propertyExpr)+ ')' # DisjointRoleAxiom
     | name DOMAIN name                              # AnnPropDomainAxiom
     | name RANGE  name                              # AnnPropRangeAxiom
-    | chainExpr SUBCLASS name                       # SubPropertyChainAxiom
+    | chainExpr SUBCLASS propertyExpr               # SubPropertyChainAxiom
     | name EQUIV chainExpr                          # PropertyChainEquivAxiom
     | propertyExpr EQUIV propertyExpr SUBCLASS propertyExpr # ChainedEquivSubAxiom
     | classExpr SUBCLASS classExpr                  # SubClassAxiom
@@ -133,8 +140,9 @@ chainExpr
     : propertyExpr (CHAIN propertyExpr)+
     ;
 
+// A key may name an inverse: OWL permits any object property expression here.
 keyExpr
-    : 'key' '(' name (',' name)* ')'
+    : 'key' '(' propertyExpr (',' propertyExpr)* ')'
     ;
 
 // A property expression: a name, an inverse (r⁻), or either in parentheses.

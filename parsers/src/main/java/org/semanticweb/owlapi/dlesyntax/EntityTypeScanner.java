@@ -220,14 +220,14 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
 
     // ── Textbook role axiom syntax ───────────────────────────────────────────
 
-    @Override public Void visitTransitiveRoleAxiom(DLESyntaxParser.TransitiveRoleAxiomContext ctx)   { objectPropertyNames.add(ctx.name().getText()); return visitChildren(ctx); }
-    @Override public Void visitFunctionalRoleAxiom(DLESyntaxParser.FunctionalRoleAxiomContext ctx)   { classifyUnknownRole(ctx.name().getText()); return visitChildren(ctx); }
-    @Override public Void visitReflexiveRoleAxiom(DLESyntaxParser.ReflexiveRoleAxiomContext ctx)     { objectPropertyNames.add(ctx.name().getText()); return visitChildren(ctx); }
-    @Override public Void visitIrreflexiveRoleAxiom(DLESyntaxParser.IrreflexiveRoleAxiomContext ctx) { objectPropertyNames.add(ctx.name().getText()); return visitChildren(ctx); }
-    @Override public Void visitSymmetricRoleAxiom(DLESyntaxParser.SymmetricRoleAxiomContext ctx)     { objectPropertyNames.add(ctx.name().getText()); return visitChildren(ctx); }
-    @Override public Void visitAsymmetricRoleAxiom(DLESyntaxParser.AsymmetricRoleAxiomContext ctx)   { objectPropertyNames.add(ctx.name().getText()); return visitChildren(ctx); }
+    @Override public Void visitTransitiveRoleAxiom(DLESyntaxParser.TransitiveRoleAxiomContext ctx)   { objectPropertyNames.add(PropertyExprs.coreNameText(ctx.propertyExpr())); return visitChildren(ctx); }
+    @Override public Void visitFunctionalRoleAxiom(DLESyntaxParser.FunctionalRoleAxiomContext ctx)   { classifyUnknownRole(PropertyExprs.coreNameText(ctx.propertyExpr())); return visitChildren(ctx); }
+    @Override public Void visitReflexiveRoleAxiom(DLESyntaxParser.ReflexiveRoleAxiomContext ctx)     { objectPropertyNames.add(PropertyExprs.coreNameText(ctx.propertyExpr())); return visitChildren(ctx); }
+    @Override public Void visitIrreflexiveRoleAxiom(DLESyntaxParser.IrreflexiveRoleAxiomContext ctx) { objectPropertyNames.add(PropertyExprs.coreNameText(ctx.propertyExpr())); return visitChildren(ctx); }
+    @Override public Void visitSymmetricRoleAxiom(DLESyntaxParser.SymmetricRoleAxiomContext ctx)     { objectPropertyNames.add(PropertyExprs.coreNameText(ctx.propertyExpr())); return visitChildren(ctx); }
+    @Override public Void visitAsymmetricRoleAxiom(DLESyntaxParser.AsymmetricRoleAxiomContext ctx)   { objectPropertyNames.add(PropertyExprs.coreNameText(ctx.propertyExpr())); return visitChildren(ctx); }
     @Override public Void visitDisjointRoleAxiom(DLESyntaxParser.DisjointRoleAxiomContext ctx) {
-        ctx.name().forEach(n -> classifyUnknownRole(n.getText()));
+        ctx.propertyExpr().forEach(p -> classifyUnknownRole(PropertyExprs.coreNameText(p)));
         return visitChildren(ctx);
     }
 
@@ -386,12 +386,14 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
         // The super of a chain is object-only, exactly as the members are, so it is
         // evidence too. It used not to be recorded, which left the conflict check blind: a
         // document with `(a,"5"):d` and `p ∘ q ⊑ d` declared `d` as both kinds in silence.
-        recordObjectOnly(ctx.name(), ctx);
+        recordObjectOnly(PropertyExprs.coreName(ctx.propertyExpr()), ctx);
         return visitChildren(ctx);
     }
 
     @Override
     public Void visitPropertyChainEquivAxiom(DLESyntaxParser.PropertyChainEquivAxiomContext ctx) {
+        // `d ≡ p ∘ q` still takes a bare name on the left; only the nine rules that OWL
+        // defines over a property expression were widened.
         recordObjectOnly(ctx.name(), ctx);
         for (DLESyntaxParser.PropertyExprContext propCtx : ctx.chainExpr().propertyExpr()) {
             classifyProp(propCtx, false, true);

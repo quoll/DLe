@@ -320,23 +320,54 @@ class ParenthesisTransparencyTest {
     // ── Where transparency deliberately stops ───────────────────────────────
 
     /**
-     * Keyword-argument positions name an entity rather than take an expression,
-     * and the keyword's own parentheses already delimit the argument. These are
-     * pinned as errors so the boundary cannot drift unnoticed, and so the Python
-     * port does not have to guess where transparency ends.
+     * The role-characteristic keywords take a property expression, so parentheses are
+     * transparent there too.
+     *
+     * <p>This boundary has moved, deliberately. These positions used to take a bare name
+     * and were pinned as errors here; OWL defines all of them over an object property
+     * expression, and the writer emits {@code r⁻} into every one, so a document with an
+     * inverse in that position could be written and not read back. Widening them to
+     * {@code propertyExpr} brought its parenthesised form along, which is consistent with
+     * the chain members and predicate fillers above.
+     *
+     * <p><b>For the Python port:</b> transparency now extends to the argument of
+     * {@code Trans}, {@code Func}, {@code Ref}, {@code Irref}, {@code Sym}, {@code Asym},
+     * {@code Disj} and {@code key}, and to the super-property of a chain.
      */
     @ParameterizedTest(name = "{0}")
     @ValueSource(strings = {
-        "Trans((locatedIn))",
-        "Disj((contains),(locatedIn))",
-        "C ⊑ key((id))",
+        "Trans((locatedIn))|Trans(locatedIn)",
+        "Disj((contains),(locatedIn))|Disj(contains, locatedIn)",
+        "C ⊑ key((id))|C ⊑ key(id)",
+        "Sym((locatedIn))|Sym(locatedIn)",
+        "contains ∘ locatedIn ⊑ (locatedIn)|contains ∘ locatedIn ⊑ locatedIn",
     })
-    void keywordArgumentPositionsTakeABareName(String body) {
+    void keywordArgumentPositionsTakeAPropertyExpression(String pair) throws Exception {
+        String[] spellings = pair.split("\\|");
+        equivalentSpellings("⊤ ⊑ ∀id.xsd:string\nA ⊑ ∃contains.B\nA ⊑ ∃locatedIn.B\n"
+                + spellings[0] + "\n",
+            "⊤ ⊑ ∀id.xsd:string\nA ⊑ ∃contains.B\nA ⊑ ∃locatedIn.B\n"
+                + spellings[1] + "\n");
+    }
+
+    /**
+     * Where transparency does still stop: positions that name an individual or a subject.
+     *
+     * <p>Pinned as errors so the boundary cannot drift unnoticed, and so the Python port
+     * does not have to guess where it is. An individual is not an expression — there is
+     * nothing to nest — and an annotation's subject is a name by construction.
+     */
+    @ParameterizedTest(name = "{0}")
+    @ValueSource(strings = {
+        "((a),b):locatedIn",
+        "@label (A) \"x\"",
+    })
+    void namePositionsStillTakeABareName(String body) {
         // Specifically a syntax error, not any exception: a broad assertThrows
         // would also be satisfied by an internal failure elsewhere.
         assertThrows(OWLParserException.class,
             () -> parse("⊤ ⊑ ∀id.xsd:string\n" + body + "\n"),
-            "parentheses are not accepted in keyword-argument positions");
+            "parentheses are not accepted where a bare name is required");
     }
 
     // ── Writing back out ────────────────────────────────────────────────────
