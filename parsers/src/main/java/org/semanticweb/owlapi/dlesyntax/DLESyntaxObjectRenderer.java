@@ -311,10 +311,21 @@ public class DLESyntaxObjectRenderer extends DLSyntaxObjectRenderer {
      * string — a different literal, and a different axiom. Any multilingual vocabulary lost
      * every language it had.
      */
+    /** Implicit, and so never written: a plain string is just a string. */
+    private static final String XSD_STRING = "http://www.w3.org/2001/XMLSchema#string";
+
     private String quoted(OWLLiteral lit) {
         String escaped = lit.getLiteral().replace("\\", "\\\\").replace("\"", "\\\"");
         String text = "\"" + escaped + "\"";
-        return lit.hasLang() ? text + "@" + lit.getLang() : text;
+        if (lit.hasLang()) {
+            return text + "@" + lit.getLang();
+        }
+        // A tag and a datatype are mutually exclusive, so at most one of these appears.
+        // xsd:string is left off: it is what a bare string already means, and writing it
+        // would change every existing document for no gain.
+        String datatype = lit.getDatatype().getIRI().toString();
+        return XSD_STRING.equals(datatype) ? text
+            : text + "^^" + shortFormIRI(lit.getDatatype().getIRI());
     }
 
     private String renderSubject(OWLAnnotationSubject subject) {
@@ -726,6 +737,20 @@ public class DLESyntaxObjectRenderer extends DLSyntaxObjectRenderer {
     }
 
     /**
+     * Whether the reader will rebuild this value's datatype from its spelling alone.
+     *
+     * <p>A bare number carries no datatype, and the reader types it by looking at the text:
+     * digits give {@code xsd:integer}, a decimal point gives {@code xsd:double}. Only those
+     * two survive being written bare.
+     */
+    private static boolean reconstructsFromSpellingAlone(OWLLiteral literal) {
+        String datatype = literal.getDatatype().getIRI().toString();
+        return literal.getLiteral().contains(".")
+            ? "http://www.w3.org/2001/XMLSchema#double".equals(datatype)
+            : "http://www.w3.org/2001/XMLSchema#integer".equals(datatype);
+    }
+
+    /**
      * Whether a facet can take the compact bracket form, as in {@code xsd:int[\u22651]}.
      *
      * <p>Two things have to hold, and each was assumed. Only the four ordered bounds have a
@@ -740,11 +765,16 @@ public class DLESyntaxObjectRenderer extends DLSyntaxObjectRenderer {
             case MAX_INCLUSIVE:
             case MIN_EXCLUSIVE:
             case MAX_EXCLUSIVE:
-                // On the spelling, not the datatype: xsd:int and xsd:decimal are not
-                // isInteger()/isDouble(), but their values are ordinary numbers that the
-                // compact form carries fine. What it cannot carry is a date, an exponent
-                // or INF, and those are what the lexical test excludes.
-                return NUMBER.matcher(fr.getFacetValue().getLiteral()).matches();
+                // Two conditions, and both are about what comes back. The compact bracket
+                // holds a NUMBER and nothing else, so the spelling has to be one — a date,
+                // an exponent or INF cannot go there. And it has no room for a datatype, so
+                // the reader rebuilds one from the spelling alone: an integer becomes
+                // xsd:integer and a decimal becomes xsd:double. Using the compact form for
+                // any other datatype silently retyped the bound — xsd:int became
+                // xsd:integer, xsd:decimal became xsd:double — so those take the keyword
+                // form, where the datatype can be written out.
+                return NUMBER.matcher(fr.getFacetValue().getLiteral()).matches()
+                    && reconstructsFromSpellingAlone(fr.getFacetValue());
             default:
                 return false;
         }

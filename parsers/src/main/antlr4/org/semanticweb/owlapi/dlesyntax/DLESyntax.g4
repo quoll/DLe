@@ -247,10 +247,21 @@ oneOfElem
 
 // ── Literals ─────────────────────────────────────────────────────────────────
 
+// A datatype may be named after a string, as Turtle spells it: `"2024-01-01"^^xsd:date`.
+// Only after a string: a number or a boolean already says what it is, and `^^` on one would
+// be a second, contradictory answer.
+//
+// `xsd:string` is implicit, so a plain string needs nothing and the writer never emits it —
+// but `"hello"^^xsd:string` written out is still accepted, because a generator may produce
+// it and it says exactly what a plain string says.
+//
+// A datatype and a language tag cannot both appear: a tagged string is rdf:langString by
+// definition, so a datatype beside the tag either repeats it or contradicts it. The tag
+// lives inside the STRING token, so this is checked in the semantic layer rather than here.
 literal
-    : STRING   # StringLiteral
-    | NUMBER   # NumberLiteral
-    | BOOL     # BoolLiteral
+    : STRING ('^^' name)?   # StringLiteral
+    | NUMBER                # NumberLiteral
+    | BOOL                  # BoolLiteral
     ;
 
 // The case of a name's local part carries meaning: a name whose local part begins

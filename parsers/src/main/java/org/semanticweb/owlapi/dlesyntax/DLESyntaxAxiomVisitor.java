@@ -321,7 +321,11 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
     @Nullable
     static String languageTag(String token) {
         int close = token.lastIndexOf('"');
-        return close + 1 < token.length() ? token.substring(close + 2) : null;
+        // The '@' has to be there. Anything after the closing quote used to count as a tag,
+        // so once `^^` existed `"2024-01-01"^^xsd:date` reported a tag of `^xsd:date` — and
+        // the facet check then refused a perfectly good typed value for carrying a language.
+        if (close + 1 >= token.length() || token.charAt(close + 1) != '@') return null;
+        return token.substring(close + 2);
     }
 
     // ── Predicate definitions ────────────────────────────────────────────────
@@ -2014,7 +2018,7 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
     private OWLLiteral buildLiteral(DLESyntaxParser.OneOfElemContext ctx) {
         DLESyntaxParser.LiteralContext lit = ((DLESyntaxParser.LiteralElemContext) ctx).literal();
         if (lit instanceof DLESyntaxParser.StringLiteralContext) {
-            return stringLiteral(lit.getText());
+            return typedLiteral((DLESyntaxParser.StringLiteralContext) lit);
         }
         if (lit instanceof DLESyntaxParser.NumberLiteralContext) {
             String s = lit.getText();
@@ -2097,8 +2101,11 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
         // A facet value is a typed literal. OWL has no facet that compares against a
         // language, so a tag here cannot mean anything — and silently keeping it produced a
         // datatype restriction no reasoner will accept.
+        // The STRING token, not the whole literal: the datatype is a sibling of it now, and
+        // a typed facet value is legitimate — only a language is not.
         if (lit instanceof DLESyntaxParser.StringLiteralContext
-                && languageTag(lit.getText()) != null) {
+                && languageTag(((DLESyntaxParser.StringLiteralContext) lit)
+                    .STRING().getText()) != null) {
             throw new DLESemanticException(
                 "a facet value cannot carry a language tag: " + lit.getText()
                     + ". Facets compare against a typed value, so drop the tag.",
@@ -2127,7 +2134,7 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
 
     private OWLLiteral literalOf(DLESyntaxParser.LiteralContext lit) {
         if (lit instanceof DLESyntaxParser.StringLiteralContext) {
-            return stringLiteral(lit.getText());
+            return typedLiteral((DLESyntaxParser.StringLiteralContext) lit);
         }
         if (lit instanceof DLESyntaxParser.NumberLiteralContext) {
             String s = lit.getText();
@@ -2138,6 +2145,31 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
     }
 
     /** Strips surrounding double-quotes and unescapes basic sequences. */
+    /**
+     * A string literal, with a datatype or a language tag when it carries one.
+     *
+     * <p>Without a datatype every typed value became a plain string: twenty-four XSD
+     * datatypes collapsed to {@code xsd:string}, and a user-declared one could not survive
+     * at all. {@code xsd:string} itself is implicit and never written, but is accepted when
+     * spelled out.
+     */
+    private OWLLiteral typedLiteral(DLESyntaxParser.StringLiteralContext ctx) {
+        String tokenText = ctx.STRING().getText();
+        if (ctx.name() == null) {
+            return stringLiteral(tokenText);
+        }
+        if (languageTag(tokenText) != null) {
+            throw new DLESemanticException(
+                "a literal cannot carry both a language tag and a datatype: "
+                    + ctx.getText() + ". A tagged string is rdf:langString already, so the"
+                    + " datatype either repeats that or contradicts it; write one or the"
+                    + " other.",
+                ctx.start.getLine(), ctx.start.getCharPositionInLine());
+        }
+        IRI datatype = expandName(ctx.name());
+        return df.getOWLLiteral(unquote(tokenText), df.getOWLDatatype(datatype));
+    }
+
     private OWLLiteral stringLiteral(String tokenText) {
         String tag = languageTag(tokenText);
         return tag == null ? df.getOWLLiteral(unquote(tokenText))

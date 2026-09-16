@@ -107,8 +107,8 @@ class UnreadableOutputTest {
      * an unquoted string, from the same cause, and it survived the fix for the string case
      * because the numeric branch was never guarded.
      *
-     * <p>Quoting loses the datatype, which is the separate typed-literal gap (#24). It does
-     * not lose the property's kind, the individual, or the document.
+     * <p>Quoting alone left the value a plain string, which was the typed-literal gap; now
+     * that {@code ^^} exists the datatype goes with it and these round-trip exactly.
      */
     @Test
     void aDoubleWithNoBareSpellingIsQuoted() throws Exception {
@@ -116,8 +116,8 @@ class UnreadableOutputTest {
             OWLOntology o = ontology(value(df.getOWLLiteral(special, OWL2Datatype.XSD_DOUBLE)));
             String written = write(o);
             String body = statementsOnly(written);
-            assertTrue(body.contains("(a,\"" + special + "\"):d"),
-                () -> special + " must be quoted:\n" + body);
+            assertTrue(body.contains("(a,\"" + special + "\"^^xsd:double):d"),
+                () -> special + " must be quoted and typed:\n" + body);
 
             OWLOntology back = assertDoesNotThrow(() -> read(written),
                 () -> special + " must still reload:\n" + body);
@@ -126,6 +126,8 @@ class UnreadableOutputTest {
             assertFalse(back.containsIndividualInSignature(IRI.create(NS + special)),
                 () -> "and no individual may be invented from the value: "
                     + back.getLogicalAxioms());
+            assertEquals(o.getLogicalAxioms(), back.getLogicalAxioms(),
+                () -> special + " must come back the literal it was:\n" + body);
         }
     }
 
@@ -187,26 +189,39 @@ class UnreadableOutputTest {
     }
 
     /**
-     * A numeric bound still takes the compact form, whatever its datatype is called.
+     * A bound takes the compact form only when the reader can rebuild its datatype.
      *
-     * <p>The guard is on the spelling, not the datatype: {@code xsd:int} and
-     * {@code xsd:decimal} answer {@code false} to {@code isInteger()} and {@code isDouble()},
-     * so testing the datatype here would have quoted their values inside the compact
-     * bracket — {@code [≥"1"]} — and broken the documents this fix was meant to save.
+     * <p>The compact bracket holds a bare {@code NUMBER}, which carries no datatype, so the
+     * reader types it from the spelling: digits give {@code xsd:integer}, a decimal point
+     * gives {@code xsd:double}. Those two keep the compact form. {@code xsd:int} and
+     * {@code xsd:decimal} would be silently retyped by it, so they take the keyword form
+     * where the datatype can be written out.
+     *
+     * <p>Whichever branch is taken, the axiom has to come back unchanged — which is the
+     * assertion that actually matters here, and the one the compact form used to fail.
      */
     @Test
-    void aNumericBoundIsStillCompact() throws Exception {
-        for (OWL2Datatype type : new OWL2Datatype[] {OWL2Datatype.XSD_INTEGER,
-                OWL2Datatype.XSD_INT, OWL2Datatype.XSD_DECIMAL, OWL2Datatype.XSD_DOUBLE}) {
+    void aBoundKeepsItsDatatypeWhicheverFormIsUsed() throws Exception {
+        OWL2Datatype[] compact = {OWL2Datatype.XSD_INTEGER, OWL2Datatype.XSD_DOUBLE};
+        OWL2Datatype[] spelledOut = {OWL2Datatype.XSD_INT, OWL2Datatype.XSD_DECIMAL};
+
+        for (OWL2Datatype type : compact) {
             OWLLiteral one = df.getOWLLiteral("1", type);
             OWLOntology o = ontology(restricted(df.getOWLDatatype(type.getIRI()),
                 OWLFacet.MIN_INCLUSIVE, one));
-            String body = statementsOnly(write(o));
+            String body = roundTrip(o);
             // The literal's own lexical form, because OWL API normalises some of them:
             // "1"^^xsd:double becomes 1.0 before the writer ever sees it.
             assertTrue(body.contains("[≥" + one.getLiteral() + "]"),
-                () -> type + " must stay compact and unquoted:\n" + body);
-            assertDoesNotThrow(() -> read(write(o)), () -> body);
+                () -> type + " is rebuilt from its spelling, so it stays compact:\n" + body);
+        }
+        for (OWL2Datatype type : spelledOut) {
+            OWLOntology o = ontology(restricted(df.getOWLDatatype(type.getIRI()),
+                OWLFacet.MIN_INCLUSIVE, df.getOWLLiteral("1", type)));
+            String body = roundTrip(o);
+            assertTrue(body.contains("^^"),
+                () -> type + " cannot be rebuilt from a bare number, so it must be"
+                    + " written out:\n" + body);
         }
     }
 
