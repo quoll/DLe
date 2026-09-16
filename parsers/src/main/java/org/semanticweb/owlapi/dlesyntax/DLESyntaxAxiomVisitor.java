@@ -1239,8 +1239,7 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
             return df.getOWLDataOneOf(lits);
         } else {
             List<OWLIndividual> inds = elems.stream()
-                .map(e -> (OWLIndividual) df.getOWLNamedIndividual(
-                    expandName(((DLESyntaxParser.IndividualElemContext) e).name())))
+                .map(e -> individual(((DLESyntaxParser.IndividualElemContext) e).name()))
                 .collect(Collectors.toList());
             return df.getOWLObjectOneOf(inds);
         }
@@ -1496,8 +1495,8 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
         requireBareSeparator(ctx.PNAME_NS(), ctx);
         axioms.add(df.getOWLObjectPropertyAssertionAxiom(
             df.getOWLObjectProperty(expandName(ctx.name(2))),
-            df.getOWLNamedIndividual(expandName(ctx.name(0))),
-            df.getOWLNamedIndividual(expandName(ctx.name(1)))));
+            individual(ctx.name(0)),
+            individual(ctx.name(1))));
         return null;
     }
 
@@ -1507,8 +1506,8 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
         requireBareSeparator(ctx.PNAME_NS(), ctx);
         axioms.add(df.getOWLNegativeObjectPropertyAssertionAxiom(
             df.getOWLObjectProperty(expandName(ctx.name(2))),
-            df.getOWLNamedIndividual(expandName(ctx.name(0))),
-            df.getOWLNamedIndividual(expandName(ctx.name(1)))));
+            individual(ctx.name(0)),
+            individual(ctx.name(1))));
         return null;
     }
 
@@ -1517,7 +1516,7 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
         requireBareSeparator(ctx.PNAME_NS(), ctx);
         axioms.add(df.getOWLDataPropertyAssertionAxiom(
             df.getOWLDataProperty(expandName(ctx.name(1))),
-            df.getOWLNamedIndividual(expandName(ctx.name(0))),
+            individual(ctx.name(0)),
             literalOf(ctx.literal())));
         return null;
     }
@@ -1528,7 +1527,7 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
         requireBareSeparator(ctx.PNAME_NS(), ctx);
         axioms.add(df.getOWLNegativeDataPropertyAssertionAxiom(
             df.getOWLDataProperty(expandName(ctx.name(1))),
-            df.getOWLNamedIndividual(expandName(ctx.name(0))),
+            individual(ctx.name(0)),
             literalOf(ctx.literal())));
         return null;
     }
@@ -1629,7 +1628,7 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
         // `a = a` states nothing; `a ≠ a` states something that cannot hold.
         Set<OWLIndividual> result = new LinkedHashSet<>();
         for (DLESyntaxParser.NameContext name : names) {
-            result.add(df.getOWLNamedIndividual(expandName(name)));
+            result.add(individual(name));
         }
         // `a ≠ b ≠ a` contains the unsatisfiable pair `a ≠ a`, and collapsing it silently
         // dropped exactly that. `=` is idempotent, so a repeat there is harmless.
@@ -1681,8 +1680,38 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
             df.getOWLClass(classIri), individualOf(individual, className, ctx)));
     }
 
-    private OWLNamedIndividual individualOf(String individual, String className,
+    /** The blank-node prefix, which every RDF syntax reserves and so does this one. */
+    static final String BLANK_NODE_PREFIX = "_:";
+
+    static boolean isBlankNodeName(String text) {
+        return text.startsWith(BLANK_NODE_PREFIX) && text.length() > BLANK_NODE_PREFIX.length();
+    }
+
+    /**
+     * An individual, named or anonymous.
+     *
+     * <p>`_:` lexes as an ordinary prefix — `_` is a NameStart — so the reader only had to
+     * stop resolving it and build an anonymous individual instead. Without that, the writer
+     * emitted `_:genid2147483648 : A` and the reader answered "unknown prefix '_:'", so any
+     * ontology with a blank node produced a document it could not read back.
+     *
+     * <p>The label is kept as written, which makes a DLe round trip stable. It is not
+     * stable coming from RDF, where the label is generated on load — but that is true of
+     * every syntax, and is why the label carries no meaning.
+     */
+    private OWLIndividual individual(DLESyntaxParser.NameContext ctx) {
+        String text = ctx.getText();
+        if (isBlankNodeName(text)) {
+            return df.getOWLAnonymousIndividual(text);
+        }
+        return df.getOWLNamedIndividual(expandName(ctx));
+    }
+
+    private OWLIndividual individualOf(String individual, String className,
                                             org.antlr.v4.runtime.ParserRuleContext ctx) {
+        if (isBlankNodeName(individual)) {
+            return df.getOWLAnonymousIndividual(individual);
+        }
         IRI iri = expandNameText(individual);
         if (iri == null) {
             throw new DLESemanticException(
