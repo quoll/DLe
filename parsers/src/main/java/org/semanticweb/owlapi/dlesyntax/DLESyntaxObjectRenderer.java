@@ -14,6 +14,7 @@ import org.semanticweb.owlapi.model.OWLDatatypeRestriction;
 import org.semanticweb.owlapi.model.OWLFacetRestriction;
 import org.semanticweb.owlapi.model.OWLAsymmetricObjectPropertyAxiom;
 import org.semanticweb.owlapi.model.OWLDisjointClassesAxiom;
+import org.semanticweb.owlapi.model.OWLDisjointUnionAxiom;
 import org.semanticweb.owlapi.model.OWLDisjointDataPropertiesAxiom;
 import org.semanticweb.owlapi.model.OWLDisjointObjectPropertiesAxiom;
 import org.semanticweb.owlapi.model.OWLIrreflexiveObjectPropertyAxiom;
@@ -572,6 +573,25 @@ public class DLESyntaxObjectRenderer extends DLSyntaxObjectRenderer {
     public void visit(OWLEquivalentDataPropertiesAxiom axiom) {
         if (axiom.properties().limit(2).count() < 2) return;
         super.visit(axiom);
+    }
+
+    /**
+     * A disjoint union, written as the two things it says.
+     *
+     * <p>DL has no notation for it, and the inherited renderer reached for {@code =} —
+     * producing <code>A=B &sqcup; C</code>, where {@code =} is the cardinality and identity
+     * operator and the line is not a statement at all. The document would not load.
+     *
+     * <p>{@code DisjointUnion(A, B, C)} says two things: A is the union of B and C, and B
+     * and C are disjoint. Both have notation, so both are written, and the pair reads back
+     * as the pair. That is two axioms where there was one — equivalent, and the only
+     * alternative would be inventing a symbol for a construct DL does not have.
+     */
+    @Override
+    public void visit(OWLDisjointUnionAxiom axiom) {
+        visit(axiom.getOWLEquivalentClassesAxiom());
+        write("\n");
+        visit(axiom.getOWLDisjointClassesAxiom());
     }
 
     /**

@@ -483,6 +483,96 @@ class UnreadableOutputTest {
                 + values.getLogicalAxioms());
     }
 
+    /**
+     * A disjoint union is written as the two things it says.
+     *
+     * <p>DL has no notation for it, and the inherited renderer reached for {@code =},
+     * producing {@code A=B ⊔ C} — where {@code =} is the cardinality and identity operator,
+     * and the line is not a statement at all. The document would not load.
+     *
+     * <p>Both halves do have notation, so both are written. That is two axioms where there
+     * was one, which is the price of a construct DL does not have; the alternative would be
+     * inventing a symbol for it.
+     */
+    @Test
+    void aDisjointUnionIsWrittenAsItsTwoHalves() throws Exception {
+        OWLClass whole = df.getOWLClass(IRI.create(NS + "A"));
+        OWLClass first = df.getOWLClass(IRI.create(NS + "B"));
+        OWLClass second = df.getOWLClass(IRI.create(NS + "C"));
+        OWLOntology o = ontology(df.getOWLDisjointUnionAxiom(whole,
+            java.util.Arrays.asList(first, second)));
+
+        String written = write(o);
+        String body = statementsOnly(written);
+        assertTrue(body.contains("A ≡ B ⊔ C"), () -> "the union half:\n" + body);
+        assertTrue(body.contains("B ⊑ ¬C"), () -> "and the disjointness half:\n" + body);
+
+        OWLOntology back = assertDoesNotThrow(() -> read(written),
+            () -> "the document must load:\n" + body);
+        assertTrue(back.containsAxiom(df.getOWLEquivalentClassesAxiom(whole,
+            df.getOWLObjectUnionOf(first, second))),
+            () -> "the union must come back: " + back.getLogicalAxioms());
+        assertTrue(back.containsAxiom(df.getOWLDisjointClassesAxiom(first, second)),
+            () -> "and the disjointness: " + back.getLogicalAxioms());
+    }
+
+    /** With three or more members, every pair is written. */
+    @Test
+    void aWiderDisjointUnionWritesEveryPair() throws Exception {
+        OWLOntology o = ontology(df.getOWLDisjointUnionAxiom(
+            df.getOWLClass(IRI.create(NS + "A")),
+            java.util.Arrays.asList(df.getOWLClass(IRI.create(NS + "B")),
+                df.getOWLClass(IRI.create(NS + "C")),
+                df.getOWLClass(IRI.create(NS + "D")))));
+        String body = statementsOnly(write(o));
+        for (String pair : new String[] {"B ⊑ ¬C", "B ⊑ ¬D", "C ⊑ ¬D"}) {
+            assertTrue(body.contains(pair), () -> pair + " missing from:\n" + body);
+        }
+        assertDoesNotThrow(() -> read(write(o)), () -> body);
+    }
+
+    /**
+     * A complemented data range is read as one, not as a class.
+     *
+     * <p>{@code ¬} is as happy over a data range as over a class, and the writer emits it
+     * for one — {@code DataComplementOf(xsd:string)} goes out as {@code ¬xsd:string}. The
+     * reader built the object form regardless and then failed {@code asClass}, so the
+     * document the writer had just produced came back as "expected a class expression".
+     *
+     * <p>The classifier had to learn the same thing: it stopped at the {@code ¬} and called
+     * the property an object property, which then contradicted the document's own range
+     * statement.
+     */
+    @Test
+    void aComplementedDataRangeRoundTrips() throws Exception {
+        OWLDataProperty d = df.getOWLDataProperty(IRI.create(NS + "d"));
+        OWLDatatype string = df.getOWLDatatype(OWL2Datatype.XSD_STRING.getIRI());
+        OWLDataRange[] ranges = {
+            df.getOWLDataComplementOf(string),
+            df.getOWLDataComplementOf(df.getOWLDataComplementOf(string)),
+            df.getOWLDataComplementOf(df.getOWLDataOneOf(df.getOWLLiteral("x"))),
+            df.getOWLDataUnionOf(df.getOWLDataComplementOf(string),
+                df.getOWLDatatype(OWL2Datatype.XSD_INTEGER.getIRI())),
+        };
+        for (OWLDataRange range : ranges) {
+            OWLOntology o = ontology(df.getOWLSubClassOfAxiom(
+                df.getOWLClass(IRI.create(NS + "A")), df.getOWLDataSomeValuesFrom(d, range)));
+            roundTrip(o);
+        }
+        // And in a range axiom, where the property's kind comes from this filler alone.
+        roundTrip(ontology(df.getOWLDataPropertyRangeAxiom(d,
+            df.getOWLDataComplementOf(string))));
+    }
+
+    /** The object complement is untouched by that. */
+    @Test
+    void theObjectComplementIsUnaffected() throws Exception {
+        roundTrip(ontology(df.getOWLSubClassOfAxiom(
+            df.getOWLClass(IRI.create(NS + "A")),
+            df.getOWLObjectSomeValuesFrom(df.getOWLObjectProperty(IRI.create(NS + "r")),
+                df.getOWLObjectComplementOf(df.getOWLClass(IRI.create(NS + "B")))))));
+    }
+
     /** The untagged one is still suppressed, since the reader puts it back. */
     @Test
     void anUntaggedIsDefinedByValueIsStillSuppressed() throws Exception {

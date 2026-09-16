@@ -934,6 +934,17 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
 
     /** True if the primary is an atom that looks like a data range. */
     private boolean isDataPrimary(DLESyntaxParser.PrimaryContext ctx) {
+        // Through the complement, because `¬` is as happy over a data range as over a
+        // class: `∃d.¬xsd:string` says d is a data property just as plainly as
+        // `∃d.xsd:string` does. Stopping at the `¬` classified d as an object property,
+        // and the document then contradicted its own range statement.
+        // On the unwrapped primary, because the writer parenthesises it:
+        // `∃d.(¬xsd:string)`. Parens.atomOf unwraps first and then finds no atom, so
+        // testing the raw context missed every form the writer actually produces.
+        DLESyntaxParser.PrimaryContext unwrapped = Parens.unwrap(ctx);
+        if (unwrapped instanceof DLESyntaxParser.ComplementContext) {
+            return isDataPrimary(((DLESyntaxParser.ComplementContext) unwrapped).primary());
+        }
         var atom = Parens.atomOf(ctx);
         return atom != null && isDataAtom(atom);
     }

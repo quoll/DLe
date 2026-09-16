@@ -1017,7 +1017,15 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
 
     @Override
     public OWLObject visitComplement(DLESyntaxParser.ComplementContext ctx) {
-        return df.getOWLObjectComplementOf(asClass(visit(ctx.primary())));
+        OWLObject inner = visit(ctx.primary());
+        // `¬` complements a data range as readily as a class, and the writer emits it for
+        // one — `DataComplementOf(xsd:string)` goes out as `¬xsd:string`. Building the
+        // object form regardless then failed asClass, so the document the writer had just
+        // produced came back as "expected a class expression here".
+        if (inner instanceof OWLDataRange) {
+            return df.getOWLDataComplementOf((OWLDataRange) inner);
+        }
+        return df.getOWLObjectComplementOf(asClass(inner));
     }
 
     @Override
