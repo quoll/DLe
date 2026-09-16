@@ -210,7 +210,17 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
             // the round trip invented a class and an axiom. Clearing makes the reverse map
             // describe only what the document actually declares.
             pm.clear();
-            currentPrefixes.forEach(pm::setPrefix);
+            // The default prefix last, so it wins the reverse map. DefaultPrefixManager
+            // keeps one CURIE per namespace and the last one set takes it, so when a second
+            // prefix is bound to the document's own namespace — which happens when an
+            // entity is named for a reserved word — every name in that namespace would
+            // otherwise be written prefixed. Only the reserved name needs to be; see
+            // DLESyntaxObjectRenderer#stripDefaultPrefix.
+            currentPrefixes.forEach((prefix, iri) -> {
+                if (!":".equals(prefix)) pm.setPrefix(prefix, iri);
+            });
+            String defaultNamespace = currentPrefixes.get(":");
+            if (defaultNamespace != null) pm.setPrefix(":", defaultNamespace);
             renderer.setPrefixManager(pm);
         }
         try {
@@ -779,6 +789,16 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
                 uncovered.add(iri.getNamespace());
             }
         });
+        // A name the grammar keeps for itself cannot be written bare, so the namespace it
+        // sits in needs a prefix other than the default to spell it with. Only the default
+        // namespace is affected: every other name is written prefixed already.
+        String defaultNamespace = prefixes.get(":");
+        if (defaultNamespace != null && !hasNonDefaultPrefix(prefixes, defaultNamespace)
+                && namesWritten(o).anyMatch(iri -> DLESyntaxObjectRenderer
+                    .isReservedLocalName(iri.getRemainder().orElse("")))) {
+            uncovered.add(defaultNamespace);
+        }
+
         int next = 1;
         for (String namespace : uncovered) {
             String name;
@@ -787,6 +807,12 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
             } while (prefixes.containsKey(name));
             prefixes.put(name, namespace);
         }
+    }
+
+    /** Whether some prefix other than the default already covers this namespace. */
+    private static boolean hasNonDefaultPrefix(Map<String, String> prefixes, String namespace) {
+        return prefixes.entrySet().stream()
+            .anyMatch(e -> !":".equals(e.getKey()) && namespace.equals(e.getValue()));
     }
 
     /**

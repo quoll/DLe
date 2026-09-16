@@ -174,10 +174,59 @@ public class DLESyntaxObjectRenderer extends DLSyntaxObjectRenderer {
      * would lex as a number and the document would not parse. {@code :762705008} is
      * the {@code DEFAULT_NAME} form and reads back to the same IRI.
      */
-    private static String stripDefaultPrefix(String curie) {
+    /**
+     * Words the grammar keeps for itself, which therefore cannot be written bare.
+     *
+     * <p>{@code Self} is the {@code ObjectHasSelf} filler, {@code true} and {@code false}
+     * are the boolean literals, and {@code key} opens a key expression. An entity named for
+     * one of them produced a document that would not reload — or, in the worst case, one
+     * that reloaded and meant something else: a class {@code :Self} as the filler of a
+     * restriction was written {@code A ⊑ ∃r.Self} and came back {@code ObjectHasSelf(:r)},
+     * with the class gone and the axiom changed.
+     *
+     * <p>They are only a problem bare. Prefixed, they are ordinary names — {@code ex:Self}
+     * lexes as one token — so the fix is to write the prefix rather than to refuse.
+     */
+    private static final java.util.Set<String> RESERVED_LOCAL_NAMES =
+        java.util.Collections.unmodifiableSet(new java.util.HashSet<>(
+            java.util.Arrays.asList("Self", "true", "false", "key")));
+
+    static boolean isReservedLocalName(String local) {
+        return RESERVED_LOCAL_NAMES.contains(local);
+    }
+
+    private String stripDefaultPrefix(String curie) {
         if (!curie.startsWith(":")) return curie;
         String local = curie.substring(1);
-        return spellableOnlyWithPrefix(local) ? curie : local;
+        if (spellableOnlyWithPrefix(local)) return curie;
+        if (isReservedLocalName(local)) {
+            // Bare, this would be the keyword. Any other prefix on the same namespace
+            // names the same entity and reads back as a name; the storer makes sure one
+            // exists.
+            String prefixed = alternativePrefixFor(local);
+            if (prefixed != null) return prefixed;
+        }
+        return local;
+    }
+
+    /**
+     * The same local name under a prefix other than the default, if one is declared.
+     *
+     * <p>Only the default prefix forces a bare name, so any other prefix bound to the same
+     * namespace is a spelling that works.
+     */
+    @Nullable
+    private String alternativePrefixFor(String local) {
+        if (prefixManager == null) return null;
+        String defaultNamespace = prefixManager.getPrefixName2PrefixMap().get(":");
+        if (defaultNamespace == null) return null;
+        for (Map.Entry<String, String> entry
+                : prefixManager.getPrefixName2PrefixMap().entrySet()) {
+            if (!":".equals(entry.getKey()) && defaultNamespace.equals(entry.getValue())) {
+                return entry.getKey() + local;
+            }
+        }
+        return null;
     }
 
     /**
