@@ -1071,6 +1071,26 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
         List<DLESyntaxParser.OneOfElemContext> elems = ctx.oneOfList().oneOfElem();
         boolean hasLiterals = elems.stream()
             .anyMatch(e -> e instanceof DLESyntaxParser.LiteralElemContext);
+        boolean hasIndividuals = elems.stream()
+            .anyMatch(e -> e instanceof DLESyntaxParser.IndividualElemContext);
+        // An enumeration is a set of individuals or a set of values, and OWL has a
+        // different constructor for each — ObjectOneOf and DataOneOf. A mixture is neither,
+        // and asking for one used to hand the user a raw ClassCastException naming two
+        // parser context classes, with no line, no column and nothing to act on: every
+        // element was cast to a literal as soon as any one of them was.
+        if (hasLiterals && hasIndividuals) {
+            String individual = elems.stream()
+                .filter(DLESyntaxParser.IndividualElemContext.class::isInstance)
+                .map(org.antlr.v4.runtime.RuleContext::getText).findFirst().orElse("a name");
+            String literal = elems.stream()
+                .filter(DLESyntaxParser.LiteralElemContext.class::isInstance)
+                .map(org.antlr.v4.runtime.RuleContext::getText).findFirst().orElse("a value");
+            throw new DLESemanticException(
+                "this enumeration mixes the individual " + individual + " with the value "
+                    + literal + ". An enumeration is either a set of individuals or a set"
+                    + " of values, so write two — one for each — rather than one of both.",
+                ctx.start.getLine(), ctx.start.getCharPositionInLine());
+        }
         if (hasLiterals) {
             List<OWLLiteral> lits = elems.stream()
                 .map(this::buildLiteral)

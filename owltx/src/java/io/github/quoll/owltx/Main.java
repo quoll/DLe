@@ -4,7 +4,12 @@ import org.semanticweb.owlapi.apibinding.OWLManager;
 import org.semanticweb.owlapi.dlesyntax.DLESyntaxStorer;
 import org.semanticweb.owlapi.formats.*;
 import org.semanticweb.owlapi.model.*;
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Set;
 import org.semanticweb.owlapi.io.StreamDocumentTarget;
+import org.semanticweb.owlapi.io.UnparsableOntologyException;
 import org.semanticweb.owlapi.model.OWLOntologyStorageException;
 import org.semanticweb.owlapi.model.IRI;
 import org.semanticweb.owlapi.model.OWLOntologyLoaderConfiguration;
@@ -180,7 +185,21 @@ public class Main {
                 return; // unreachable, but satisfies compiler
             }
         } else {
-            ontology = manager.loadOntologyFromOntologyDocument(input);
+            // Guarded, as the DLE branch above already is. An unloadable input threw
+            // UnparsableOntologyException out of main, and because that exception's message
+            // embeds the log of every parser that was tried, the user was shown 583 lines
+            // with a Java stack trace on the end. The parsers' own complaints are the useful
+            // part, so they are kept, one line each, and the trace is not.
+            try {
+                ontology = manager.loadOntologyFromOntologyDocument(input);
+            } catch (UnparsableOntologyException e) {
+                describeUnparsable(input.toString(), e).forEach(System.err::println);
+                System.exit(1);
+                return; // unreachable, but satisfies the compiler
+            } catch (Exception e) {
+                die("loading " + input + ": " + rootMessage(e));
+                return; // unreachable, but satisfies the compiler
+            }
         }
 
         // Copy prefix mappings from the source format to the output format so
@@ -353,6 +372,58 @@ public class Main {
         System.err.println("  .dle .dl .html .htm .ofn .omn .owx .rdf .owl .xml .ttl .krss .krss2 .latex .tex");
         System.err.println();
         System.err.println("If no output file is given, output goes to stdout.");
+    }
+
+    /** How many parser complaints are worth reading before they stop adding anything. */
+    static final int PARSER_ERRORS_SHOWN = 6;
+
+    /**
+     * What to tell the user when nothing could parse the input.
+     *
+     * <p>Separate from the printing so it can be tested, and because the raw exception is
+     * not usable as a message: its own text embeds the log of every parser that was tried,
+     * so letting it reach the top printed 583 lines with a Java stack trace on the end.
+     *
+     * <p>Three things make it readable. Each parser gets one line, because some of them
+     * report the token, the position, and then an enumeration of everything they would have
+     * accepted instead. Identical lines are collapsed, because OWL API tries twenty-two
+     * parsers and ten of them share the name {@code RioParserImpl} — they are RDF dialects,
+     * and they mostly fail the same way. And the list is capped, because after half a dozen
+     * the rest add nothing.
+     */
+    static List<String> describeUnparsable(String input, UnparsableOntologyException e) {
+        List<String> lines = new ArrayList<>();
+        lines.add("Error: " + input + " could not be parsed as an ontology.");
+        Set<String> distinct = new LinkedHashSet<>();
+        e.getExceptions().forEach((parser, cause) ->
+            distinct.add(shortParserName(parser) + ": " + firstLine(rootMessage(cause))));
+        distinct.stream().limit(PARSER_ERRORS_SHOWN).forEach(line -> lines.add("  " + line));
+        if (distinct.size() > PARSER_ERRORS_SHOWN) {
+            lines.add("  ... and " + (distinct.size() - PARSER_ERRORS_SHOWN)
+                + " more parsers, all of which also failed.");
+        }
+        lines.add("Use --format to name the syntax if it was not detected from the file name.");
+        return lines;
+    }
+
+    /**
+     * The first line of a message, trimmed.
+     *
+     * <p>Some parsers report a token, the position, and then an enumeration of everything
+     * they would have accepted instead — dozens of lines, and a stack trace after it. One
+     * line each keeps all of them readable side by side, which is the point of listing them.
+     */
+    static String firstLine(String message) {
+        String text = message == null ? "" : message.trim();
+        int newline = text.indexOf('\n');
+        String line = newline < 0 ? text : text.substring(0, newline).trim();
+        return line.isEmpty() ? "could not parse it" : line;
+    }
+
+    /** The parser's class name alone, since the package adds nothing a reader needs. */
+    static String shortParserName(Object parser) {
+        String name = parser.getClass().getSimpleName();
+        return name.isEmpty() ? parser.getClass().getName() : name;
     }
 
     private static void die(String message) {

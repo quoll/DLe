@@ -331,6 +331,94 @@ class UnreadableOutputTest {
             () -> "and must come back unchanged:\n" + body);
     }
 
+    /**
+     * A shorthand that only takes a string is not used for an IRI value.
+     *
+     * <p>{@code @storage} and {@code @doc} take a {@code STRING} in the grammar, but every
+     * {@code rdfs:seeAlso} and {@code rdfs:comment} went through them regardless of what the
+     * value was — and an IRI value is the commonest use of {@code seeAlso}, pointing at
+     * another resource. {@code rdfs:isDefinedBy} has always had this guard.
+     */
+    @Test
+    void anIriValuedShorthandFallsBackToTheGeneralForm() throws Exception {
+        String[] properties = {
+            "http://www.w3.org/2000/01/rdf-schema#seeAlso",
+            "http://www.w3.org/2000/01/rdf-schema#comment",
+            "http://www.w3.org/2000/01/rdf-schema#isDefinedBy",
+        };
+        for (String property : properties) {
+            OWLOntology o = ontology(
+                df.getOWLAnnotationAssertionAxiom(
+                    df.getOWLAnnotationProperty(IRI.create(property)),
+                    IRI.create(NS + "C"), IRI.create(NS + "Elsewhere")),
+                df.getOWLSubClassOfAxiom(df.getOWLClass(IRI.create(NS + "C")),
+                    df.getOWLClass(IRI.create(NS + "D"))));
+
+            String written = write(o);
+            String body = statementsOnly(written);
+            OWLOntology back = assertDoesNotThrow(() -> read(written),
+                () -> property + " with an IRI value must reload:\n" + body);
+            assertTrue(back.axioms(AxiomType.ANNOTATION_ASSERTION)
+                    .anyMatch(ax -> IRI.create(NS + "Elsewhere").equals(ax.getValue())),
+                () -> "and keep the IRI value:\n" + body);
+        }
+    }
+
+    /** A literal value still uses the shorthand, which is the point of having one. */
+    @Test
+    void aLiteralValuedShorthandIsUnaffected() throws Exception {
+        OWLOntology o = ontology(
+            df.getOWLAnnotationAssertionAxiom(df.getRDFSSeeAlso(),
+                IRI.create(NS + "C"), df.getOWLLiteral("a note")),
+            df.getOWLSubClassOfAxiom(df.getOWLClass(IRI.create(NS + "C")),
+                df.getOWLClass(IRI.create(NS + "D"))));
+        String body = statementsOnly(write(o));
+        assertTrue(body.contains("@storage C \"a note\""),
+            () -> "a string value keeps the shorthand:\n" + body);
+        roundTrip(o);
+    }
+
+    /**
+     * A mixed enumeration is refused with something a person can act on.
+     *
+     * <p>{@code {b, "x"}} is neither an {@code ObjectOneOf} nor a {@code DataOneOf}, and
+     * asking for one handed the user a raw {@code ClassCastException} naming two ANTLR
+     * context classes, with no line, no column and nothing to do about it: every element was
+     * cast to a literal the moment any one of them was.
+     */
+    @Test
+    void aMixedEnumerationIsRefusedClearly() {
+        for (String expression : new String[] {
+                "A ⊑ {b, \"x\"}", "A ⊑ {\"x\", b}", "A ≡ {b, \"x\", c}"}) {
+            Throwable t = assertThrows(Throwable.class,
+                () -> read("@prefix : <" + NS + ">\n" + expression + "\n"),
+                () -> "expected a refusal for " + expression);
+            String message = String.valueOf(t.getMessage());
+            assertTrue(message.contains("mixes the individual"),
+                () -> expression + " must say what is wrong, got: " + message);
+            assertFalse(message.contains("ClassCastException") || message.contains("Context"),
+                () -> expression + " must not leak the parser's internals: " + message);
+        }
+    }
+
+    /** A uniform enumeration of either kind still works. */
+    @Test
+    void aUniformEnumerationIsUnaffected() throws Exception {
+        OWLOntology individuals = read("@prefix : <" + NS + ">\nA ⊑ {b, c}\n");
+        assertEquals(1, individuals.getAxioms(AxiomType.SUBCLASS_OF).size(),
+            () -> individuals.getLogicalAxioms().toString());
+
+        // The range idiom, which the writer turns into a DataPropertyRange rather than
+        // leaving as a subsumption of owl:Thing.
+        OWLOntology values = read("@prefix : <" + NS + ">\n⊤ ⊑ ∀d.{\"x\", \"y\"}\n");
+        assertEquals(1, values.getAxioms(AxiomType.DATA_PROPERTY_RANGE).size(),
+            () -> values.getLogicalAxioms().toString());
+        assertTrue(values.getAxioms(AxiomType.DATA_PROPERTY_RANGE).iterator().next()
+                .getRange() instanceof OWLDataOneOf,
+            () -> "the enumeration must survive as a DataOneOf: "
+                + values.getLogicalAxioms());
+    }
+
     /** The untagged one is still suppressed, since the reader puts it back. */
     @Test
     void anUntaggedIsDefinedByValueIsStillSuppressed() throws Exception {

@@ -794,12 +794,18 @@ public class DLESyntaxObjectRenderer extends DLSyntaxObjectRenderer {
             write(subject);
             write(" ");
             write(renderValue(value));
-        } else if (OWLRDFVocabulary.RDFS_COMMENT.getIRI().equals(propIRI)) {
+        // Both shorthands take a STRING in the grammar, so a non-literal value has to go
+        // through the general form instead. `rdfs:seeAlso` pointing at another resource is
+        // its commonest use, and it was written `@storage C Elsewhere` — a document that
+        // would not reload. `rdfs:isDefinedBy` below has always had this guard.
+        } else if (OWLRDFVocabulary.RDFS_COMMENT.getIRI().equals(propIRI)
+                && value instanceof OWLLiteral) {
             write("@doc ");
             write(subject);
             write(" ");
             write(renderValue(value));
-        } else if (OWLRDFVocabulary.RDFS_SEE_ALSO.getIRI().equals(propIRI)) {
+        } else if (OWLRDFVocabulary.RDFS_SEE_ALSO.getIRI().equals(propIRI)
+                && value instanceof OWLLiteral) {
             write("@storage ");
             write(subject);
             write(" ");
