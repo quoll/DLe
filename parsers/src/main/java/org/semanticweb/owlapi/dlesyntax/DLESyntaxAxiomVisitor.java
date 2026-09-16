@@ -1,9 +1,11 @@
 package org.semanticweb.owlapi.dlesyntax;
 
+import org.antlr.v4.runtime.ParserRuleContext;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.Collections;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -450,6 +452,20 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
         if (disjointNames != null && isBottomClassExpr(ctx.classExpr(1))) {
             List<String> texts = disjointNames.stream()
                 .map(n -> n.getText()).collect(Collectors.toList());
+            // The same refusal as the Disj(...) spelling, which this is the other half of.
+            // `p \u2293 p \u2291 \u22a5` built the unary axiom OWL rejects, and the
+            // writer then spelled it `Disj(p)`, a form the grammar does not have, so the
+            // document stopped reloading.
+            List<IRI> disjointIris = disjointNames.stream().map(this::expandName)
+                .collect(Collectors.toList());
+            boolean repeated = new LinkedHashSet<>(disjointIris).size() < disjointIris.size();
+            if (repeated && (texts.stream().allMatch(objectPropertyNames::contains)
+                    || texts.stream().allMatch(dataPropertyNames::contains))) {
+                throw new DLESemanticException(
+                    "a property is named twice in this disjointness statement. Disjointness"
+                        + " holds between different properties; name each one once.",
+                    ctx.start.getLine(), ctx.start.getCharPositionInLine());
+            }
             if (texts.stream().allMatch(objectPropertyNames::contains)) {
                 List<OWLObjectPropertyExpression> props = disjointNames.stream()
                     .map(n -> (OWLObjectPropertyExpression) df.getOWLObjectProperty(expandName(n)))
@@ -698,11 +714,16 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
         // declared them as object properties as well — the same illegal punning. The
         // intersection spelling `p ⊓ q ⊑ ⊥` already routed by kind; this now matches it.
         List<String> names = ctx.name().stream()
-            .map(org.antlr.v4.runtime.RuleContext::getText).collect(Collectors.toList());
+            .map(ParserRuleContext::getText).collect(Collectors.toList());
+        // Deduped on the resolved IRI, not the spelling: with two prefixes bound to one
+        // namespace, `Disj(e1:p, e2:p)` named one property twice, passed a text-based
+        // check, and OWL then collapsed the pair into the unary axiom this rejects.
+        List<IRI> resolved = ctx.name().stream().map(this::expandName)
+            .collect(Collectors.toList());
         // Disjointness needs two distinct properties. `Disj(p, p)` built a unary axiom,
         // which OWL rejects as a profile violation and which the writer then emitted as
         // `Disj(p)` — a form the grammar does not accept, so the document would not reload.
-        if (new java.util.LinkedHashSet<>(names).size() < names.size()) {
+        if (new LinkedHashSet<>(resolved).size() < resolved.size()) {
             throw new DLESemanticException(
                 "a property is named twice in this disjointness statement. Disjointness"
                     + " holds between different properties; name each one once.",
@@ -1229,6 +1250,13 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
                 ((DLESyntaxParser.ClassAssertionAxiomContext) axiom).classExpr());
             return cls == null ? null : expandNameText(cls);
         }
+        // The compact spelling of the same axiom. Without this case the comment above
+        // `rex:Cat` was discarded in silence, while the one above `rex : Cat` was kept.
+        if (axiom instanceof DLESyntaxParser.PrefixedClassAssertionAxiomContext) {
+            String text = ((DLESyntaxParser.PrefixedClassAssertionAxiomContext) axiom)
+                .PREFIXED_NAME().getText();
+            return expandNameText(text.substring(text.indexOf(':') + 1));
+        }
         return null;
     }
 
@@ -1391,7 +1419,7 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
         // rest. Collapsing to one member has to be caught: OWL API requires at least two,
         // and the two statements fail differently, so they are described differently.
         // `a = a` states nothing; `a ≠ a` states something that cannot hold.
-        Set<OWLIndividual> result = new java.util.LinkedHashSet<>();
+        Set<OWLIndividual> result = new LinkedHashSet<>();
         for (DLESyntaxParser.NameContext name : names) {
             result.add(df.getOWLNamedIndividual(expandName(name)));
         }
@@ -1836,7 +1864,7 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
         if (lit instanceof DLESyntaxParser.NumberLiteralContext) {
             String s = lit.getText();
             if (s.contains(".")) return df.getOWLLiteral(Double.parseDouble(s));
-            return df.getOWLLiteral(Integer.parseInt(s));
+            return integerLiteral(s);
         }
         // BoolLiteral
         return df.getOWLLiteral(Boolean.parseBoolean(lit.getText()));
@@ -1856,7 +1884,7 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
                 String numText = f.NUMBER().getText();
                 OWLLiteral value = numText.contains(".")
                     ? df.getOWLLiteral(Double.parseDouble(numText))
-                    : df.getOWLLiteral(Integer.parseInt(numText));
+                    : integerLiteral(numText);
                 return df.getOWLFacetRestriction(facet, value);
             })
             .collect(Collectors.toList());
@@ -1925,6 +1953,23 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
     }
 
     /** Builds a literal from any of the three spellings the grammar admits. */
+    /**
+     * An integer value, of any size.
+     *
+     * <p>{@code xsd:integer} is unbounded, so a document may legitimately carry a value no
+     * {@code int} can hold — a millisecond timestamp, or an identifier held as data, reaches
+     * ten digits. {@code Integer.parseInt} threw its own message through, so the user saw
+     * {@code For input string: "3000000000"} with no line, no column and no file named, on
+     * a value DLe had written itself.
+     */
+    private OWLLiteral integerLiteral(String text) {
+        try {
+            return df.getOWLLiteral(Integer.parseInt(text));
+        } catch (NumberFormatException outsideInt) {
+            return df.getOWLLiteral(text, df.getIntegerOWLDatatype());
+        }
+    }
+
     private OWLLiteral literalOf(DLESyntaxParser.LiteralContext lit) {
         if (lit instanceof DLESyntaxParser.StringLiteralContext) {
             return stringLiteral(lit.getText());
@@ -1932,7 +1977,7 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
         if (lit instanceof DLESyntaxParser.NumberLiteralContext) {
             String s = lit.getText();
             if (s.contains(".")) return df.getOWLLiteral(Double.parseDouble(s));
-            return df.getOWLLiteral(Integer.parseInt(s));
+            return integerLiteral(s);
         }
         return df.getOWLLiteral(Boolean.parseBoolean(lit.getText()));
     }

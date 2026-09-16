@@ -1,6 +1,7 @@
 package org.semanticweb.owlapi.dlesyntax;
 
 import java.util.Iterator;
+import java.util.regex.Pattern;
 import java.util.List;
 import java.util.Map;
 
@@ -268,9 +269,31 @@ public class DLESyntaxObjectRenderer extends DLSyntaxObjectRenderer {
         write(renderLiteral(node));
     }
 
+    /**
+     * The grammar's {@code NUMBER} token, which is the only bare form a value may take.
+     *
+     * <p>Not every numeric literal can be spelled that way. {@code xsd:double} admits
+     * {@code NaN}, {@code INF} and exponents, and {@code xsd:integer} is unbounded, so
+     * testing the datatype is not enough — the lexical form has to be tested too.
+     */
+    private static final Pattern NUMBER = Pattern.compile("-?[0-9]+(\\.[0-9]+)?");
+
+    /**
+     * A literal in the form the reader will give back.
+     *
+     * <p>Numbers and booleans are written bare, everything else quoted. The bare form is
+     * conditional on the spelling and not just on the datatype: {@code "NaN"^^xsd:double}
+     * wrote {@code (a,NaN):d}, which came back an <em>object</em> property assertion against
+     * an invented individual {@code :NaN} — silently, with the document still loading. That
+     * is the same corruption as an unquoted string, and it survived the fix for the string
+     * case because this branch was never guarded.
+     */
     private String renderLiteral(OWLLiteral lit) {
-        if (lit.isInteger() || lit.isDouble() || lit.isFloat()) return lit.getLiteral();
         if (lit.isBoolean()) return lit.getLiteral();
+        if ((lit.isInteger() || lit.isDouble() || lit.isFloat())
+                && NUMBER.matcher(lit.getLiteral()).matches()) {
+            return lit.getLiteral();
+        }
         return quoted(lit);
     }
 
@@ -552,10 +575,24 @@ public class DLESyntaxObjectRenderer extends DLSyntaxObjectRenderer {
         write(")");
     }
 
+    /**
+     * An n-ary role axiom, as in {@code Disj(p, q)}.
+     *
+     * <p>The grammar is {@code DISJ '(' name (',' name)+ ')'}, so two names is the minimum.
+     * A degenerate one-property axiom does arrive — OWL API accepts
+     * {@code DisjointObjectProperties(:p :p)} and collapses the pair — and it used to be
+     * written {@code Disj(p)}, which stopped the whole document reloading. It says nothing,
+     * so nothing is written for it.
+     *
+     * <p>Dropping it is only defensible because it is vacuous. The general problem of an
+     * axiom the writer cannot spell is filed as #22 and #23, and wants a channel that tells
+     * the user rather than a decision taken quietly here.
+     */
     private void writeNaryRoleAxiom(String keyword, java.util.stream.Stream<? extends OWLPropertyExpression> props) {
+        List<OWLPropertyExpression> list = props.collect(java.util.stream.Collectors.toList());
+        if (list.size() < 2) return;
         write(keyword);
         write("(");
-        List<OWLPropertyExpression> list = props.collect(java.util.stream.Collectors.toList());
         for (int i = 0; i < list.size(); i++) {
             if (i > 0) write(", ");
             list.get(i).accept(this);
@@ -582,7 +619,7 @@ public class DLESyntaxObjectRenderer extends DLSyntaxObjectRenderer {
         List<OWLFacetRestriction> facets = restriction.facetRestrictions()
             .sorted().collect(java.util.stream.Collectors.toList());
         boolean compact = !facets.isEmpty()
-            && facets.stream().allMatch(fr -> isNumericFacet(fr.getFacet()));
+            && facets.stream().allMatch(DLESyntaxObjectRenderer::isCompactFacet);
         if (compact) {
             // xsd:integer[≥1 ⊓ ≤5]
             write(shortFormIRI(restriction.getDatatype().getIRI()));
@@ -591,6 +628,9 @@ public class DLESyntaxObjectRenderer extends DLSyntaxObjectRenderer {
                 if (i > 0) write(" \u2293 ");
                 OWLFacetRestriction fr = facets.get(i);
                 write(numericFacetSymbol(fr.getFacet()));
+                // Safe because isCompactFacet has established that this value is spelled
+                // as a NUMBER; the compact bracket carries no other form. Quoting it here
+                // instead would emit `[\u2265"1"]`, which the grammar rejects.
                 write(fr.getFacetValue().getLiteral());
             }
             write("]");
@@ -609,15 +649,28 @@ public class DLESyntaxObjectRenderer extends DLSyntaxObjectRenderer {
         }
     }
 
-    private static boolean isNumericFacet(OWLFacet facet) {
-        switch (facet) {
+    /**
+     * Whether a facet can take the compact bracket form, as in {@code xsd:int[\u22651]}.
+     *
+     * <p>Two things have to hold, and each was assumed. Only the four ordered bounds have a
+     * symbol: {@code totalDigits} fell through to its short form and was written hard against
+     * its value as {@code [totalDigits5]}, which is not a token the grammar has. And the
+     * compact form's value is a {@code NUMBER}, so an ordered bound whose value is a date or
+     * an exponent does not fit it either. Both now take the keyword form, which reads back.
+     */
+    private static boolean isCompactFacet(OWLFacetRestriction fr) {
+        switch (fr.getFacet()) {
             case MIN_INCLUSIVE:
             case MAX_INCLUSIVE:
             case MIN_EXCLUSIVE:
             case MAX_EXCLUSIVE:
-            case TOTAL_DIGITS:
-            case FRACTION_DIGITS: return true;
-            default:              return false;
+                // On the spelling, not the datatype: xsd:int and xsd:decimal are not
+                // isInteger()/isDouble(), but their values are ordinary numbers that the
+                // compact form carries fine. What it cannot carry is a date, an exponent
+                // or INF, and those are what the lexical test excludes.
+                return NUMBER.matcher(fr.getFacetValue().getLiteral()).matches();
+            default:
+                return false;
         }
     }
 
@@ -725,8 +778,10 @@ public class DLESyntaxObjectRenderer extends DLSyntaxObjectRenderer {
                 && value instanceof OWLLiteral) {
             write("@db ");
             write(subject);
-            String dbLiteral = ((OWLLiteral) value).getLiteral();
-            if (!dbLiteral.equals(subject)) {
+            // As with @label: a tagged literal is a different literal, so suppressing it
+            // as redundant and letting the reader regenerate it loses the tag.
+            OWLLiteral dbValue = (OWLLiteral) value;
+            if (!dbValue.getLiteral().equals(subject) || dbValue.hasLang()) {
                 write(" ");
                 write(renderValue(value));
             }

@@ -265,4 +265,34 @@ class CommentPreservationTest {
             () -> "the subject is the role, not an individual: "
                 + o.getAxioms(org.semanticweb.owlapi.model.AxiomType.ANNOTATION_ASSERTION));
     }
+
+    /**
+     * The compact spelling of a class assertion keeps its comment too.
+     *
+     * <p>Every other assertion form was given a subject and this one was overlooked, so a
+     * comment above {@code rex:Cat} was dropped on the floor while the identical comment
+     * above {@code rex : Cat} was kept — the silent discard this class exists to prevent.
+     * The two spellings are the same axiom and must behave the same way.
+     */
+    @Test
+    void aCommentAboveTheCompactAssertionKeepsItsSubject() throws Exception {
+        for (String spelling : new String[] {"rex:Cat", "rex : Cat"}) {
+            OWLOntologyManager manager = OWLManager.createOWLOntologyManager();
+            OWLOntology o = manager.createOntology();
+            new DLEOntologyParser().parse(new StringDocumentSource(
+                PREFIX + "# about cats\n" + spelling + "\n"), o,
+                manager.getOntologyLoaderConfiguration());
+
+            java.util.Set<org.semanticweb.owlapi.model.OWLAnnotationAssertionAxiom> comments =
+                o.axioms(org.semanticweb.owlapi.model.AxiomType.ANNOTATION_ASSERTION)
+                    .filter(ax -> DLESyntaxAxiomVisitor.DLE_COMMENT_IRI
+                        .equals(ax.getProperty().getIRI()))
+                    .collect(java.util.stream.Collectors.toSet());
+            assertEquals(1, comments.size(),
+                () -> "'" + spelling + "' must keep its comment: " + comments);
+            assertTrue(comments.iterator().next().getSubject().toString().contains("Cat"),
+                () -> "'" + spelling + "' must give it the same subject as the other"
+                    + " spelling: " + comments);
+        }
+    }
 }

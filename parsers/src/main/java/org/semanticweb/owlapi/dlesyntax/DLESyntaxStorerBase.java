@@ -19,6 +19,8 @@ import org.semanticweb.owlapi.dlsyntax.renderer.DLSyntaxStorerBase;
 import org.semanticweb.owlapi.model.OWLDataFactory;
 import org.semanticweb.owlapi.model.OWLSubClassOfAxiom;
 import org.semanticweb.owlapi.vocab.OWLRDFVocabulary;
+import java.util.Collection;
+import java.util.TreeSet;
 import java.util.stream.Stream;
 
 import org.semanticweb.owlapi.model.OWLClass;
@@ -30,6 +32,7 @@ import org.semanticweb.owlapi.model.OWLAnnotationAssertionAxiom;
 import org.semanticweb.owlapi.model.OWLAxiom;
 import org.semanticweb.owlapi.model.OWLDeclarationAxiom;
 import org.semanticweb.owlapi.model.OWLEquivalentDataPropertiesAxiom;
+import org.semanticweb.owlapi.model.OWLDataCardinalityRestriction;
 import org.semanticweb.owlapi.model.OWLDataPropertyDomainAxiom;
 import org.semanticweb.owlapi.model.OWLDisjointDataPropertiesAxiom;
 import org.semanticweb.owlapi.model.OWLFunctionalDataPropertyAxiom;
@@ -196,6 +199,7 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
         writtenAnnotations = new HashSet<>();
         roleEvidence.clear();
         currentPrefixes = prefixesFor(o, outputFormat);
+        declareUncoveredNamespaces(o, currentPrefixes);
         if (!currentPrefixes.isEmpty()) {
             DefaultPrefixManager pm = new DefaultPrefixManager();
             // Cleared first. A fresh DefaultPrefixManager pre-seeds owl:, rdf:, rdfs: and
@@ -486,6 +490,14 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
      * or range, a characteristic, a chain, an inverse — puts the name somewhere only a role
      * can go.
      */
+    /** Whether any data cardinality in this axiom is written without its filler. */
+    private static boolean hasUnqualifiedDataCardinality(OWLAxiom axiom) {
+        return axiom.nestedClassExpressions()
+            .filter(OWLDataCardinalityRestriction.class::isInstance)
+            .map(OWLDataCardinalityRestriction.class::cast)
+            .anyMatch(r -> r.getFiller().isTopDatatype());
+    }
+
     private static boolean pinsTheKind(OWLAxiom axiom, boolean dataProperty) {
         if (axiom instanceof OWLDeclarationAxiom
                 || axiom instanceof OWLSubObjectPropertyOfAxiom
@@ -515,6 +527,14 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
                     || axiom instanceof OWLDisjointDataPropertiesAxiom
                     || axiom instanceof OWLDataPropertyDomainAxiom
                     || axiom instanceof OWLHasKeyAxiom)) {
+            return false;
+        }
+        // An *unqualified* data cardinality is the fourth spelling that says only "role".
+        // `\u22652 d` has no filler, so it reads exactly like the object form, and a
+        // document whose only mention of a data property was `C \u2291 \u22652 d` came
+        // back with it an object property. The qualified form `\u22652 d.xsd:string`
+        // names a datatype and does pin the kind, so only the unqualified one is excluded.
+        if (dataProperty && hasUnqualifiedDataCardinality(axiom)) {
             return false;
         }
         return true;
@@ -569,18 +589,17 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
      */
     private boolean supersAPunnedProperty(OWLEntity entity) {
         OWLDataFactory df = currentOntology.getOWLOntologyManager().getOWLDataFactory();
+        // Object properties only. The caller reaches this behind
+        // `!entity.isOWLDataProperty()`, which short-circuits, so a data-property branch
+        // here was unreachable — and unnecessary too, since a data property always gets a
+        // kind statement anyway.
         IRI iri = entity.getIRI();
-        Stream<IRI> subs = entity.isOWLDataProperty()
-            ? currentOntology.dataSubPropertyAxiomsForSuperProperty(df.getOWLDataProperty(iri))
-                .map(OWLSubDataPropertyOfAxiom::getSubProperty)
-                .filter(sub -> !sub.isAnonymous())
-                .map(sub -> sub.asOWLDataProperty().getIRI())
-            : currentOntology
-                .objectSubPropertyAxiomsForSuperProperty(df.getOWLObjectProperty(iri))
-                .map(OWLSubObjectPropertyOfAxiom::getSubProperty)
-                .filter(sub -> !sub.isAnonymous())
-                .map(sub -> sub.getNamedProperty().getIRI());
-        return subs.anyMatch(currentOntology::containsClassInSignature);
+        return currentOntology
+            .objectSubPropertyAxiomsForSuperProperty(df.getOWLObjectProperty(iri))
+            .map(OWLSubObjectPropertyOfAxiom::getSubProperty)
+            .filter(sub -> !sub.isAnonymous())
+            .map(sub -> sub.getNamedProperty().getIRI())
+            .anyMatch(currentOntology::containsClassInSignature);
     }
 
     /**
@@ -730,6 +749,63 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
      * that says something, and where both say something the ontology's wins,
      * because that is the namespace its entities actually live in.
      */
+    /**
+     * Gives a prefix to every namespace the document uses but does not declare.
+     *
+     * <p>Writing a name needs a prefix that covers its IRI. When none did, the renderer fell
+     * through to the bare local part and threw the namespace away — and a bare name is read
+     * back into the default namespace, so the entity silently became a different entity:
+     *
+     * <pre>
+     * SubClassOf(:C &lt;http://other.example.com/vocab#Person&gt;)
+     *   &rarr; C &sqsube; Person
+     *   &rarr; SubClassOf(:C :Person)        // :Person is now in the document's own namespace
+     * </pre>
+     *
+     * <p>Any ontology that names anything outside its own namespace hit this, which is most
+     * ontologies that import or align with another — and it was silent in both directions,
+     * so nothing in the output showed that a namespace had been dropped.
+     *
+     * <p>Minted names are {@code ns1:}, {@code ns2:} and so on, assigned in namespace order
+     * so that the same document always produces the same names, and skipping any name the
+     * document has already used for something else.
+     */
+    private static void declareUncoveredNamespaces(OWLOntology o, Map<String, String> prefixes) {
+        Collection<String> covered = prefixes.values();
+        Set<String> uncovered = new TreeSet<>();
+        namesWritten(o).forEach(iri -> {
+            String full = iri.toString();
+            if (covered.stream().noneMatch(full::startsWith)) {
+                uncovered.add(iri.getNamespace());
+            }
+        });
+        int next = 1;
+        for (String namespace : uncovered) {
+            String name;
+            do {
+                name = "ns" + next++ + ":";
+            } while (prefixes.containsKey(name));
+            prefixes.put(name, namespace);
+        }
+    }
+
+    /**
+     * Every IRI this document will write as a name.
+     *
+     * <p>The signature covers entities. Annotation assertions are the other source: both a
+     * subject and an IRI-valued object may name something the signature never mentions.
+     */
+    private static Stream<IRI> namesWritten(OWLOntology o) {
+        Stream<IRI> entities = o.signature().map(OWLEntity::getIRI);
+        Stream<IRI> annotationSubjects = o.axioms(AxiomType.ANNOTATION_ASSERTION)
+            .map(OWLAnnotationAssertionAxiom::getSubject)
+            .filter(IRI.class::isInstance).map(IRI.class::cast);
+        Stream<IRI> annotationValues = o.axioms(AxiomType.ANNOTATION_ASSERTION)
+            .map(OWLAnnotationAssertionAxiom::getValue)
+            .filter(IRI.class::isInstance).map(IRI.class::cast);
+        return Stream.concat(entities, Stream.concat(annotationSubjects, annotationValues));
+    }
+
     private static Map<String, String> prefixesFor(OWLOntology o, OWLDocumentFormat outputFormat) {
         Map<String, String> merged = new LinkedHashMap<>();
         contribute(merged, outputFormat);

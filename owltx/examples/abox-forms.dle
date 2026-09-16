@@ -1,9 +1,9 @@
-# Assertions about individuals — every spelling DLe accepts.
+# Assertions about individuals — the spellings DLe accepts for the ABox.
 #
-# This document exists to be read, and it deliberately uses several spellings of the same
-# axiom shape, so it does not round-trip byte for byte. The writer picks one form per kind:
-# `rex:Cat`, `ex:ada:Person` and `bob : Person` are all class assertions, and all three come
-# back spaced. What must survive is the set of axioms, which is what the CI regression job
+# This document exists to be read. It deliberately uses several spellings of the same axiom
+# shape, so it does not round-trip byte for byte: the writer picks one form per kind, and
+# `rex:Cat`, `ex:ada:Person` and `bob : Person` are all class assertions that come back
+# spaced. What must survive is the set of axioms, which is what the CI regression job
 # compares.
 #
 # The forms follow Introduction to Description Logic:
@@ -17,17 +17,26 @@
 #   a ≠ b          a and b are different individuals
 #
 # A class assertion may also be written without the space — `rex:Cat` — which is the
-# textbook spelling. It is read as an assertion only when the part before the colon is not
-# a declared prefix, because otherwise those characters are a prefixed name. Written output
+# textbook spelling. It is read as an assertion only when the part before the colon is not a
+# declared prefix, because otherwise those characters are a prefixed name. Written output
 # always spaces it, so the meaning never depends on the prefix declarations.
 #
 # A digit-initial name in the default namespace carries its own colon, so a statement about
-# one has two: `(bob,rex)::762705008`. A digit-initial class needs the space as well.
+# one has two: `(bob,rex)::246075003`. A digit-initial class needs the space as well.
 #
-# There are no comments below this header on purpose. A comment attaches to the entity
-# named by the statement under it, and several statements here share a subject, so section
-# headings would merge into one another — see the notes on comment fidelity in the issue
-# tracker rather than reading anything into their absence.
+# Three things to know before adding to this file:
+#
+#  - There are no comments below this header on purpose. A comment attaches to the entity
+#    named by the statement under it, and several statements here share a subject, so
+#    section headings would merge into one another.
+#  - This header does not survive a read either: a comment block before the first @prefix
+#    is dropped. It documents the file for a human reader, not for the tool.
+#  - Do not route this document through RDF. `rex = rexie = rexthedog` is one three-way
+#    SameIndividual axiom, and RDF has only the binary owl:sameAs, so a .ttl detour splits
+#    it in two and the axiom count this file exists to hold stops holding.
+#
+# Not every legal spelling is here — typed literals have no syntax yet, and the enumerated
+# class `{rex, zoe}` does not survive a round trip. Both are in the issue tracker.
 
 @ontology <http://example.org/abox-forms>
 @prefix : <http://example.org/abox#>
@@ -42,42 +51,63 @@ Keeper ⊑ Person
 ∃age.⊤ ⊑ Animal
 ⊤ ⊑ ∀age.xsd:integer
 ⊤ ⊑ ∀nickname.xsd:string
+⊤ ⊑ ∀weight.xsd:double
+⊤ ⊑ ∀tagged.xsd:boolean
 Func(age)
 ∃caresFor.⊤ ⊑ Keeper
 ⊤ ⊑ ∀caresFor.Animal
 hasPet ⊑ caresFor
+∃:246075003.⊤ ⊑ Animal
+⊤ ⊑ ∀:118586006.xsd:integer
 
 bob : Person
 rex:Cat
 ex:ada:Person
 ex:zoe:ex:Keeper
+bob:ex:Keeper
 mia : :762705008
+:111000001 : Cat
 bob : Person ⊓ ¬Keeper
 rex : Cat ⊔ Dog
 bob : ∃hasPet.Cat
 bob : ≥1 hasPet.Animal
+bob : ≤3 hasPet.Animal
+bob : =1 hasPet.Cat
 ada : ∀hasPet.Animal
 zoe : ¬Cat
+rex : ⊤
+mia : ¬⊥
+ada : ∃hasPet.{rex}
+zoe : ∃caresFor.Self
+rex : ∃age.xsd:integer
 
 (bob,rex):hasPet
 (ex:ada,rex):hasPet
 (ex:zoe,rex):caresFor
 ¬(ex:zoe,rex):hasPet
-(bob,rex)::762705008
-¬(mia,rex)::762705008
+(bob,rex)::246075003
+¬(mia,rex)::246075003
+(:111000001,rex):hasPet
 
 (rex,7):age
+(rex,-3):age
+(rex,4.5):weight
+(rex,true):tagged
 (rex,"Rexie"):nickname
 (rex,"Rexie le chien"@fr):nickname
 (rex,""):nickname
 (rex,"says \"woof\""):nickname
+(rex,9)::118586006
 ¬(bob,"Bobby"):nickname
 ¬(rex,3):age
+¬(rex,"Rexie le chat"@fr):nickname
+¬(rex,9)::118586006
 
 bob = robert
 mia ≠ zoe
 rex = rexie = rexthedog
 bob ≠ mia ≠ zoe
+:111000001 = :111000002
 
 @label bob "Bob"
 @label ex:ada "Ada"@en

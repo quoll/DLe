@@ -130,6 +130,34 @@ class RoleCharacteristicKindTest {
         }
     }
 
+    /**
+     * One property named twice is refused however it is spelled.
+     *
+     * <p>Two prefixes may be bound to one namespace, so {@code e1:p} and {@code e2:p} are
+     * one property written two ways. The check compared the written text, so the pair passed
+     * it; OWL then collapsed them and the writer emitted {@code Disj(p)}, which is not a
+     * form the grammar has, and the whole document stopped reloading.
+     *
+     * <p>The intersection spelling is included because it reaches the unary axiom by its own
+     * route — it had no repeat check at all.
+     */
+    @Test
+    void oneRepeatedPropertyIsRefusedWhicheverWayItIsNamed() {
+        String twoPrefixes = "@prefix e1: <http://example.org/z#>\n"
+            + "@prefix e2: <http://example.org/z#>\n" + PREFIX;
+        for (String disj : new String[] {"Disj(e1:p, e2:p)\n", "e1:p \u2293 e2:p \u2291 \u22a5\n"}) {
+            String message = refusal(twoPrefixes + "A \u2291 \u2203e1:p.B\n" + disj);
+            assertTrue(message.contains("named twice in this disjointness statement"),
+                () -> disj.trim() + " names one property twice, got: " + message);
+        }
+        // And the plain repeat, by both spellings.
+        for (String disj : new String[] {"Disj(p, p)\n", "p \u2293 p \u2291 \u22a5\n"}) {
+            String message = refusal(PREFIX + "A \u2291 \u2203p.B\n" + disj);
+            assertTrue(message.contains("named twice in this disjointness statement"),
+                () -> disj.trim() + " must be refused, got: " + message);
+        }
+    }
+
     /** Disjointness holds within one kind, so a mixture is a contradiction, not a choice. */
     @Test
     void disjointnessMixingKindsIsRefused() {
