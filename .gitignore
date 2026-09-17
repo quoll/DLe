@@ -38,3 +38,6 @@ CHANGES.md
 owltx/data/
 
 .DS_Store
+
+# Local review notes, not part of the project
+docs/DEFECTS.md

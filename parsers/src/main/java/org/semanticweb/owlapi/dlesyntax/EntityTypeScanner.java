@@ -699,6 +699,16 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
                     && caseSuggestsRole(lhs) && caseSuggestsRole(rhs)) {
                 objectPropertyNames.add(lhs);
                 objectPropertyNames.add(rhs);
+                // GUESSED, and recorded as such. The convention is the weakest thing that
+                // can put a name in a set, and propagation must not carry it as though the
+                // document had said it. Recording nothing here is what let a guess be
+                // re-exported as PROPAGATED evidence and then outrank a real position:
+                // `appState ⊑ calcList` / `calcList ⊑ calcValue` / `⊤ ⊑ ∀appState.{"a"}`
+                // guessed both parents object, and the data evidence could not get past it.
+                findings.record(lhs, Findings.Kind.OBJECT_PROPERTY,
+                    Findings.Certainty.GUESSED, ctx.start.getLine());
+                findings.record(rhs, Findings.Kind.OBJECT_PROPERTY,
+                    Findings.Certainty.GUESSED, ctx.start.getLine());
             }
         }
         // A ⊑ B⁻ — lhs must be an object property (inverse forces the interpretation),
@@ -850,23 +860,33 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
                     // alone, x stays an object property, s stays a data one, and the pair
                     // is reported for what it is: a sub-property axiom across the two
                     // hierarchies, which OWL has no way to express.
-                    if (dataPropertyNames.contains(sub) && !mustBeClass.contains(sup)
+                    // Propagation reads the *findings*, not the sets. A name is only a
+                    // source of a kind when something in the document evidenced it: a
+                    // position, a statement, or an earlier propagation step. Set membership
+                    // is weaker than that, because the case convention writes into the sets
+                    // on a guess, and a guess carried across an edge and stamped PROPAGATED
+                    // becomes indistinguishable from evidence — which is how a guessed
+                    // parent came to outrank a stated child and refuse a sound document.
+                    if (findings.hasEvidenceFor(sub, Findings.Kind.DATA_PROPERTY)
+                            && !mustBeClass.contains(sup)
                             && !explicitRole.contains(sup)
                             && !findings.hasEvidenceFor(sup, Findings.Kind.OBJECT_PROPERTY)) {
                         changed |= propagateKind(sub, sup, Findings.Kind.DATA_PROPERTY);
                     }
-                    if (dataPropertyNames.contains(sup) && !mustBeClass.contains(sub)
+                    if (findings.hasEvidenceFor(sup, Findings.Kind.DATA_PROPERTY)
+                            && !mustBeClass.contains(sub)
                             && !explicitRole.contains(sub)
                             && !findings.hasEvidenceFor(sub, Findings.Kind.OBJECT_PROPERTY)
                             && !(mustBeClass.contains(sup) && looksLikeAClass(sub))) {
                         changed |= propagateKind(sup, sub, Findings.Kind.DATA_PROPERTY);
                     }
                     // Object property propagation is blocked at mustBeClass nodes.
-                    if (objectPropertyNames.contains(sub)
+                    if (findings.hasEvidenceFor(sub, Findings.Kind.OBJECT_PROPERTY)
                             && !dataPropertyNames.contains(sup)
                             && !mustBeClass.contains(sup))
                         changed |= propagateKind(sub, sup, Findings.Kind.OBJECT_PROPERTY);
-                    if (objectPropertyNames.contains(sup) && !dataPropertyNames.contains(sub)
+                    if (findings.hasEvidenceFor(sup, Findings.Kind.OBJECT_PROPERTY)
+                            && !dataPropertyNames.contains(sub)
                             && !mustBeClass.contains(sub)
                             && !(mustBeClass.contains(sup) && looksLikeAClass(sub)))
                         changed |= propagateKind(sup, sub, Findings.Kind.OBJECT_PROPERTY);

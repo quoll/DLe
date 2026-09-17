@@ -22,8 +22,8 @@ import static org.junit.jupiter.api.Assertions.*;
  */
 class FindingsAgreementTest {
 
-    /** Runs both scanner passes over a document and returns any disagreements. */
-    private static List<String> disagreements(String document) {
+    /** Runs both scanner passes over a document and hands back the scanner. */
+    private static EntityTypeScanner scan(String document) {
         DLESyntaxLexer lexer = new DLESyntaxLexer(CharStreams.fromString(document));
         DLESyntaxParser parser = new DLESyntaxParser(new CommonTokenStream(lexer));
         DLESyntaxParser.OntologyContext tree = parser.ontology();
@@ -31,7 +31,76 @@ class FindingsAgreementTest {
         scanner.collectDatatypeDefinitions(tree);
         scanner.visit(tree);
         scanner.propagatePropertyTypes();
-        return scanner.findingsDisagreements();
+        return scanner;
+    }
+
+    /** Runs both scanner passes over a document and returns any disagreements. */
+    private static List<String> disagreements(String document) {
+        return scan(document).findingsDisagreements();
+    }
+
+    /** One of the scanner's private name sets, by field name. */
+    @SuppressWarnings("unchecked")
+    private static java.util.Set<String> nameSet(EntityTypeScanner scanner, String field)
+            throws Exception {
+        java.lang.reflect.Field f = EntityTypeScanner.class.getDeclaredField(field);
+        f.setAccessible(true);
+        return (java.util.Set<String>) f.get(scanner);
+    }
+
+    /** The scanner's private findings store. */
+    private static Findings findingsOf(EntityTypeScanner scanner) throws Exception {
+        java.lang.reflect.Field f = EntityTypeScanner.class.getDeclaredField("findings");
+        f.setAccessible(true);
+        return (Findings) f.get(scanner);
+    }
+
+    /**
+     * The check detects a drift it is given, in each of the four kinds it compares.
+     *
+     * <p>Without this, every assertion in this file is that nothing was reported, which a
+     * check that compares nothing at all also satisfies — and one did: replacing
+     * {@code findingsDisagreements} with {@code return new ArrayList<>()} passed the whole
+     * suite. The drift is injected reflectively rather than by a document, because a
+     * document that genuinely drifts is the bug this exists to find; there is no such
+     * document to write once the production code is right.
+     *
+     * <p>One drift must yield exactly one complaint: a name in a set with no finding is a
+     * disagreement about that kind only, not about the three it says nothing about.
+     */
+    @Test
+    void aNameInASetWithNoFindingIsReported() throws Exception {
+        String[][] cases = {
+            {"objectPropertyNames", "OBJECT_PROPERTY"},
+            {"dataPropertyNames",   "DATA_PROPERTY"},
+            {"mustBeClass",         "CLASS"},
+            {"datatypeNames",       "DATATYPE"},
+        };
+        for (String[] c : cases) {
+            EntityTypeScanner scanner = scan("@prefix : <http://example.org/a#>\nA \u2291 B\n");
+            assertTrue(scanner.findingsDisagreements().isEmpty(),
+                () -> "the fixture must start clean, before " + c[0] + " is disturbed");
+            nameSet(scanner, c[0]).add("ghost");
+            List<String> found = scanner.findingsDisagreements();
+            assertEquals(1, found.size(),
+                () -> "a name in " + c[0] + " with no finding is one disagreement, got " + found);
+            assertTrue(found.get(0).contains("ghost"),
+                () -> "the complaint must name the drifting name: " + found.get(0));
+            assertTrue(found.get(0).contains(c[1]),
+                () -> "the complaint must name the kind " + c[1] + ": " + found.get(0));
+        }
+    }
+
+    /** And the other direction: evidence for a kind, with the name absent from that set. */
+    @Test
+    void aFindingWithNoNameSetMembershipIsReported() throws Exception {
+        EntityTypeScanner scanner = scan("@prefix : <http://example.org/a#>\nA \u2291 B\n");
+        findingsOf(scanner).record("ghost", Findings.Kind.DATA_PROPERTY,
+            Findings.Certainty.STATED, 7);
+        List<String> found = scanner.findingsDisagreements();
+        assertEquals(1, found.size(), () -> "expected one disagreement, got " + found);
+        assertTrue(found.get(0).contains("ghost") && found.get(0).contains("DATA_PROPERTY"),
+            () -> "the complaint must name both the name and the kind: " + found.get(0));
     }
 
     /**
