@@ -128,12 +128,21 @@ class ImplicitKindAxiomTest {
                 + second);
     }
 
-    /** The direction matters: top as the sub-property is not a tautology. */
+    /**
+     * Only top as the super-property is implicit — pinning the condition, not a use case.
+     *
+     * <p>No one writes {@code owl:topObjectProperty ⊑ r}. With the implicit {@code r ⊑ top}
+     * it makes {@code r} equivalent to the universal role, which is legal and pointless. The
+     * test is here for the implementation rather than the document: the filter matches on the
+     * super-property, and the looser formulation that invites — "any sub-property axiom
+     * mentioning top" — would strip this too. That is a plausible way to rewrite it, so the
+     * condition is worth holding in place even though the input is not realistic.
+     */
     @Test
-    void topAsTheSubPropertyIsNotRemoved() throws Exception {
+    void onlyTopAsTheSuperPropertyIsImplicit() throws Exception {
         OWLOntology o = read(PREFIX + "owl:topObjectProperty ⊑ r\nA ⊑ ∃r.B\n");
         assertEquals(1, o.getAxioms(AxiomType.SUB_OBJECT_PROPERTY).size(),
-            () -> "`owl:topObjectProperty ⊑ r` says something and must survive: "
+            () -> "the reversed form is not implicit and must survive: "
                 + o.getLogicalAxioms());
     }
 

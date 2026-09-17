@@ -363,8 +363,12 @@ public class DLEOntologyParser extends AbstractOWLParser {
         // Only this ontology's own axioms. An import's contents are its own business, and
         // `axioms()` without Imports.INCLUDED is already local.
         ontology.axioms(AxiomType.SUB_OBJECT_PROPERTY).forEach(axiom -> {
-            // The direction matters: `owl:topObjectProperty ⊑ r` is not a tautology and has
-            // to survive. Only top as the super-property is implicit.
+            // Matched on the SUPER-property, which is the whole of it: only top as the
+            // super is implicit. The reversed `owl:topObjectProperty ⊑ r` is left alone as
+            // a consequence, not by a separate guard — and it means something quite
+            // different, since top ⊑ r with the implicit r ⊑ top makes r equivalent to the
+            // universal role. Nobody writes that, but the looser formulation this invites
+            // — "any sub-property axiom mentioning top" — would strip it.
             if (axiom.getSuperProperty().isAnonymous()
                     || !topObject.equals(axiom.getSuperProperty()
                         .asOWLObjectProperty().getIRI())) {
