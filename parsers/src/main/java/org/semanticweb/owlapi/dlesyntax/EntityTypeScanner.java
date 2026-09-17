@@ -190,14 +190,12 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
     @Override
     public Void visitSomeValuesFrom(DLESyntaxParser.SomeValuesFromContext ctx) {
         classifyRestriction(ctx.propertyExpr(), ctx.primary());
-        checkUnaryPredicate(ctx.primary());
         return visitChildren(ctx);
     }
 
     @Override
     public Void visitAllValuesFrom(DLESyntaxParser.AllValuesFromContext ctx) {
         classifyRestriction(ctx.propertyExpr(), ctx.primary());
-        checkUnaryPredicate(ctx.primary());
         return visitChildren(ctx);
     }
 
@@ -230,11 +228,6 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
      * <p>Kept as a method, and still called, so the restriction sites continue to name what
      * they are doing; it now only asserts that the guess is gone.
      */
-    private void checkUnaryPredicate(DLESyntaxParser.PrimaryContext primary) {
-        // Deliberately empty: a predicate reference needs a declaration, and declarations
-        // are recorded by visitPredicateDefinition and the multi-role reference visitors.
-    }
-
     @Override
     public Void visitCardinalityRestriction(DLESyntaxParser.CardinalityRestrictionContext ctx) {
         classifyRestriction(ctx.propertyExpr(), ctx.primary());
@@ -535,20 +528,6 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
         if (allBare && bare.stream().allMatch(this::caseSuggestsRole)) {
             bare.forEach(this::classifyUnknownRole);
         }
-        // A datatype definition: `Code ≡ [xsd:string ⊓ […]]`. One side a data range and the
-        // other a bare name makes the name a datatype, which no built-in list could know.
-        for (int i = 0; i < n; i++) {
-            String bareName = singleBareName(operands.get(i));
-            if (bareName == null) continue;
-            if (isDataTypeName(bareName)) continue;   // already one; nothing to define
-            for (int j = 0; j < n; j++) {
-                if (j != i && isDataClassExpr(operands.get(j))) {
-                    datatypeNames.add(bareName);
-                    mustBeClass.remove(bareName);
-                }
-            }
-        }
-
         // Tied together whatever their spelling, so evidence on any one of them reaches the
         // rest. Only groups that are entirely bare names can be properties at all.
         if (allBare && bare.size() > 1) {
@@ -1030,6 +1009,53 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
                 // Only classify as object if not already established as data.
                 objectPropertyNames.add(name);
             }
+        }
+    }
+
+    /**
+     * A note on what is deliberately *not* inferred.
+     *
+     * <p>A single-role restriction filler used to be taken for a predicate reference when its
+     * name was lower-case and not already known to be a property. That destroyed any class
+     * whose name broke the convention — {@code A ⊑ ∃r.lowerC} built the skolem class
+     * {@code dle:E_lowerC_…} and discarded both the class and the property, with the document
+     * loading cleanly (#37) — and it was the order dependence in #27 besides, because it read
+     * the property sets while the scan was still filling them.
+     *
+     * <p>Both faults were the guess, not the mechanism. A predicate is always declared, by
+     * {@code ≝} or by a multi-role reference whose comma makes it unambiguous, and those are
+     * recorded by {@code visitPredicateDefinition} and the multi-role visitors. Nothing here
+     * needs to be guessed, so nothing is.
+     */
+
+    /**
+     * Records every datatype the document defines, before anything reads the answer.
+     *
+     * <p>A separate sweep, and it has to be: a restriction is classified as the scan passes
+     * it, so a definition further down the file would not have been seen yet. Doing this
+     * inside the main scan gave {@code ⊤ ⊑ ∀d.MyType} one answer above its definition and
+     * another below it — the same order dependence just removed from predicates (#27), and it
+     * would have been careless to reintroduce it here.
+     *
+     * <p>Only {@code name ≡ <data range>} is looked for. A data range on one side cannot be a
+     * class equivalence, so the shape is unambiguous without knowing anything else yet.
+     */
+    void collectDatatypeDefinitions(org.antlr.v4.runtime.tree.ParseTree tree) {
+        if (tree instanceof DLESyntaxParser.EquivAxiomContext) {
+            List<DLESyntaxParser.ClassExprContext> operands =
+                ((DLESyntaxParser.EquivAxiomContext) tree).classExpr();
+            for (int i = 0; i < operands.size(); i++) {
+                String bareName = singleBareName(operands.get(i));
+                if (bareName == null || isDatatypeIri(resolve(bareName))) continue;
+                for (int j = 0; j < operands.size(); j++) {
+                    if (j != i && isDataClassExpr(operands.get(j))) {
+                        datatypeNames.add(bareName);
+                    }
+                }
+            }
+        }
+        for (int i = 0; i < tree.getChildCount(); i++) {
+            collectDatatypeDefinitions(tree.getChild(i));
         }
     }
 

@@ -706,6 +706,32 @@ class KindPreservationTest {
             + "@ann C note \"v\"\nA ⊑ ∃r.B\n"), "unrelated names");
     }
 
+    /**
+     * A datatype definition works wherever it sits relative to its use.
+     *
+     * <p>This is a regression test in the strict sense: the first version of the
+     * document-defined-datatype fix put the detection inside the main scan, which classifies
+     * each restriction as it passes it — so a definition further down the file had not been
+     * seen yet and `⊤ ⊑ ∀d.MyType` read one way above its definition and another below it.
+     * That is exactly the order dependence just removed from predicates, reintroduced a few
+     * hours later in another place, and is why the detection is now a separate sweep.
+     */
+    @Test
+    void aDatatypeDefinitionDoesNotDependOnItsPositionInTheFile() throws Exception {
+        String definition = "MyType ≡ [xsd:string ⊓ [minLength 3]]\n";
+        String use = "⊤ ⊑ ∀d.MyType\n";
+        for (String document : new String[] {definition + use, use + definition}) {
+            OWLOntology o = assertDoesNotThrow(
+                () -> read("@prefix : <" + NS + ">\n" + document),
+                () -> "must parse in either order:\n" + document);
+            assertEquals(1, o.getAxioms(AxiomType.DATA_PROPERTY_RANGE).size(),
+                () -> "d is a data property either way:\n" + document + o.getLogicalAxioms());
+            assertTrue(o.datatypesInSignature()
+                    .anyMatch(t -> t.getIRI().toString().endsWith("#MyType")),
+                () -> "and MyType a datatype:\n" + document + o.getLogicalAxioms());
+        }
+    }
+
     /** The fixture table has to actually exercise every kind, or it proves less than it says. */
     @Test
     void theFixturesCoverEveryKind() {

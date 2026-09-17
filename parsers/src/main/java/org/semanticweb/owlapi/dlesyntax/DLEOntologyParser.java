@@ -100,6 +100,11 @@ public class DLEOntologyParser extends AbstractOWLParser {
 
             // Pass 1 — entity type classification
             EntityTypeScanner scanner = new EntityTypeScanner();
+            // Datatype definitions first. A restriction is classified as the scan passes
+            // it, so a definition further down the file has to be known before the scan
+            // starts or the same document reads two ways depending on the order of its
+            // lines — see EntityTypeScanner#collectDatatypeDefinitions.
+            scanner.collectDatatypeDefinitions(tree);
             scanner.visit(tree);
             scanner.propagatePropertyTypes();
             // Reject what parses but cannot be expressed in OWL, while the parse
