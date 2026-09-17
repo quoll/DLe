@@ -1947,6 +1947,19 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
         if (namesADatatype(text, iri)) {
             return df.getOWLDatatype(iri);
         }
+        // OWL's four built-in properties. They are properties by definition, and nothing
+        // else here would work that out: the rdf:/rdfs: rule below does not cover `owl:`, so
+        // `owl:topObjectProperty` fell through to a class — which is how `X ⊑
+        // owl:topObjectProperty` came to read as a class subsumption with
+        // `Declaration(Class(owl:topObjectProperty))` beside it.
+        if (TOP_OBJECT_PROPERTY_IRI.equals(iri)
+                || OWLRDFVocabulary.OWL_BOTTOM_OBJECT_PROPERTY.getIRI().equals(iri)) {
+            return df.getOWLObjectProperty(iri);
+        }
+        if (TOP_DATA_PROPERTY_IRI.equals(iri)
+                || OWLRDFVocabulary.OWL_BOTTOM_DATA_PROPERTY.getIRI().equals(iri)) {
+            return df.getOWLDataProperty(iri);
+        }
         // For remaining rdf:/rdfs: names, use case convention:
         //   lower-case local part → object property  (e.g. rdf:type, rdfs:subClassOf)
         //   upper-case local part → class            (e.g. rdfs:Resource, rdfs:Class)
@@ -1993,28 +2006,22 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
     private boolean consumeKindStatement(DLESyntaxParser.SubClassAxiomContext ctx) {
         String lhs = loneName(ctx.classExpr(0));
         if (lhs == null) return false;
-        String rhs = loneName(ctx.classExpr(1));
 
-        IRI top = rhs == null ? null : topPropertyIri(rhs);
-        if (TOP_OBJECT_PROPERTY_IRI.equals(top)) {
-            IRI iri = expandNameText(lhs);
-            if (iri == null) return false;
-            axioms.add(df.getOWLDeclarationAxiom(df.getOWLObjectProperty(iri)));
-            statedKindIRIs.add(iri);
-            return true;
-        }
-        if (TOP_DATA_PROPERTY_IRI.equals(top)) {
-            IRI iri = expandNameText(lhs);
-            if (iri == null) return false;
-            axioms.add(df.getOWLDeclarationAxiom(df.getOWLDataProperty(iri)));
-            statedKindIRIs.add(iri);
-            return true;
-        }
-        // The consumed statement does not survive as an axiom, and that is deliberate: the
-        // statement IS the marker, and re-adding the subsumption it came from would put the
-        // writer's own output back into the document as content. All three forms are
-        // tautologies, so nothing is lost but the line. The asymmetry worth knowing is that
-        // an `X ⊑ ⊤` on a name with no role statement is NOT a marker and does survive.
+        // The two property forms are no longer intercepted here. They parse as the
+        // ordinary sub-property axioms they are, and DLEOntologyParser removes them once
+        // parsing is done — see removeImplicitKindAxioms there for why that is the better
+        // place. Their kind evidence does not depend on this method: EntityTypeScanner
+        // records it, and explicitRole with it, in pass one.
+        //
+        // `X ⊑ ⊤` is still intercepted, and only in the pun case. It is NOT a tautology
+        // worth removing in general — `ClassName ⊑ ⊤` is how a class is declared in DL and
+        // appears throughout real documents — so it stays the ordinary subsumption it has
+        // always been, and only the class side of a pun arrives as a declaration instead.
+        //
+        // Consuming it more widely — for any name whose local part is not capitalised, which
+        // an earlier revision did — destroys a `SubClassOf(X, owl:Thing)` axiom the author
+        // wrote, and makes writing non-idempotent, because the writer then re-adds the line
+        // from a different source on the next pass.
         //
         // `X ⊑ ⊤` is consumed only when the document has also stated that X is a role —
         // that pair is what marks a pun, and the class side of a pun has to arrive as a
@@ -2041,20 +2048,6 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
     private static final IRI TOP_DATA_PROPERTY_IRI =
         OWLRDFVocabulary.OWL_TOP_DATA_PROPERTY.getIRI();
 
-    /**
-     * The top-property IRI a name resolves to, or null if it is not one.
-     *
-     * <p>Resolved rather than compared as text: a document may bind the OWL namespace to
-     * another prefix, and may bind {@code owl:} to another namespace. Matching the spelling
-     * gets both wrong, the second silently.
-     */
-    @Nullable
-    private IRI topPropertyIri(String name) {
-        if (name.indexOf(':') < 0) return null;   // bare names are in the default namespace
-        IRI iri = expandNameText(name);
-        return TOP_OBJECT_PROPERTY_IRI.equals(iri) || TOP_DATA_PROPERTY_IRI.equals(iri)
-            ? iri : null;
-    }
 
     /** The text of a classExpr that is nothing but a single name, else null. */
     @Nullable

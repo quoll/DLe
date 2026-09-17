@@ -28,6 +28,11 @@ import org.slf4j.LoggerFactory;
 import org.semanticweb.owlapi.model.UnloadableImportException;
 import org.semanticweb.owlapi.model.OWLOntologyCreationException;
 import org.semanticweb.owlapi.model.AddOntologyAnnotation;
+import java.util.ArrayList;
+import org.semanticweb.owlapi.model.AxiomType;
+import org.semanticweb.owlapi.model.OWLAxiom;
+import org.semanticweb.owlapi.model.OWLDataFactory;
+import org.semanticweb.owlapi.vocab.OWLRDFVocabulary;
 import org.semanticweb.owlapi.model.IRI;
 import org.semanticweb.owlapi.model.OWLDocumentFormat;
 import org.semanticweb.owlapi.model.OWLDocumentFormatFactory;
@@ -135,6 +140,7 @@ public class DLEOntologyParser extends AbstractOWLParser {
 
             ontology.getOWLOntologyManager()
                 .addAxioms(ontology, new java.util.HashSet<>(visitor.getAxioms()));
+            removeImplicitKindAxioms(ontology);
 
             // Before DefaultLabelAdder, and that order is load-bearing. The resolver only
             // pushes a dual declaration down to sub-properties that carry no annotation
@@ -315,6 +321,75 @@ public class DLEOntologyParser extends AbstractOWLParser {
     }
 
     /** Adds a warning to the parse in progress, wherever on the stack it started. */
+    /**
+     * Removes `X ⊑ owl:topObjectProperty` and `X ⊑ owl:topDataProperty`, leaving a
+     * declaration in their place.
+     *
+     * <p>DL has no way to say what kind of thing a name is, so DLe says it with the one
+     * statement that is always true of a property: that it is beneath the top property of
+     * its kind. That makes the statement a carrier for something the language cannot
+     * otherwise express — and every OWL model holds it implicitly anyway, which is why no
+     * real document writes it. Turtle never does; functional syntax says the same thing with
+     * `Declaration(...)`.
+     *
+     * <p>So the statement is read as the axiom it is — the scanner takes its kind evidence
+     * in pass one, along with the propagation barrier that a stated kind sets — and then
+     * removed here, once parsing is complete. What is left is the declaration, which is what
+     * the statement meant.
+     *
+     * <p><b>A declaration, not a deletion.</b> Removing the axiom alone would take the name
+     * out of the signature altogether whenever the statement was its only mention, which is
+     * exactly the case a declaration-only property arrives as. The declaration is what keeps
+     * the name, and its kind.
+     *
+     * <p><b>`X ⊑ ⊤` is deliberately not touched.</b> It is a tautology too, but
+     * `ClassName ⊑ ⊤` is how a class is declared in DL and appears throughout real
+     * documents. Only the class side of a pun is consumed, and that happens in the visitor
+     * where the pun is visible.
+     *
+     * <p>The cost, accepted knowingly: a document that states one of these two axioms on
+     * purpose loses it. They are tautologies, so nothing is entailed that was not entailed
+     * before, and OWL re-derives them. See #32 — specified rather than fixed.
+     */
+    private static void removeImplicitKindAxioms(OWLOntology ontology) {
+        OWLOntologyManager manager = ontology.getOWLOntologyManager();
+        OWLDataFactory df = manager.getOWLDataFactory();
+        IRI topObject = OWLRDFVocabulary.OWL_TOP_OBJECT_PROPERTY.getIRI();
+        IRI topData = OWLRDFVocabulary.OWL_TOP_DATA_PROPERTY.getIRI();
+
+        List<OWLAxiom> remove = new ArrayList<>();
+        List<OWLAxiom> add = new ArrayList<>();
+
+        // Only this ontology's own axioms. An import's contents are its own business, and
+        // `axioms()` without Imports.INCLUDED is already local.
+        ontology.axioms(AxiomType.SUB_OBJECT_PROPERTY).forEach(axiom -> {
+            // The direction matters: `owl:topObjectProperty ⊑ r` is not a tautology and has
+            // to survive. Only top as the super-property is implicit.
+            if (axiom.getSuperProperty().isAnonymous()
+                    || !topObject.equals(axiom.getSuperProperty()
+                        .asOWLObjectProperty().getIRI())) {
+                return;
+            }
+            if (axiom.getSubProperty().isAnonymous()) return;
+            remove.add(axiom);
+            add.add(df.getOWLDeclarationAxiom(axiom.getSubProperty().asOWLObjectProperty()));
+        });
+        ontology.axioms(AxiomType.SUB_DATA_PROPERTY).forEach(axiom -> {
+            if (axiom.getSuperProperty().isAnonymous()
+                    || !topData.equals(axiom.getSuperProperty()
+                        .asOWLDataProperty().getIRI())) {
+                return;
+            }
+            if (axiom.getSubProperty().isAnonymous()) return;
+            remove.add(axiom);
+            add.add(df.getOWLDeclarationAxiom(axiom.getSubProperty().asOWLDataProperty()));
+        });
+
+        if (remove.isEmpty()) return;
+        manager.addAxioms(ontology, new java.util.HashSet<>(add));
+        manager.removeAxioms(ontology, new java.util.HashSet<>(remove));
+    }
+
     private static void warn(String message) {
         List<String> sink = ACTIVE_WARNINGS.get();
         if (sink != null) sink.add(message);
