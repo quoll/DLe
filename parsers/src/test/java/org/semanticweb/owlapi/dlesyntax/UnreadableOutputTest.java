@@ -564,6 +564,42 @@ class UnreadableOutputTest {
             df.getOWLDataComplementOf(string))));
     }
 
+    /**
+     * A complement over a connective keeps its brackets, so it keeps its meaning.
+     *
+     * <p>The class side has always bracketed this; the data side did not. So
+     * {@code \u00ac(xsd:integer \u2294 xsd:string)} was written {@code \u00acxsd:integer \u2294
+     * xsd:string} and read back as {@code (\u00acxsd:integer) \u2294 xsd:string} — a different
+     * data range, silently. The existing complement test above missed it because every
+     * operand it uses is a single datatype, a {@code DataOneOf} or a restriction, and those
+     * three need no brackets.
+     *
+     * <p>Both connectives, and the complement on either side of one, in the two positions
+     * where the same range reaches a different writer path.
+     */
+    @Test
+    void aComplementOverAConnectiveKeepsItsBrackets() throws Exception {
+        OWLDataProperty d = df.getOWLDataProperty(IRI.create(NS + "d"));
+        OWLDatatype string = df.getOWLDatatype(OWL2Datatype.XSD_STRING.getIRI());
+        OWLDatatype integer = df.getOWLDatatype(OWL2Datatype.XSD_INTEGER.getIRI());
+        OWLDataRange[] ranges = {
+            df.getOWLDataComplementOf(df.getOWLDataUnionOf(integer, string)),
+            df.getOWLDataComplementOf(df.getOWLDataIntersectionOf(integer, string)),
+            df.getOWLDataUnionOf(
+                df.getOWLDataComplementOf(df.getOWLDataIntersectionOf(integer, string)),
+                string),
+            df.getOWLDataIntersectionOf(
+                df.getOWLDataComplementOf(df.getOWLDataUnionOf(integer, string)),
+                string),
+        };
+        for (OWLDataRange range : ranges) {
+            roundTrip(ontology(df.getOWLSubClassOfAxiom(
+                df.getOWLClass(IRI.create(NS + "A")),
+                df.getOWLDataSomeValuesFrom(d, range))));
+            roundTrip(ontology(df.getOWLDataPropertyRangeAxiom(d, range)));
+        }
+    }
+
     /** The object complement is untouched by that. */
     @Test
     void theObjectComplementIsUnaffected() throws Exception {

@@ -52,6 +52,9 @@ import org.semanticweb.owlapi.model.OWLClass;
 import org.semanticweb.owlapi.model.OWLClassExpression;
 import org.semanticweb.owlapi.model.OWLDataAllValuesFrom;
 import org.semanticweb.owlapi.model.OWLDataOneOf;
+import org.semanticweb.owlapi.model.OWLDataComplementOf;
+import org.semanticweb.owlapi.model.OWLDataUnionOf;
+import org.semanticweb.owlapi.model.OWLDataIntersectionOf;
 import org.semanticweb.owlapi.model.OWLDataCardinalityRestriction;
 import org.semanticweb.owlapi.model.OWLDataExactCardinality;
 import org.semanticweb.owlapi.model.OWLDataMaxCardinality;
@@ -694,6 +697,29 @@ public class DLESyntaxObjectRenderer extends DLSyntaxObjectRenderer {
         } else {
             super.writeNested(object);
         }
+    }
+
+    /**
+     * A complemented data range, with the parentheses its operand needs.
+     *
+     * <p>The class side has always bracketed a connective under {@code \u00ac} — {@code A \u2291
+     * \u2203r.(\u00ac(B \u2294 C))} comes back as itself. The data side did not, so
+     * {@code \u00ac(xsd:integer \u2294 xsd:string)} was written {@code \u00acxsd:integer \u2294
+     * xsd:string} and read back as {@code (\u00acxsd:integer) \u2294 xsd:string}: a different data
+     * range, silently, and reachable from a hand-written document in one pass because the
+     * reader parses the bracketed form correctly. It affected every data-range position.
+     *
+     * <p>{@code DataOneOf} and {@code DatatypeRestriction} need no brackets: {@code {...}} and
+     * {@code [...]} delimit themselves, and {@code \u00ac{"a"}} reads back as it was written.
+     */
+    @Override
+    public void visit(OWLDataComplementOf node) {
+        write(DLSyntax.NOT);
+        OWLDataRange inner = node.getDataRange();
+        boolean bracket = inner instanceof OWLDataUnionOf || inner instanceof OWLDataIntersectionOf;
+        if (bracket) write("(");
+        inner.accept(this);
+        if (bracket) write(")");
     }
 
     @Override
