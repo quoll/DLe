@@ -21,6 +21,7 @@ import org.semanticweb.owlapi.model.OWLSubClassOfAxiom;
 import org.semanticweb.owlapi.vocab.OWLRDFVocabulary;
 import java.util.Collection;
 import java.util.TreeSet;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import org.semanticweb.owlapi.model.OWLClass;
@@ -182,6 +183,16 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
     @Nullable private OWLOntology currentOntology;
     /** Annotation assertions already written inline; set for the duration of {@code storeOntology}. */
     @Nullable private Set<OWLAnnotationAssertionAxiom> writtenAnnotations;
+    /**
+     * Every axiom the entity-block pass wrote, so the ones it never reached can be found.
+     *
+     * <p>The base storer walks entities and writes each axiom under one of them, which
+     * leaves an axiom mentioning no entity it walks with nowhere to go. It was then dropped
+     * in silence: a {@code DatatypeDefinition}, whose subject is a datatype and datatypes
+     * get no block, and an identity axiom whose whole signature is anonymous —
+     * {@code DifferentIndividuals(_:x _:y)} — both disappeared.
+     */
+    @Nullable private Set<OWLAxiom> writtenAxioms;
     /** Prefixes in force while storing: the ontology's, overridden by the caller's. */
     @Nullable private Map<String, String> currentPrefixes;
     /** Per-document memo for {@link #usedAsARole}; see there for why it is needed. */
@@ -197,6 +208,7 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
         renderer.setOntology(o);
         currentOntology = o;
         writtenAnnotations = new HashSet<>();
+        writtenAxioms = new HashSet<>();
         roleEvidence.clear();
         currentPrefixes = prefixesFor(o, outputFormat);
         declareUncoveredNamespaces(o, currentPrefixes);
@@ -225,9 +237,11 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
         }
         try {
             super.storeOntology(o, printWriter, outputFormat);
+            writeAxiomsWithNoBlock(o, printWriter);
         } finally {
             currentOntology = null;
             writtenAnnotations = null;
+            writtenAxioms = null;
             roleEvidence.clear();
             currentPrefixes = null;
         }
@@ -907,11 +921,39 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
 
     @Override
     protected void writeAxiom(OWLEntity entity, OWLAxiom axiom, PrintWriter writer) {
+        if (writtenAxioms != null) writtenAxioms.add(axiom);
         if (holdingAxioms) {
             heldAxioms.add(axiom);
             return;
         }
         super.writeAxiom(entity, axiom, writer);
+    }
+
+    /**
+     * Writes the axioms the entity-block pass never reached.
+     *
+     * <p>An axiom goes under one of the entities the base storer walks — classes, object and
+     * data properties, individuals. An axiom that mentions none of them has no block, and
+     * was simply lost: a {@code DatatypeDefinition} is about a datatype, and
+     * {@code DifferentIndividuals(_:x _:y)} is about nothing named at all.
+     *
+     * <p>Sorted by their rendered text, so a document does not depend on the order a hash
+     * set happened to produce. An axiom that renders to nothing is skipped rather than
+     * written as a blank line — that is how the writer declines the forms it cannot spell,
+     * such as a one-property disjointness, and this pass must not undo those decisions.
+     */
+    private void writeAxiomsWithNoBlock(OWLOntology o, PrintWriter writer) {
+        if (writtenAxioms == null) return;
+        List<String> lines = o.logicalAxioms()
+            .filter(axiom -> !writtenAxioms.contains(axiom))
+            .map(axiom -> getRendering(null, axiom))
+            .filter(text -> text != null && !text.trim().isEmpty())
+            .distinct()
+            .sorted()
+            .collect(Collectors.toList());
+        if (lines.isEmpty()) return;
+        writer.println();
+        lines.forEach(writer::println);
     }
 
     @Override

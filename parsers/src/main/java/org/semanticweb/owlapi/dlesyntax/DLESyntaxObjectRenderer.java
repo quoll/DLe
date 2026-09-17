@@ -10,6 +10,7 @@ import javax.annotation.Nullable;
 import org.semanticweb.owlapi.dlsyntax.renderer.DLSyntaxObjectRenderer;
 import org.semanticweb.owlapi.dlsyntax.renderer.DLSyntax;
 import org.semanticweb.owlapi.model.AxiomType;
+import org.semanticweb.owlapi.model.OWLDatatypeDefinitionAxiom;
 import org.semanticweb.owlapi.model.OWLDatatypeRestriction;
 import org.semanticweb.owlapi.model.OWLFacetRestriction;
 import org.semanticweb.owlapi.model.OWLAsymmetricObjectPropertyAxiom;
@@ -573,6 +574,22 @@ public class DLESyntaxObjectRenderer extends DLSyntaxObjectRenderer {
     public void visit(OWLEquivalentDataPropertiesAxiom axiom) {
         if (axiom.properties().limit(2).count() < 2) return;
         super.visit(axiom);
+    }
+
+    /**
+     * A datatype definition, written as the equivalence it is.
+     *
+     * <p>Nothing was written for one at all, so the axiom and the datatype both disappeared.
+     * DL has no separate notation, but a definition *is* an equivalence and a data range on
+     * one side makes it unambiguous — a class equivalence cannot have one.
+     */
+    @Override
+    public void visit(OWLDatatypeDefinitionAxiom axiom) {
+        write(shortFormIRI(axiom.getDatatype().getIRI()));
+        write(" ");
+        write(DLSyntax.EQUIVALENT_TO);
+        write(" ");
+        writeNested(axiom.getDataRange());
     }
 
     /**

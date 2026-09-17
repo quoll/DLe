@@ -186,17 +186,34 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
      * If the primary is a bare NameAtom starting with a lowercase letter (and not
      * already known as a property), record it as a predicate name.
      */
+    /**
+     * A single-role restriction filler is a predicate reference only if it is a declared
+     * predicate.
+     *
+     * <p>This used to invent one. A bare lower-case filler that was not already known to be
+     * a property became a predicate on the strength of its case alone, which destroyed any
+     * class whose name broke the convention: {@code A ⊑ ∃r.lowerC} put {@code lowerC} in
+     * {@code predicateNames}, and the reader then built the skolem class
+     * {@code dle:E_lowerC_…} and discarded both {@code lowerC} and {@code r} — exit 0,
+     * document loading, two entities gone (#37).
+     *
+     * <p>It was also the order dependence in #27, because it read
+     * {@code objectPropertyNames} and {@code dataPropertyNames} while the scan was still
+     * filling them: the same document gave different answers depending on whether the
+     * restriction sat above or below the statement that classified the name.
+     *
+     * <p>Both faults were the guess, not the mechanism. A real predicate is always declared
+     * — {@code greaterThan(x,y) ≝ …}, or a multi-role reference {@code ∃a,b.p} whose comma
+     * makes it unambiguous — and the visitor reads {@code predicateNames} only after this
+     * scan has finished, so a declaration below the reference is found either way. With
+     * nothing invented here there is nothing to get the order of.
+     *
+     * <p>Kept as a method, and still called, so the restriction sites continue to name what
+     * they are doing; it now only asserts that the guess is gone.
+     */
     private void checkUnaryPredicate(DLESyntaxParser.PrimaryContext primary) {
-        if (!(primary instanceof DLESyntaxParser.AtomWrapContext)) return;
-        DLESyntaxParser.AtomContext atom = ((DLESyntaxParser.AtomWrapContext) primary).atom();
-        if (!(atom instanceof DLESyntaxParser.NameAtomContext)) return;
-        String name = ((DLESyntaxParser.NameAtomContext) atom).name().getText();
-        if (predicateNames.contains(name)) return;
-        if (objectPropertyNames.contains(name) || dataPropertyNames.contains(name)) return;
-        if (name.contains(":")) return;   // prefixed names (e.g. owl:Thing) are not predicates
-        if (!name.isEmpty() && Character.isLowerCase(name.charAt(0))) {
-            predicateNames.add(name);
-        }
+        // Deliberately empty: a predicate reference needs a declaration, and declarations
+        // are recorded by visitPredicateDefinition and the multi-role reference visitors.
     }
 
     @Override

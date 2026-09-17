@@ -573,6 +573,64 @@ class UnreadableOutputTest {
                 df.getOWLObjectComplementOf(df.getOWLClass(IRI.create(NS + "B")))))));
     }
 
+    /**
+     * A datatype definition is written, as the equivalence it is.
+     *
+     * <p>Nothing was written for one at all, so the axiom and the datatype both vanished.
+     * Two things had to change: DL has no separate notation, so {@code ≡} is the spelling —
+     * a data range on one side makes it unambiguous, since a class equivalence cannot have
+     * one — and the storer had nowhere to put it, because it walks entity blocks and a
+     * datatype gets none.
+     */
+    @Test
+    void aDatatypeDefinitionRoundTrips() throws Exception {
+        OWLDatatype code = df.getOWLDatatype(IRI.create(NS + "Code"));
+        OWLOntology o = ontology(df.getOWLDatatypeDefinitionAxiom(code,
+            df.getOWLDatatypeRestriction(
+                df.getOWLDatatype(OWL2Datatype.XSD_STRING.getIRI()),
+                df.getOWLFacetRestriction(OWLFacet.MIN_LENGTH, df.getOWLLiteral(3)))));
+
+        String body = roundTrip(o);
+        assertTrue(body.contains("Code ≡ "),
+            () -> "written as an equivalence:\n" + body);
+        assertTrue(read(write(o)).datatypesInSignature()
+                .anyMatch(d -> d.getIRI().equals(code.getIRI())),
+            () -> "and Code must come back a datatype:\n" + body);
+    }
+
+    /**
+     * An axiom that belongs to no entity block is still written.
+     *
+     * <p>The storer walks entities — classes, properties, individuals — and writes each
+     * axiom under one of them, so an axiom mentioning none of them had nowhere to go and was
+     * dropped in silence. A {@code DifferentIndividuals} over two blank nodes is the
+     * clearest case: nothing in it is named.
+     */
+    @Test
+    void anAxiomWithNoEntityBlockIsStillWritten() throws Exception {
+        OWLOntology o = ontology(df.getOWLDifferentIndividualsAxiom(
+            df.getOWLAnonymousIndividual("_:x"), df.getOWLAnonymousIndividual("_:y")));
+        String body = roundTrip(o);
+        assertTrue(body.contains("≠"), () -> "the statement must appear:\n" + body);
+    }
+
+    /**
+     * And that pass must not write the forms the writer deliberately declines.
+     *
+     * <p>A one-property disjointness renders to nothing on purpose, because {@code Disj(p)}
+     * is not a form the grammar has. The orphan pass sees an axiom with no block and could
+     * undo that decision; it skips anything that renders empty.
+     */
+    @Test
+    void theOrphanPassRespectsADeclinedForm() throws Exception {
+        OWLObjectProperty p = df.getOWLObjectProperty(IRI.create(NS + "p"));
+        OWLOntology o = ontology(df.getOWLDisjointObjectPropertiesAxiom(p, p));
+        String body = statementsOnly(write(o));
+        assertFalse(body.contains("Disj("),
+            () -> "a one-property disjointness has no spelling:\n" + body);
+        assertDoesNotThrow(() -> read(write(o)), () -> body);
+    }
+
     /** The untagged one is still suppressed, since the reader puts it back. */
     @Test
     void anUntaggedIsDefinedByValueIsStillSuppressed() throws Exception {

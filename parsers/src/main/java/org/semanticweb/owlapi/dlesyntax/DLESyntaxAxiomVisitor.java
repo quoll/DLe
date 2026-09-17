@@ -653,6 +653,29 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
         boolean objects = operands.stream().anyMatch(OWLObjectPropertyExpression.class::isInstance);
         boolean data = operands.stream().anyMatch(OWLDataPropertyExpression.class::isInstance);
 
+        // A datatype definition: Code ≡ [xsd:string ⊓ [minLength 3]]
+        //
+        // DL has no separate notation for one, and a definition is an equivalence, so `≡`
+        // is the spelling. Without it the writer produced nothing at all for a
+        // DatatypeDefinition — the axiom and the datatype both vanished — and the statement
+        // a person would reach for was answered with "expected a class expression here".
+        //
+        // One side a data range and the other a bare name is unambiguous: a class
+        // equivalence cannot have a data range on either side.
+        if (operands.size() == 2) {
+            for (int i = 0; i < 2; i++) {
+                OWLObject range = operands.get(i);
+                DLESyntaxParser.ClassExprContext other = ctx.classExpr(1 - i);
+                String name = loneName(other);
+                if (range instanceof OWLDataRange && !(range instanceof OWLDatatype)
+                        && name != null) {
+                    axioms.add(df.getOWLDatatypeDefinitionAxiom(
+                        df.getOWLDatatype(expandNameText(name)), (OWLDataRange) range));
+                    return null;
+                }
+            }
+        }
+
         // Inverse properties: r ≡ s⁻
         //
         // The same choice as the disjointness idiom above. DLe writes both
@@ -1833,20 +1856,25 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
     }
 
     /**
-     * Returns true if {@code fillerName} should be treated as a predicate rather
-     * than a class in a restriction with role {@code propName}.
+     * Whether {@code fillerName} is a predicate rather than a class in this restriction.
+     *
+     * <p>Declared predicates only. This used to fall back to the case convention — a bare
+     * lower-case filler not already known to be a property was taken for a predicate — and
+     * that destroyed any class whose name broke the convention: {@code A ⊑ ∃r.lowerC} built
+     * the skolem class {@code dle:E_lowerC_…} and dropped both {@code lowerC} and {@code r},
+     * with the document loading cleanly (#37).
+     *
+     * <p>The guess existed twice, here and in the scanner's {@code checkUnaryPredicate},
+     * which is the duplication {@code docs/inference-design.md} §3.3 is about: two copies of
+     * one rule, and removing only the scanner's left this one still destroying the class.
+     *
+     * <p>A predicate is always declared — {@code greaterThan(x,y) ≝ …}, or a multi-role
+     * reference {@code ∃a,b.p} whose comma makes it unambiguous — and the scan that records
+     * declarations completes before this runs, so a declaration below the reference is
+     * still found. There is nothing left to guess.
      */
     private boolean isPredicateName(String propName, String fillerName) {
-        // Explicitly declared predicates take priority over property type
-        if (predicateNames.contains(fillerName)) return true;
-        // Data property fillers that are not predicates are data ranges
-        if (dataPropertyNames.contains(propName)) return false;
-        // Already known as a property (shouldn't be a filler, but guard anyway)
-        if (objectPropertyNames.contains(fillerName) || dataPropertyNames.contains(fillerName)) return false;
-        // Prefixed names (e.g. owl:Thing, xsd:string) are never predicates
-        if (fillerName.contains(":")) return false;
-        // Lowercase-first convention: treat as predicate
-        return !fillerName.isEmpty() && Character.isLowerCase(fillerName.charAt(0));
+        return predicateNames.contains(fillerName);
     }
 
     /**
