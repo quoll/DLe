@@ -338,8 +338,19 @@ Each stage is independently verifiable and leaves the tree green.
    does not depend on any of the rest landing.
 3. **The narrower faults** (§4.5): #39, #40, #36. Each is contained and each is caught by the
    stage-1 test.
-4. **`Finding` and `Certainty`** (§4.1). The refactor. Stage 1 holds it in place; #27 and #37
-   fall out.
+4. **`Finding` and `Certainty`** (§4.1). **Half done.** `Findings` is now the single store
+   for what the document says about a kind and how firmly, replacing the three per-kind line
+   maps. Conflict detection is one rule over it instead of three loops — which is why the
+   annotation kind went unwatched so long, since adding a kind meant remembering to add
+   another loop. A guess is structurally incapable of being half of a conflict, and a class
+   beside a property is a pun rather than a contradiction.
+
+   **What is not done:** the firmest finding is not yet what the reader consults. Resolution
+   still lives in the scanner's name sets, which propagation walks and the visitor is handed;
+   findings are the evidence those sets are built from. Making the firmest finding the
+   operative answer — and so retiring the sets — is the remainder.
+
+   #27 and #37 did not wait for this; they were the predicate guess, fixed in stage 1.
 5. **The shared `Position` rule** (§4.2). Last, because it is only safe once both sides have a
    single kind model to agree about.
 

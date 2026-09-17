@@ -55,29 +55,13 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
      */
     private final List<Set<String>> equivalenceGroups = new ArrayList<>();
     /**
-     * Where a name was first forced to one property kind by structure, per kind.
+     * What the document says about each name's kind, and how firmly.
      *
-     * <p>Only direct evidence goes in: a filler that is a datatype or a class, a domain or
-     * range, an inverse, or an explicit kind statement. Nothing inferred by propagation or
-     * guessed from case. A name in both maps is a document claiming an IRI is both an object
-     * and a data property, which OWL 2 DL forbids and DLe cannot write — see
-     * {@link #reportKindConflicts}.
-     *
-     * <p>Recorded separately from {@code objectPropertyNames}/{@code dataPropertyNames}
-     * because those two resolve the clash as they go, data winning, so by the time the scan
-     * ends the conflict has already been silently settled.
+     * <p>One store, replacing a pair of line maps per kind plus the membership sets that
+     * mixed evidence with guesses. See {@link Findings} for why that distinction has to be
+     * in the representation rather than remembered at each use.
      */
-    private final Map<String, Integer> objectEvidence = new LinkedHashMap<>();
-    private final Map<String, Integer> dataEvidence = new LinkedHashMap<>();
-    /**
-     * Names used as annotation properties, and where.
-     *
-     * <p>OWL 2 DL wants the object, data and annotation property IRIs pairwise disjoint, and
-     * only two of the three were watched. A name could be a data property on one line and an
-     * annotation property on the next and nothing said so, which is an ontology no reasoner
-     * will load — the same defect as the object/data pair, with a third of it unguarded.
-     */
-    private final Map<String, Integer> annotationEvidence = new LinkedHashMap<>();
+    private final Findings findings = new Findings();
     /**
      * The filler name that supplied each piece of object evidence, where there was one.
      *
@@ -254,19 +238,22 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
 
     @Override
     public Void visitAnnAnnotation(DLESyntaxParser.AnnAnnotationContext ctx) {
-        annotationEvidence.putIfAbsent(ctx.name(1).getText(), ctx.start.getLine());
+        findings.record(ctx.name(1).getText(), Findings.Kind.ANNOTATION_PROPERTY,
+            Findings.Certainty.POSITIONAL, ctx.start.getLine());
         return visitChildren(ctx);
     }
 
     @Override
     public Void visitAnnPropDomainAxiom(DLESyntaxParser.AnnPropDomainAxiomContext ctx) {
-        annotationEvidence.putIfAbsent(ctx.name(0).getText(), ctx.start.getLine());
+        findings.record(ctx.name(0).getText(), Findings.Kind.ANNOTATION_PROPERTY,
+            Findings.Certainty.POSITIONAL, ctx.start.getLine());
         return visitChildren(ctx);
     }
 
     @Override
     public Void visitAnnPropRangeAxiom(DLESyntaxParser.AnnPropRangeAxiomContext ctx) {
-        annotationEvidence.putIfAbsent(ctx.name(0).getText(), ctx.start.getLine());
+        findings.record(ctx.name(0).getText(), Findings.Kind.ANNOTATION_PROPERTY,
+            Findings.Certainty.POSITIONAL, ctx.start.getLine());
         return visitChildren(ctx);
     }
 
@@ -365,7 +352,7 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
         // way, and that is all this pass needs. Only a bare name is recorded; a complex
         // expression is already unambiguous and its parts are classified by visiting it.
         String cls = singleBareName(ctx.classExpr());
-        if (cls != null) mustBeClass.add(cls);
+        if (cls != null) markClass(cls, Findings.Certainty.POSITIONAL, ctx.start.getLine());
         return visitChildren(ctx);
     }
 
@@ -389,8 +376,16 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
     }
 
     /** Notes that structure forced this name to one kind, keeping the first line for each. */
+    /** A position only one kind of property can occupy. */
     private void recordKindEvidence(String name, boolean isData, int line) {
-        (isData ? dataEvidence : objectEvidence).putIfAbsent(name, line);
+        recordKind(name, isData, Findings.Certainty.POSITIONAL, line);
+    }
+
+    private void recordKind(String name, boolean isData, Findings.Certainty certainty,
+                            int line) {
+        findings.record(name,
+            isData ? Findings.Kind.DATA_PROPERTY : Findings.Kind.OBJECT_PROPERTY,
+            certainty, line);
     }
 
     /**
@@ -406,40 +401,59 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
      * <p>A class and a property on one name is a different matter — that is a pun, which is
      * legal and supported. This is only about the two <em>property</em> kinds.
      */
+    /**
+     * Reports a name the document gives two different property kinds.
+     *
+     * <p>One rule for all three pairs now. It used to be a loop over object-versus-data
+     * followed by two more for the annotation pairs, which is why the annotation kind went
+     * unwatched for so long — adding a kind meant remembering to add another loop.
+     *
+     * <p>A class and a property is not a conflict: that is the pun DLe carries on purpose.
+     * Nor is a guess ever half of one — it loses to the evidence instead, which is what
+     * {@link Findings.Certainty#isEvidence} decides.
+     */
     private void reportKindConflicts() {
-        for (Map.Entry<String, Integer> object : objectEvidence.entrySet()) {
-            Integer dataLine = dataEvidence.get(object.getKey());
-            if (dataLine == null) continue;
+        for (String name : findings.names()) {
+            Findings.Finding[] clash = findings.propertyKindConflict(name);
+            if (clash == null) continue;
             // A predicate filler is not evidence; see objectEvidenceFiller.
-            String filler = objectEvidenceFiller.get(object.getKey());
+            String filler = objectEvidenceFiller.get(name);
             if (filler != null && predicateNames.contains(filler)) continue;
             throw new DLESemanticException(
-                object.getKey() + " is used as an object property on line " + object.getValue()
-                    + " and as a data property on line " + dataLine
+                name + " is used as " + clash[0].kind.description() + " on line "
+                    + clash[0].line + " and as " + clash[1].kind.description()
+                    + " on line " + clash[1].line
                     + ". An IRI can be one or the other, not both.",
-                Math.max(object.getValue(), dataLine), 0);
+                Math.max(clash[0].line, clash[1].line), 0);
         }
-        // And the annotation property against each of the other two. OWL 2 DL wants all
-        // three sets pairwise disjoint, and this third of it used to go unwatched.
-        reportAnnotationConflict(objectEvidence, "an object property");
-        reportAnnotationConflict(dataEvidence, "a data property");
     }
 
-    private void reportAnnotationConflict(Map<String, Integer> other, String otherKind) {
-        for (Map.Entry<String, Integer> annotation : annotationEvidence.entrySet()) {
-            Integer otherLine = other.get(annotation.getKey());
-            if (otherLine == null) continue;
-            throw new DLESemanticException(
-                annotation.getKey() + " is used as an annotation property on line "
-                    + annotation.getValue() + " and as " + otherKind + " on line " + otherLine
-                    + ". An IRI can be one or the other, not both.",
-                Math.max(annotation.getValue(), otherLine), 0);
-        }
+    /**
+     * A name known to be a role, without anything saying which kind.
+     *
+     * <p>Object property is the fallback, so the finding is recorded as such: DEFAULTED, not
+     * evidence. That is the distinction the old sets could not make — this went into
+     * {@code objectPropertyNames} and was then indistinguishable from a name the document
+     * had actually put in an object-only position.
+     */
+    /**
+     * Marks a name as a class, recording why.
+     *
+     * <p>Paired with the set rather than replacing it: the set is what propagation walks,
+     * and the finding is what makes a class visible to the conflict rule — which is how a
+     * pun is told apart from a contradiction. Recorded through one method so the two cannot
+     * drift apart.
+     */
+    private void markClass(String name, Findings.Certainty certainty, int line) {
+        mustBeClass.add(name);
+        findings.record(name, Findings.Kind.CLASS, certainty, line);
     }
 
     private void classifyUnknownRole(String name) {
         if (!dataPropertyNames.contains(name)) {
             objectPropertyNames.add(name);
+            findings.record(name, Findings.Kind.OBJECT_PROPERTY,
+                Findings.Certainty.DEFAULTED, 0);
         }
     }
 
@@ -547,7 +561,9 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
                         besideAComplexClass = true;
                     }
                 }
-                if (besideAComplexClass) mustBeClass.add(name);
+                if (besideAComplexClass) {
+                    markClass(name, Findings.Certainty.POSITIONAL, ctx.start.getLine());
+                }
             }
         }
         return visitChildren(ctx);
@@ -591,8 +607,10 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
         String topProperty = rhs == null ? null : topPropertyIri(rhs);
         if (lhs != null && topProperty != null) {
             explicitRole.add(lhs);
-            recordKindEvidence(lhs, TOP_DATA_PROPERTY_IRI.equals(topProperty),
-                ctx.start.getLine());
+            // STATED: the document says the kind outright, which is firmer than any
+            // position and firmer than anything propagation can reach.
+            recordKind(lhs, TOP_DATA_PROPERTY_IRI.equals(topProperty),
+                Findings.Certainty.STATED, ctx.start.getLine());
             if (TOP_DATA_PROPERTY_IRI.equals(topProperty)) {
                 dataPropertyNames.add(lhs);
                 objectPropertyNames.remove(lhs);
@@ -622,9 +640,9 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
         // A ⊑ (complex) → A is definitively a class; (complex) ⊑ B → B is a class.
         // Exclude inverse-atom RHS/LHS since those are property expressions.
         if (lhs != null && rhs == null && singleInverseAtom(ctx.classExpr(1)) == null)
-            mustBeClass.add(lhs);
+            markClass(lhs, Findings.Certainty.POSITIONAL, ctx.start.getLine());
         if (lhs == null && rhs != null && singleInverseAtom(ctx.classExpr(0)) == null)
-            mustBeClass.add(rhs);
+            markClass(rhs, Findings.Certainty.POSITIONAL, ctx.start.getLine());
         return visitChildren(ctx);
     }
 
@@ -659,25 +677,37 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
             for (Set<String> group : equivalenceGroups) {
                 String dataMember = null;
                 String objectMember = null;
+                Findings.Finding dataFound = null;
+                Findings.Finding objectFound = null;
                 for (String name : group) {
-                    if (dataEvidence.containsKey(name)) dataMember = name;
-                    if (objectEvidence.containsKey(name)) objectMember = name;
+                    Findings.Finding d =
+                        findings.firmestOf(name, Findings.Kind.DATA_PROPERTY);
+                    Findings.Finding o =
+                        findings.firmestOf(name, Findings.Kind.OBJECT_PROPERTY);
+                    if (d != null && d.certainty.isEvidence()) {
+                        dataMember = name;
+                        dataFound = d;
+                    }
+                    if (o != null && o.certainty.isEvidence()) {
+                        objectMember = name;
+                        objectFound = o;
+                    }
                 }
-                if (dataMember != null && objectMember != null) {
+                if (dataFound != null && objectFound != null) {
                     throw new DLESemanticException(
                         "this equivalence makes " + objectMember + ", an object property on"
-                            + " line " + objectEvidence.get(objectMember) + ", equivalent to "
+                            + " line " + objectFound.line + ", equivalent to "
                             + dataMember + ", a data property on line "
-                            + dataEvidence.get(dataMember) + ". Equivalence holds between"
+                            + dataFound.line + ". Equivalence holds between"
                             + " properties of one kind.",
-                        Math.max(objectEvidence.get(objectMember),
-                                 dataEvidence.get(dataMember)), 0);
+                        Math.max(objectFound.line, dataFound.line), 0);
                 }
                 // Nothing in the group is a property, so it is a class equivalence.
-                if (dataMember == null && objectMember == null) continue;
-                boolean isData = dataMember != null;
-                int line = isData ? dataEvidence.get(dataMember)
-                                  : objectEvidence.get(objectMember);
+                if (dataFound == null && objectFound == null) continue;
+                boolean isData = dataFound != null;
+                int line = isData ? dataFound.line : objectFound.line;
+                Findings.Kind reached = isData
+                    ? Findings.Kind.DATA_PROPERTY : Findings.Kind.OBJECT_PROPERTY;
                 for (String name : group) {
                     if (mustBeClass.contains(name)) continue;
                     if (isData) {
@@ -686,8 +716,11 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
                     } else {
                         settled |= objectPropertyNames.add(name);
                     }
-                    if (!(isData ? dataEvidence : objectEvidence).containsKey(name)) {
-                        recordKindEvidence(name, isData, line);
+                    // Reached across an equivalence, so it is propagation rather than a
+                    // position of its own — which is what keeps it from being read later as
+                    // firm evidence that could contradict something.
+                    if (!findings.hasEvidenceFor(name, reached)) {
+                        findings.record(name, reached, Findings.Certainty.PROPAGATED, line);
                         settled = true;
                     }
                 }
@@ -743,13 +776,13 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
                     // hierarchies, which OWL has no way to express.
                     if (dataPropertyNames.contains(sub) && !mustBeClass.contains(sup)
                             && !explicitRole.contains(sup)
-                            && !objectEvidence.containsKey(sup)) {
+                            && !findings.hasEvidenceFor(sup, Findings.Kind.OBJECT_PROPERTY)) {
                         changed |= dataPropertyNames.add(sup);
                         changed |= objectPropertyNames.remove(sup);
                     }
                     if (dataPropertyNames.contains(sup) && !mustBeClass.contains(sub)
                             && !explicitRole.contains(sub)
-                            && !objectEvidence.containsKey(sub)
+                            && !findings.hasEvidenceFor(sub, Findings.Kind.OBJECT_PROPERTY)
                             && !(mustBeClass.contains(sup) && looksLikeAClass(sub))) {
                         changed |= dataPropertyNames.add(sub);
                         changed |= objectPropertyNames.remove(sub);
@@ -948,7 +981,10 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
         // can mark the full concept-hierarchy chain before role propagation runs.
         if (!data) {
             String fillerName = primaryBareName(fillerCtx);
-            if (fillerName != null) mustBeClass.add(fillerName);
+            if (fillerName != null) {
+                markClass(fillerName, Findings.Certainty.POSITIONAL,
+                    propCtx.start.getLine());
+            }
         }
     }
 
@@ -959,7 +995,10 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
             singleBareName(fillerCtx));
         if (!data) {
             String fillerName = singleBareName(fillerCtx);
-            if (fillerName != null) mustBeClass.add(fillerName);
+            if (fillerName != null) {
+                markClass(fillerName, Findings.Certainty.POSITIONAL,
+                    propCtx.start.getLine());
+            }
         }
     }
 
@@ -1050,6 +1089,11 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
                 for (int j = 0; j < operands.size(); j++) {
                     if (j != i && isDataClassExpr(operands.get(j))) {
                         datatypeNames.add(bareName);
+                        // DECLARED: the document defines it, which outranks any built-in
+                        // list and any guess about its name.
+                        findings.record(bareName, Findings.Kind.DATATYPE,
+                            Findings.Certainty.DECLARED,
+                            ((DLESyntaxParser.EquivAxiomContext) tree).start.getLine());
                     }
                 }
             }
