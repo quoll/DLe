@@ -250,7 +250,67 @@ Two additions you asked for:
 #33 is listed to be explicit that it is *not* part of this: it is about names the syntax
 cannot spell, which is a lexical problem with a lexical fix.
 
-## 6. Open questions
+## 6. Decisions
+
+Recorded 2026-09-16. The questions this section used to pose are answered; the reasoning is
+kept where it affects the work.
+
+### 6.1 `X ⊑ owl:topObjectProperty` should be writable by an author — but not for free
+
+Agreed in principle: nothing ever said an author may not write it, and losing it silently is
+#32.
+
+**Measured cost of the obvious fix.** Keeping the statement as an axiom as well as a marker
+costs fidelity on documents that need a marker, because the writer's own marker then comes
+back as content:
+
+| document | axioms before | after |
+|---|---|---|
+| `bc-example.dle` | 177 | 182 |
+| `relations.ttl` | 21 | 23 |
+
+Both were byte-exact round trips and stop being so. The added axioms are tautologies — every
+object property is a sub-property of the top one — so no *meaning* changes, but
+`OFN → DLe → OFN` stops being an identity, which is the bar the rest of this work has held.
+
+**So the clean fix is to stop overloading the syntax**: give the writer a marker that is not
+an axiom, and let `X ⊑ owl:topObjectProperty` always be the axiom it looks like. That is one
+new annotation form, consumed on read and never an axiom, and it makes §4.4's
+`--explicit-kinds` cheaper too, since explicit kinds then cost no spurious axioms.
+
+Not done yet, and deliberately not done the cheap way: the naive version was implemented,
+measured, and reverted rather than shipped with the fidelity loss unremarked.
+
+### 6.2 `@convention properties:upper`
+
+Accepted, with the constraint that the header documents it **only when a document uses it**.
+The header is a single static resource today and is emitted wholesale, so that constraint is
+the substantial part of the work rather than an afterthought: it needs the header split into
+an always-part and per-feature parts.
+
+It also needs to survive a round trip to be worth having — the reader must record that a
+document declared a convention and the writer must re-emit it — which means the declaration
+has to live somewhere, as `@prefix` and `@ontology` already do.
+
+Sequenced after §4.1, because the convention is one input to the kind decision and is much
+easier to make configurable once that decision is one function over one model.
+
+### 6.3 A class under a pun
+
+Worth attempting, and probably feasible — more so than §3's framing suggested. The obstacle
+is that downward propagation crosses the class barrier unconditionally to serve SNOMED CT,
+where a punned root has only roles beneath it. With `Certainty` in place the case becomes
+expressible: an explicit `X ⊑ ⊤` is `STATED`, which outranks a `PROPAGATED` role, so a class
+under a pun can be said outright even while the default keeps working for SNOMED.
+
+To be attempted after §4.1 and dropped only if it needs something unreliable.
+
+### 6.4 All of §4.1–§4.3 is in scope
+
+Not deferred again. Staged as below so each step is revertable; tagged
+`pre-inference-refactor` before the first.
+
+## 7. Staging
 
 1. **Is `X ⊑ owl:topObjectProperty` an axiom or a marker?** Today it is consumed as a marker,
    so an author cannot state it (#32). Options: consume it *and* keep it — it is trivially
@@ -266,13 +326,14 @@ cannot spell, which is a lexical problem with a lexical fix.
    `--explicit-kinds` flag is small and independently useful, and may be enough to unblock a
    release on its own by making fidelity opt-in rather than inferred.
 
-## 7. Staging
-
 Each stage is independently verifiable and leaves the tree green.
 
-1. **The invariant test** (§4.3), against the current code. It will fail on the cases already
-   known; those become the baseline. Nothing is refactored yet, and the test is what makes
-   the refactor safe.
+1. **The invariant test** (§4.3), against the current code. ✅ Done — `KindPreservationTest`,
+   66 axiom shapes × three checks plus 27 reader expectations. It found exactly two real
+   defects, both since fixed: the predicate case-guess that destroyed lower-case classes
+   (#37, and #27 with it, being the same guess), and `DatatypeDefinition` written as nothing
+   (part of #23, which also recovered axioms belonging to no entity block). Across all 66
+   shapes, nothing changed kind — that is the starting point the refactor has to preserve.
 2. **`--explicit-kinds`** (§4.4). Small, self-contained, and gives a fidelity guarantee that
    does not depend on any of the rest landing.
 3. **The narrower faults** (§4.5): #39, #40, #36. Each is contained and each is caught by the
