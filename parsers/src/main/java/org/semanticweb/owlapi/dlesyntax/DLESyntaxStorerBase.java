@@ -798,9 +798,15 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
         Collection<String> covered = prefixes.values();
         Set<String> uncovered = new TreeSet<>();
         namesWritten(o).forEach(iri -> {
-            String full = iri.toString();
-            if (covered.stream().noneMatch(full::startsWith)) {
-                uncovered.add(iri.getNamespace());
+            String namespace = namespaceToCover(iri);
+            // Compared exactly. Asking whether any declared prefix is a leading substring of
+            // the whole IRI says yes far too often: with `ex:` bound to
+            // `http://example.org/ex/`, the IRI `http://example.org/ex/deep#B` counted as
+            // covered, so nothing was minted for `.../deep#` and the name went out as
+            // `ex:deep#B` — where `#B` begins a comment. The class was lost, a comment was
+            // invented, and the document no longer parsed.
+            if (!covered.contains(namespace)) {
+                uncovered.add(namespace);
             }
         });
         // A name the grammar keeps for itself cannot be written bare, so the namespace it
@@ -821,6 +827,42 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
             } while (prefixes.containsKey(name));
             prefixes.put(name, namespace);
         }
+    }
+
+    /**
+     * The namespace a name needs a prefix for.
+     *
+     * <p>{@link IRI#getNamespace} splits so that the remainder is an NCName, and a
+     * digit-initial local part is not one: for {@code <http://snomed.info/id/762705008>} it
+     * hands back the whole IRI and an empty remainder. Minting for that produces a prefix
+     * with nothing after the colon — {@code ns1: \u2291 A} — which does not parse. DLe writes
+     * such a name with an explicit prefix and colon ({@code sct:762705008}), so what has to
+     * be covered is the namespace up to the last separator.
+     *
+     * <p>The loose leading-substring test this replaced hid that: any declared prefix that
+     * happened to be a leading substring of the full IRI counted, so nothing was minted and
+     * nothing went wrong until the namespace really was uncovered.
+     */
+    private static String namespaceToCover(IRI iri) {
+        String full = iri.toString();
+        // The latest split that leaves a tail the lexer will accept. Taking the OWL API's own
+        // split instead produced local parts DLe cannot write: it splits so the remainder is
+        // an NCName, where a dot is legal — so `<...#A.B>` gave the remainder `A.B`, which
+        // reads back as a restriction over `A`, and `<...#762705008>` gave an *empty*
+        // remainder and the whole IRI as the namespace, which minted a prefix with nothing
+        // after the colon. Both wrote a document this reader cannot read.
+        // Forwards, so the *longest* spellable tail wins: `<http://snomed.info/id/762705008>`
+        // splits at the last slash and keeps the whole identifier, rather than shortening to
+        // a one-character tail that would also have been legal.
+        for (int cut = 1; cut < full.length(); cut++) {
+            if (DLESyntaxObjectRenderer.isSpellableLocalName(full.substring(cut))) {
+                return full.substring(0, cut);
+            }
+        }
+        // No tail is spellable, which happens when the IRI ends in a character no name may
+        // contain — `<...#>` or `<.../A.>`. Nothing can be minted that helps; the existing
+        // fallback writes it and the reader refuses it, loudly, which is the honest outcome.
+        return iri.getNamespace();
     }
 
     /** Whether some prefix other than the default already covers this namespace. */

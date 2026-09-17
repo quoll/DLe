@@ -160,10 +160,14 @@ public class DLESyntaxObjectRenderer extends DLSyntaxObjectRenderer {
     public void setPrefixManager(@Nullable PrefixManager pm) {
         prefixManager = pm;
         if (pm != null) {
+            // Through the same method the rest of the writer uses. This lambda repeated the
+            // logic, and the repetition is where the check that a spelling can be lexed went
+            // missing: entities are rendered through the ShortFormProvider, so a name in the
+            // default namespace went out bare as `A.B` even with a prefix declared that could
+            // spell it. Two copies of a decision, one of which was wrong.
             setShortFormProvider(entity -> {
-                String curie = pm.getPrefixIRI(entity.getIRI());
-                if (curie == null) curie = computeCurie(pm, entity.getIRI().toString());
-                return curie != null ? stripDefaultPrefix(curie)
+                String spelling = shortFormOrNull(entity.getIRI());
+                return spelling != null ? spelling
                     : entity.getIRI().getRemainder().orElse(entity.getIRI().toString());
             });
         }
@@ -196,8 +200,77 @@ public class DLESyntaxObjectRenderer extends DLSyntaxObjectRenderer {
         java.util.Collections.unmodifiableSet(new java.util.HashSet<>(
             java.util.Arrays.asList("Self", "true", "false", "key")));
 
+    /**
+     * Whether a local part can be written after a prefix and read back unchanged.
+     *
+     * <p>Mirrors the lexer's {@code PREFIXED_NAME} rule — {@code NameStart NameChar* ':'
+     * (NameStart | [0-9]) NameChar*} — so a name is only called spellable if the grammar
+     * really accepts it. {@code NameChar} is {@code NameStart | [0-9] | '-'}: a dot, a colon,
+     * a percent, a slash, a plus and a tilde are all outside it, and U+207B is excluded from
+     * {@code NameStart} because that is the inverse operator.
+     *
+     * <p>Nothing consulted the grammar before, so the writer emitted local parts the reader
+     * cannot lex. A dot was the common case: {@code ns1:A.B} reads as a restriction over
+     * {@code ns1:A}, turning one class into an existential — silently. Being told which local
+     * parts are legal is what lets the minted namespace be chosen so that the tail is one.
+     */
+    static boolean isSpellableLocalName(String local) {
+        if (local.isEmpty()) return false;
+        int first = local.codePointAt(0);
+        if (!isNameStart(first) && !(first >= '0' && first <= '9')) return false;
+        for (int i = Character.charCount(first); i < local.length(); i++) {
+            if (!isNameChar(local.charAt(i))) return false;
+        }
+        return true;
+    }
+
+    /** The lexer's {@code NameStart}, U+207B excluded as the inverse operator. */
+    private static boolean isNameStart(int cp) {
+        return (cp >= 'a' && cp <= 'z') || (cp >= 'A' && cp <= 'Z') || cp == '_'
+            || (cp >= 0x00C0 && cp <= 0x02FF)
+            || (cp >= 0x0370 && cp <= 0x037D)
+            || (cp >= 0x037F && cp <= 0x1FFF)
+            || (cp >= 0x200C && cp <= 0x200D)
+            || (cp >= 0x2070 && cp <= 0x207A)
+            || (cp >= 0x207C && cp <= 0x218F)
+            || (cp >= 0x2C00 && cp <= 0x2FEF)
+            || (cp >= 0x3001 && cp <= 0xD7FF)
+            || (cp >= 0xF900 && cp <= 0xFDCF)
+            || (cp >= 0xFDF0 && cp <= 0xFFFD);
+    }
+
     static boolean isReservedLocalName(String local) {
         return RESERVED_LOCAL_NAMES.contains(local);
+    }
+
+    /**
+     * Whether a spelling this writer is about to emit is one the lexer accepts.
+     *
+     * <p>Three token shapes can name something: a bare {@code NAME}, a {@code DEFAULT_NAME}
+     * ({@code :} then a digit), and a {@code PREFIXED_NAME}. Anything else is a document the
+     * reader will refuse, or worse re-lex as something different — {@code A.B} becomes a
+     * restriction over {@code A}.
+     *
+     * <p>Nothing checked this. The prefix manager's job is to abbreviate an IRI, not to know
+     * DLe's grammar, so its answer was written out whatever it was.
+     */
+    private static boolean isLexableName(String spelling) {
+        int colon = spelling.indexOf(':');
+        if (colon < 0) {
+            // A bare NAME: NameStart NameChar*
+            return !spelling.isEmpty() && isNameStart(spelling.codePointAt(0))
+                && isSpellableLocalName(spelling);
+        }
+        if (colon == 0) {
+            // A DEFAULT_NAME: ':' [0-9] NameChar*
+            String local = spelling.substring(1);
+            return local.length() >= 1 && local.charAt(0) >= '0' && local.charAt(0) <= '9'
+                && isSpellableLocalName(local);
+        }
+        for (int i = 0; i < colon; i++) {
+            if (!isNameChar(spelling.charAt(i))) return false;
+        }
+        return isSpellableLocalName(spelling.substring(colon + 1));
     }
 
     private String stripDefaultPrefix(String curie) {
@@ -294,13 +367,36 @@ public class DLESyntaxObjectRenderer extends DLSyntaxObjectRenderer {
      * XML NCNames, e.g. numeric SNOMED-CT codes), then to the IRI remainder.
      */
     private String shortFormIRI(IRI iri) {
-        if (prefixManager != null) {
-            String curie = prefixManager.getPrefixIRI(iri);
-            if (curie == null) curie = computeCurie(prefixManager, iri.toString());
-            if (curie != null) return stripDefaultPrefix(curie);
-        }
+        String spelling = shortFormOrNull(iri);
+        if (spelling != null) return spelling;
         return iri.getRemainder().orElseThrow(() ->
             new IllegalStateException("No prefix/namespace found for IRI: " + iri));
+    }
+
+    /**
+     * The spelling to write for an IRI, or null when no declared prefix covers it.
+     *
+     * <p>The prefix manager abbreviates against XML's rules rather than DLe's, so its answer
+     * can be a spelling this reader cannot lex — {@code A.B} for a name in the default
+     * namespace, which reads back as a restriction over {@code A}, silently turning one class
+     * into an existential. Where that happens the longest declared namespace is tried
+     * instead: the storer mints one whose tail is a legal local part precisely so that there
+     * is something to fall back to.
+     */
+    @Nullable
+    private String shortFormOrNull(IRI iri) {
+        if (prefixManager == null) return null;
+        String curie = prefixManager.getPrefixIRI(iri);
+        if (curie == null) curie = computeCurie(prefixManager, iri.toString());
+        if (curie == null) return null;
+        String spelling = stripDefaultPrefix(curie);
+        if (isLexableName(spelling)) return spelling;
+        String longest = computeCurie(prefixManager, iri.toString());
+        if (longest != null) {
+            String alternative = stripDefaultPrefix(longest);
+            if (isLexableName(alternative)) return alternative;
+        }
+        return spelling;
     }
 
     /** Package-private: used by {@link DLESyntaxStorerBase} to render IRIs consistently. */
