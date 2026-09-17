@@ -660,6 +660,52 @@ class KindPreservationTest {
             "and a declared one must still be referenced");
     }
 
+    /**
+     * An annotation property is the third kind, and clashes with it are reported.
+     *
+     * <p>OWL 2 DL wants the object, data and annotation property IRIs pairwise disjoint.
+     * Two of the three pairs were watched, so a name could be a data property on one line
+     * and an annotation property on the next with nothing said — an ontology no reasoner
+     * will load, by the same defect as the object/data pair with a third of it unguarded.
+     */
+    @Test
+    void anAnnotationPropertyClashIsReported() {
+        String[][] clashes = {
+            {"(aa,\"5\"):d\n@ann C d \"v\"\n", "d"},
+            {"A ⊑ ∃e.B\n@ann C e \"v\"\n", "e"},
+            {"e domain C\n(x,y):e\n", "e"},
+            {"e range C\n(x,y):e\n", "e"},
+        };
+        for (String[] clash : clashes) {
+            Throwable t = assertThrows(Throwable.class,
+                () -> read("@prefix : <" + NS + ">\n" + clash[0]),
+                () -> clash[1] + " is two kinds of property in:\n" + clash[0]);
+            String message = String.valueOf(t.getMessage());
+            assertTrue(message.contains("annotation property"),
+                () -> "the message must name the annotation kind: " + message);
+            assertTrue(message.contains("line"),
+                () -> "and where each use is: " + message);
+        }
+    }
+
+    /**
+     * And the shapes that are not clashes must still be accepted.
+     *
+     * <p>{@code @label}, {@code @doc}, {@code @db} and {@code @storage} each name a fixed
+     * rdfs: property rather than one of the document's own, so a document name that happens
+     * to match one of them is not in the annotation position at all.
+     */
+    @Test
+    void whatIsNotAClashIsStillAccepted() throws Exception {
+        assertDoesNotThrow(() -> read("@prefix : <" + NS + ">\n"
+            + "@ann C p \"v\"\n@ann D p \"w\"\n"), "one annotation property, twice");
+        assertDoesNotThrow(() -> read("@prefix : <" + NS + ">\n"
+            + "@label A \"x\"\n(aa,bb):label\n"),
+            "@label names rdfs:label, not the document's `label`");
+        assertDoesNotThrow(() -> read("@prefix : <" + NS + ">\n"
+            + "@ann C note \"v\"\nA ⊑ ∃r.B\n"), "unrelated names");
+    }
+
     /** The fixture table has to actually exercise every kind, or it proves less than it says. */
     @Test
     void theFixturesCoverEveryKind() {

@@ -293,15 +293,60 @@ class KindStatementFidelityTest {
         // `mytype` did not become a *role*, and passed while `owl:real` was being read as a
         // CLASS: the third wrong answer. A datatype is neither, and each of these is now
         // decided on its resolved IRI rather than on the `xsd:` prefix text.
+        // A subsumption, not an equivalence. `mytype ≡ xsd:string` used to be the probe
+        // here, and it is now a datatype alias — a legitimate DatatypeDefinition, which is a
+        // better answer than a refusal. A datatype on the right of `⊑` is still nothing but
+        // a class position, so that is the probe.
         for (String datatype : new String[] {
                 "xsd:string", "owl:real", "owl:rational",
                 "rdf:langString", "rdf:dirLangString", "rdfs:Literal"}) {
             Throwable t = assertThrows(Throwable.class,
-                () -> parse("@prefix : <http://example.org/t#>\nmytype ≡ " + datatype + "\n"),
+                () -> parse("@prefix : <http://example.org/t#>\nA ⊑ " + datatype + "\n"),
                 () -> datatype + " is a datatype and cannot be a class expression");
             assertTrue(String.valueOf(t.getMessage()).contains("datatype " + datatype),
                 () -> "the diagnostic must name it: " + t.getMessage());
         }
+    }
+
+    /**
+     * A document may define its own datatype, and it is then a datatype everywhere.
+     *
+     * <p>The built-in list cannot know about one, so it was read as a class: a data property
+     * ranged on it became an object property and the datatype itself became a class, with
+     * the document loading cleanly. A definition is the strongest statement that a name is a
+     * datatype and outranks both the list and the case convention.
+     */
+    @Test
+    void aDatatypeTheDocumentDefinesIsADatatype() throws Exception {
+        // The alias form, and the restriction form.
+        for (String definition : new String[] {
+                "MyType ≡ xsd:string\n",
+                "MyType ≡ [xsd:string ⊓ [minLength 3]]\n"}) {
+            OWLOntology o = parse("@prefix : <http://example.org/t#>\n" + definition
+                + "⊤ ⊑ ∀d.MyType\n");
+            assertEquals(1, o.getAxioms(AxiomType.DATA_PROPERTY_RANGE).size(),
+                () -> definition.trim() + " makes d a data property: " + o.getLogicalAxioms());
+            assertEquals(0, o.getAxioms(AxiomType.OBJECT_PROPERTY_RANGE).size(),
+                () -> "and not an object property: " + o.getLogicalAxioms());
+            assertTrue(o.datatypesInSignature()
+                    .anyMatch(t -> t.getIRI().toString().endsWith("#MyType")),
+                () -> "MyType must be a datatype: " + o.getLogicalAxioms());
+        }
+    }
+
+    /**
+     * A bare name in the default namespace resolves before the datatype test.
+     *
+     * <p>It used to resolve to nothing, which is invisible in the ordinary case — a bare name
+     * in the document's own namespace is not a datatype either way — and wrong whenever the
+     * default namespace is one that matters.
+     */
+    @Test
+    void aBareNameInTheXsdNamespaceIsADatatype() throws Exception {
+        OWLOntology o = parse("@prefix : <http://www.w3.org/2001/XMLSchema#>\n"
+            + "⊤ ⊑ ∀p.string\n");
+        assertEquals(1, o.getAxioms(AxiomType.DATA_PROPERTY_RANGE).size(),
+            () -> "the bare `string` is xsd:string: " + o.getLogicalAxioms());
     }
 
     /** The XSD namespace is the XSD namespace whatever prefix reaches it. */

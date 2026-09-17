@@ -116,6 +116,7 @@ public class DLEOntologyParser extends AbstractOWLParser {
                 scanner.getPredicateNames(),
                 scanner.getExplicitRoleNames(),
                 scanner.getPunnedNames(),
+                scanner.getDatatypeNames(),
                 tokens);
             visitor.visit(tree);
 

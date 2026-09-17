@@ -40,6 +40,19 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
     private final Set<String> objectPropertyNames;
     private final Set<String> dataPropertyNames;
     private final Set<String> predicateNames;
+    /**
+     * Datatypes the document defines itself, by {@code Code ≡ [xsd:string ⊓ […]]}.
+     *
+     * <p>A built-in list cannot know about these, so without them a document's own datatype
+     * was read as a class and every data property ranged on it became an object property.
+     */
+    private final Set<String> datatypeNames;
+
+    /** Whether this name is a datatype: defined here, or one of the known ones. */
+    private boolean namesADatatype(String text, @Nullable IRI iri) {
+        return datatypeNames.contains(text)
+            || EntityTypeScanner.isDatatypeIri(iri == null ? null : iri.toString());
+    }
     /** Names stated to be roles by {@code X ⊑ owl:topObjectProperty}; see visitSubClassAxiom. */
     private final Set<String> explicitRoleNames;
     /**
@@ -95,11 +108,13 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
                           Set<String> predicateNames,
                           Set<String> explicitRoleNames,
                           Set<String> punnedNames,
+                          Set<String> datatypeNames,
                           CommonTokenStream tokenStream) {
         this.df = df;
         this.objectPropertyNames = objectPropertyNames;
         this.dataPropertyNames   = dataPropertyNames;
         this.predicateNames      = predicateNames;
+        this.datatypeNames       = datatypeNames;
         this.explicitRoleNames   = explicitRoleNames;
         this.punnedNames         = punnedNames;
         this.tokenStream         = tokenStream;
@@ -667,8 +682,18 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
                 OWLObject range = operands.get(i);
                 DLESyntaxParser.ClassExprContext other = ctx.classExpr(1 - i);
                 String name = loneName(other);
-                if (range instanceof OWLDataRange && !(range instanceof OWLDatatype)
-                        && name != null) {
+                // Any data range, a plain datatype included: `Code ≡ xsd:string` is an
+                // alias, and OWL's DatatypeDefinition takes any range.
+                //
+                // The guard is against a *built-in* datatype on the left, so that
+                // `xsd:string ≡ xsd:string` does not qualify. It deliberately does not use
+                // namesADatatype: that already includes the name being defined here, which
+                // the scanner recorded on its way past, so guarding with it excluded every
+                // definition from being read as one.
+                if (name == null || !(range instanceof OWLDataRange)) continue;
+                IRI nameIri = expandNameText(name);
+                if (!EntityTypeScanner.isDatatypeIri(
+                        nameIri == null ? null : nameIri.toString())) {
                     axioms.add(df.getOWLDatatypeDefinitionAxiom(
                         df.getOWLDatatype(expandNameText(name)), (OWLDataRange) range));
                     return null;
@@ -1919,7 +1944,7 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
         // the classifier and the writer use — it used to be a text match on the `xsd:`
         // prefix, so the XSD namespace under another prefix was missed and owl:real and
         // owl:rational were not datatypes here at all.
-        if (EntityTypeScanner.isDatatypeIri(iri == null ? null : iri.toString())) {
+        if (namesADatatype(text, iri)) {
             return df.getOWLDatatype(iri);
         }
         // For remaining rdf:/rdfs: names, use case convention:

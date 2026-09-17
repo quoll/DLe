@@ -37,6 +37,15 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
     // these nodes, preventing the attribute hierarchy from bleeding into the concept hierarchy.
     private final Set<String> mustBeClass = new HashSet<>();
     /**
+     * Names the document defines as datatypes, by {@code Code ≡ [xsd:string ⊓ […]]}.
+     *
+     * <p>The built-in list cannot know about these, so a document's own datatype was taken
+     * for a class and every data property ranged on it became an object property — the
+     * datatype flipping too. A definition is the strongest possible statement that a name is
+     * a datatype, and it outranks both the list and the case convention.
+     */
+    private final Set<String> datatypeNames = new HashSet<>();
+    /**
      * Names tied together by an equivalence, as groups.
      *
      * <p>Resolved in {@link #propagatePropertyTypes()} rather than as each statement is
@@ -60,6 +69,15 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
      */
     private final Map<String, Integer> objectEvidence = new LinkedHashMap<>();
     private final Map<String, Integer> dataEvidence = new LinkedHashMap<>();
+    /**
+     * Names used as annotation properties, and where.
+     *
+     * <p>OWL 2 DL wants the object, data and annotation property IRIs pairwise disjoint, and
+     * only two of the three were watched. A name could be a data property on one line and an
+     * annotation property on the next and nothing said so, which is an ontology no reasoner
+     * will load — the same defect as the object/data pair, with a third of it unguarded.
+     */
+    private final Map<String, Integer> annotationEvidence = new LinkedHashMap<>();
     /**
      * The filler name that supplied each piece of object evidence, where there was one.
      *
@@ -116,6 +134,7 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
     Set<String> getPredicateNames()      { return predicateNames; }
     /** Names the document states are roles, via {@code X ⊑ owl:topObjectProperty}. */
     Set<String> getExplicitRoleNames()   { return explicitRole; }
+    Set<String> getDatatypeNames()       { return datatypeNames; }
 
     /**
      * Names that are a role <em>and</em> a class — the puns.
@@ -232,6 +251,29 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
     @Override
     public Void visitFunctionalPropertyAxiom(DLESyntaxParser.FunctionalPropertyAxiomContext ctx) {
         classifyFromClassExpr(ctx.propertyExpr(), ctx.classExpr());
+        return visitChildren(ctx);
+    }
+
+    // ── Annotation properties, the third kind ────────────────────────────────
+    //
+    // `@label`, `@doc`, `@db` and `@storage` name no property — each is a fixed rdfs: one —
+    // so only these three forms put a document's own name in the annotation position.
+
+    @Override
+    public Void visitAnnAnnotation(DLESyntaxParser.AnnAnnotationContext ctx) {
+        annotationEvidence.putIfAbsent(ctx.name(1).getText(), ctx.start.getLine());
+        return visitChildren(ctx);
+    }
+
+    @Override
+    public Void visitAnnPropDomainAxiom(DLESyntaxParser.AnnPropDomainAxiomContext ctx) {
+        annotationEvidence.putIfAbsent(ctx.name(0).getText(), ctx.start.getLine());
+        return visitChildren(ctx);
+    }
+
+    @Override
+    public Void visitAnnPropRangeAxiom(DLESyntaxParser.AnnPropRangeAxiomContext ctx) {
+        annotationEvidence.putIfAbsent(ctx.name(0).getText(), ctx.start.getLine());
         return visitChildren(ctx);
     }
 
@@ -384,6 +426,22 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
                     + ". An IRI can be one or the other, not both.",
                 Math.max(object.getValue(), dataLine), 0);
         }
+        // And the annotation property against each of the other two. OWL 2 DL wants all
+        // three sets pairwise disjoint, and this third of it used to go unwatched.
+        reportAnnotationConflict(objectEvidence, "an object property");
+        reportAnnotationConflict(dataEvidence, "a data property");
+    }
+
+    private void reportAnnotationConflict(Map<String, Integer> other, String otherKind) {
+        for (Map.Entry<String, Integer> annotation : annotationEvidence.entrySet()) {
+            Integer otherLine = other.get(annotation.getKey());
+            if (otherLine == null) continue;
+            throw new DLESemanticException(
+                annotation.getKey() + " is used as an annotation property on line "
+                    + annotation.getValue() + " and as " + otherKind + " on line " + otherLine
+                    + ". An IRI can be one or the other, not both.",
+                Math.max(annotation.getValue(), otherLine), 0);
+        }
     }
 
     private void classifyUnknownRole(String name) {
@@ -477,6 +535,20 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
         if (allBare && bare.stream().allMatch(this::caseSuggestsRole)) {
             bare.forEach(this::classifyUnknownRole);
         }
+        // A datatype definition: `Code ≡ [xsd:string ⊓ […]]`. One side a data range and the
+        // other a bare name makes the name a datatype, which no built-in list could know.
+        for (int i = 0; i < n; i++) {
+            String bareName = singleBareName(operands.get(i));
+            if (bareName == null) continue;
+            if (isDataTypeName(bareName)) continue;   // already one; nothing to define
+            for (int j = 0; j < n; j++) {
+                if (j != i && isDataClassExpr(operands.get(j))) {
+                    datatypeNames.add(bareName);
+                    mustBeClass.remove(bareName);
+                }
+            }
+        }
+
         // Tied together whatever their spelling, so evidence on any one of them reaches the
         // rest. Only groups that are entirely bare names can be properties at all.
         if (allBare && bare.size() > 1) {
@@ -747,9 +819,21 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
 
     /** Expands a name to an IRI, or null if its prefix is undeclared. */
     @Nullable
+    /**
+     * A name's full IRI, or null when no declared prefix covers it.
+     *
+     * <p>A bare name resolves against the default prefix. It used to resolve to nothing,
+     * which was invisible in the ordinary case — a bare name in the document's own namespace
+     * is not a datatype either way — but wrong whenever the default namespace is one that
+     * matters: with {@code @prefix : <http://www.w3.org/2001/XMLSchema#>}, the bare
+     * {@code string} is {@code xsd:string} and was not recognised as a datatype at all.
+     */
     private String resolve(String name) {
         int colon = name.indexOf(':');
-        if (colon < 0) return null;   // a bare name is in the default namespace, never owl:
+        if (colon < 0) {
+            String base = prefixes.get(":");
+            return base == null ? null : base + name;
+        }
         String base = prefixes.get(name.substring(0, colon + 1));
         return base == null ? null : base + name.substring(colon + 1);
     }
@@ -1046,7 +1130,7 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
 
     /** Whether a name, as written in the source, denotes a datatype in this document. */
     boolean isDataTypeName(String name) {
-        return isDatatypeIri(resolve(name));
+        return datatypeNames.contains(name) || isDatatypeIri(resolve(name));
     }
 
     /**
