@@ -258,13 +258,16 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
     }
 
     // ── Textbook role axiom syntax ───────────────────────────────────────────
+    //
+    // Trans, Ref, Irref, Sym and Asym are defined for object properties only, so each is a
+    // position only one kind can occupy — POSITIONAL evidence rather than a guess.
 
-    @Override public Void visitTransitiveRoleAxiom(DLESyntaxParser.TransitiveRoleAxiomContext ctx)   { objectPropertyNames.add(PropertyExprs.coreNameText(ctx.propertyExpr())); return visitChildren(ctx); }
+    @Override public Void visitTransitiveRoleAxiom(DLESyntaxParser.TransitiveRoleAxiomContext ctx)   { objectOnlyCharacteristic("Trans", ctx.propertyExpr(), ctx.start.getLine()); return visitChildren(ctx); }
     @Override public Void visitFunctionalRoleAxiom(DLESyntaxParser.FunctionalRoleAxiomContext ctx)   { classifyUnknownRole(PropertyExprs.coreNameText(ctx.propertyExpr())); return visitChildren(ctx); }
-    @Override public Void visitReflexiveRoleAxiom(DLESyntaxParser.ReflexiveRoleAxiomContext ctx)     { objectPropertyNames.add(PropertyExprs.coreNameText(ctx.propertyExpr())); return visitChildren(ctx); }
-    @Override public Void visitIrreflexiveRoleAxiom(DLESyntaxParser.IrreflexiveRoleAxiomContext ctx) { objectPropertyNames.add(PropertyExprs.coreNameText(ctx.propertyExpr())); return visitChildren(ctx); }
-    @Override public Void visitSymmetricRoleAxiom(DLESyntaxParser.SymmetricRoleAxiomContext ctx)     { objectPropertyNames.add(PropertyExprs.coreNameText(ctx.propertyExpr())); return visitChildren(ctx); }
-    @Override public Void visitAsymmetricRoleAxiom(DLESyntaxParser.AsymmetricRoleAxiomContext ctx)   { objectPropertyNames.add(PropertyExprs.coreNameText(ctx.propertyExpr())); return visitChildren(ctx); }
+    @Override public Void visitReflexiveRoleAxiom(DLESyntaxParser.ReflexiveRoleAxiomContext ctx)     { objectOnlyCharacteristic("Ref", ctx.propertyExpr(), ctx.start.getLine()); return visitChildren(ctx); }
+    @Override public Void visitIrreflexiveRoleAxiom(DLESyntaxParser.IrreflexiveRoleAxiomContext ctx) { objectOnlyCharacteristic("Irref", ctx.propertyExpr(), ctx.start.getLine()); return visitChildren(ctx); }
+    @Override public Void visitSymmetricRoleAxiom(DLESyntaxParser.SymmetricRoleAxiomContext ctx)     { objectOnlyCharacteristic("Sym", ctx.propertyExpr(), ctx.start.getLine()); return visitChildren(ctx); }
+    @Override public Void visitAsymmetricRoleAxiom(DLESyntaxParser.AsymmetricRoleAxiomContext ctx)   { objectOnlyCharacteristic("Asym", ctx.propertyExpr(), ctx.start.getLine()); return visitChildren(ctx); }
     @Override public Void visitDisjointRoleAxiom(DLESyntaxParser.DisjointRoleAxiomContext ctx) {
         ctx.propertyExpr().forEach(p -> classifyUnknownRole(PropertyExprs.coreNameText(p)));
         return visitChildren(ctx);
@@ -412,7 +415,29 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
      * Nor is a guess ever half of one — it loses to the evidence instead, which is what
      * {@link Findings.Certainty#isEvidence} decides.
      */
+    /**
+     * A characteristic OWL defines only for object properties, applied to a data property.
+     *
+     * <p>Checked before the generic kind clash so the message can name the keyword. The
+     * clash would otherwise be reported, correctly but unhelpfully, as one IRI being used as
+     * both kinds of property.
+     */
+    private void reportObjectOnlyCharacteristicOnDataProperty() {
+        for (Map.Entry<String, String> use : objectOnlyCharacteristicUse.entrySet()) {
+            Findings.Finding data =
+                findings.firmestOf(use.getKey(), Findings.Kind.DATA_PROPERTY);
+            if (data == null || !data.certainty.isEvidence()) continue;
+            throw new DLESemanticException(
+                use.getValue() + " applies to object properties only, and " + use.getKey()
+                    + " is used as a data property in this document. There is no "
+                    + use.getValue() + " for data properties; Func is the only"
+                    + " characteristic that has both forms.",
+                data.line, 0);
+        }
+    }
+
     private void reportKindConflicts() {
+        reportObjectOnlyCharacteristicOnDataProperty();
         for (String name : findings.names()) {
             Findings.Finding[] clash = findings.propertyKindConflict(name);
             if (clash == null) continue;
@@ -447,6 +472,50 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
     private void markClass(String name, Findings.Certainty certainty, int line) {
         mustBeClass.add(name);
         findings.record(name, Findings.Kind.CLASS, certainty, line);
+    }
+
+    /**
+     * Where each object-only characteristic was applied, for the diagnostic.
+     *
+     * <p>The kind clash is reportable from the findings alone, but the message would be the
+     * generic one — "p is used as an object property on line 3 and as a data property on
+     * line 2" — where naming the keyword and saying that Func is the exception is far more
+     * use. Kept in the same shape as {@code invertedRoleUse}, which exists for the same
+     * reason.
+     */
+    private final Map<String, String> objectOnlyCharacteristicUse = new LinkedHashMap<>();
+
+    /**
+     * Carries a kind across a subsumption edge, recording that that is how it got there.
+     *
+     * <p>PROPAGATED, never POSITIONAL: a name reached this way has no position of its own
+     * saying what it is, and recording otherwise would let it contradict something later on
+     * evidence it does not have. It is still evidence — firmer than the case convention —
+     * which is what lets it settle a name the convention would have guessed wrong.
+     *
+     * @return true when this changed anything, for the fixpoint loop
+     */
+    private boolean propagateKind(String from, String to, Findings.Kind kind) {
+        boolean changed = kind == Findings.Kind.DATA_PROPERTY
+            ? dataPropertyNames.add(to) | objectPropertyNames.remove(to)
+            : objectPropertyNames.add(to);
+        if (!findings.hasEvidenceFor(to, kind)) {
+            Findings.Finding source = findings.firmestOf(from, kind);
+            findings.record(to, kind, Findings.Certainty.PROPAGATED,
+                source == null ? 0 : source.line);
+            changed = true;
+        }
+        return changed;
+    }
+
+    /** A characteristic OWL defines for object properties only. */
+    private void objectOnlyCharacteristic(String keyword,
+                                          DLESyntaxParser.PropertyExprContext ctx, int line) {
+        String name = PropertyExprs.coreNameText(ctx);
+        objectPropertyNames.add(name);
+        findings.record(name, Findings.Kind.OBJECT_PROPERTY,
+            Findings.Certainty.POSITIONAL, line);
+        objectOnlyCharacteristicUse.putIfAbsent(name, keyword);
     }
 
     private void classifyUnknownRole(String name) {
@@ -734,7 +803,14 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
             for (Map.Entry<String, Set<String>> e : subPropertyPairs.entrySet()) {
                 if (mustBeClass.contains(e.getKey())) {
                     for (String sup : e.getValue()) {
-                        changed |= mustBeClass.add(sup);
+                        if (mustBeClass.add(sup)) {
+                            Findings.Finding source =
+                                findings.firmestOf(e.getKey(), Findings.Kind.CLASS);
+                            findings.record(sup, Findings.Kind.CLASS,
+                                Findings.Certainty.PROPAGATED,
+                                source == null ? 0 : source.line);
+                            changed = true;
+                        }
                     }
                 }
             }
@@ -777,25 +853,23 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
                     if (dataPropertyNames.contains(sub) && !mustBeClass.contains(sup)
                             && !explicitRole.contains(sup)
                             && !findings.hasEvidenceFor(sup, Findings.Kind.OBJECT_PROPERTY)) {
-                        changed |= dataPropertyNames.add(sup);
-                        changed |= objectPropertyNames.remove(sup);
+                        changed |= propagateKind(sub, sup, Findings.Kind.DATA_PROPERTY);
                     }
                     if (dataPropertyNames.contains(sup) && !mustBeClass.contains(sub)
                             && !explicitRole.contains(sub)
                             && !findings.hasEvidenceFor(sub, Findings.Kind.OBJECT_PROPERTY)
                             && !(mustBeClass.contains(sup) && looksLikeAClass(sub))) {
-                        changed |= dataPropertyNames.add(sub);
-                        changed |= objectPropertyNames.remove(sub);
+                        changed |= propagateKind(sup, sub, Findings.Kind.DATA_PROPERTY);
                     }
                     // Object property propagation is blocked at mustBeClass nodes.
                     if (objectPropertyNames.contains(sub)
                             && !dataPropertyNames.contains(sup)
                             && !mustBeClass.contains(sup))
-                        changed |= objectPropertyNames.add(sup);
+                        changed |= propagateKind(sub, sup, Findings.Kind.OBJECT_PROPERTY);
                     if (objectPropertyNames.contains(sup) && !dataPropertyNames.contains(sub)
                             && !mustBeClass.contains(sub)
                             && !(mustBeClass.contains(sup) && looksLikeAClass(sub)))
-                        changed |= objectPropertyNames.add(sub);
+                        changed |= propagateKind(sup, sub, Findings.Kind.OBJECT_PROPERTY);
                 }
             }
         }
@@ -1045,8 +1119,14 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
                 dataPropertyNames.add(name);
                 objectPropertyNames.remove(name);
             } else if (!dataPropertyNames.contains(name)) {
-                // Only classify as object if not already established as data.
+                // Only classify as object if not already established as data. Recorded as
+                // DEFAULTED when the position did not pin the kind: `≥2 r` and `∃r.⊤ ⊑ C`
+                // say "a role" and not which, and the fallback is object property. Saying so
+                // is what stops it being mistaken for evidence later.
                 objectPropertyNames.add(name);
+                findings.record(name, Findings.Kind.OBJECT_PROPERTY,
+                    pinsKind ? Findings.Certainty.POSITIONAL : Findings.Certainty.DEFAULTED,
+                    propCtx.start.getLine());
             }
         }
     }
@@ -1199,6 +1279,66 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
     }
 
     /** Whether a name, as written in the source, denotes a datatype in this document. */
+    /**
+     * Where the findings and the name sets disagree, if anywhere.
+     *
+     * <p>Two representations of one thing can drift, and drift is what this whole area has
+     * suffered from. Findings are the evidence; the sets are the resolution propagation
+     * walks. They are supposed to agree on which names hold which kinds, and until the sets
+     * are retired the cheapest guarantee of that is to check it.
+     *
+     * <p>Reported as descriptions rather than thrown, so a test can assert the whole picture
+     * at once instead of failing on the first name.
+     *
+     * @return one line per disagreement, empty when they agree
+     */
+    List<String> findingsDisagreements() {
+        List<String> out = new ArrayList<>();
+        java.util.Set<String> seen = new java.util.LinkedHashSet<>();
+        findings.names().forEach(seen::add);
+        seen.addAll(objectPropertyNames);
+        seen.addAll(dataPropertyNames);
+        seen.addAll(mustBeClass);
+        seen.addAll(datatypeNames);
+        for (String name : seen) {
+            check(out, name, Findings.Kind.OBJECT_PROPERTY, objectPropertyNames);
+            check(out, name, Findings.Kind.DATA_PROPERTY, dataPropertyNames);
+            check(out, name, Findings.Kind.CLASS, mustBeClass);
+            check(out, name, Findings.Kind.DATATYPE, datatypeNames);
+        }
+        return out;
+    }
+
+    private void check(List<String> out, String name, Findings.Kind kind,
+                       java.util.Set<String> resolved) {
+        boolean inSet = resolved.contains(name);
+        boolean expected = kind.isProperty()
+            // The three property kinds compete, so only the firmest holds. A superseded
+            // finding is not drift — a DEFAULTED object guess beneath POSITIONAL data
+            // evidence is the model working.
+            ? kind == firmestPropertyKind(name)
+            // A class or a datatype does not compete with a property: that is a pun.
+            : findings.of(name).stream().anyMatch(f -> f.kind == kind);
+        if (inSet && !expected) {
+            out.add(name + ": in the " + kind + " set, but the findings say "
+                + findings.of(name));
+        } else if (!inSet && expected) {
+            out.add(name + ": findings say " + kind + " but it is not in that set ("
+                + findings.of(name) + ")");
+        }
+    }
+
+    /** The one property kind a name resolves to, or null if it has no property finding. */
+    @Nullable
+    private Findings.Kind firmestPropertyKind(String name) {
+        Findings.Finding best = null;
+        for (Findings.Finding f : findings.of(name)) {
+            if (!f.kind.isProperty()) continue;
+            if (best == null || f.certainty.compareTo(best.certainty) > 0) best = f;
+        }
+        return best == null ? null : best.kind;
+    }
+
     boolean isDataTypeName(String name) {
         return datatypeNames.contains(name) || isDatatypeIri(resolve(name));
     }

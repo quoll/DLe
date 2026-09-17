@@ -345,10 +345,26 @@ Each stage is independently verifiable and leaves the tree green.
    another loop. A guess is structurally incapable of being half of a conflict, and a class
    beside a property is a pun rather than a contradiction.
 
-   **What is not done:** the firmest finding is not yet what the reader consults. Resolution
-   still lives in the scanner's name sets, which propagation walks and the visitor is handed;
-   findings are the evidence those sets are built from. Making the firmest finding the
-   operative answer — and so retiring the sets — is the remainder.
+   Every site that classifies a name now records why: STATED for a kind said outright,
+   POSITIONAL for a position only one kind can occupy, DECLARED for a datatype the document
+   defines, PROPAGATED across a subsumption or equivalence, DEFAULTED for a role of unknown
+   kind falling back to object property.
+
+   **The two representations are now checked to agree.** `findingsDisagreements` compares
+   them name by name, and `FindingsAgreementTest` asserts they match over 43 shapes and a
+   corpus document. That check found five places where a name sat in a set with no finding at
+   all — the unqualified cardinality and domain idioms, the five object-only characteristics,
+   and both propagation phases — which is exactly the drift two representations invite.
+
+   **What is not done:** the firmest finding is still not what the reader consults.
+   Resolution lives in the name sets, which propagation walks and the visitor is handed. The
+   difference is that drift between them is now caught by a test rather than left to
+   discipline, which makes retiring the sets a mechanical step instead of a risky one.
+
+   One consequence of that: PROPAGATED versus POSITIONAL is not yet observable. Both count as
+   evidence, and nothing compares them in a way that changes an outcome, so a mutation
+   swapping one for the other survives the whole suite. It becomes load-bearing when the
+   sets go and the firmest finding decides.
 
    #27 and #37 did not wait for this; they were the predicate guess, fixed in stage 1.
 5. **The shared `Position` rule** (§4.2). Last, because it is only safe once both sides have a
