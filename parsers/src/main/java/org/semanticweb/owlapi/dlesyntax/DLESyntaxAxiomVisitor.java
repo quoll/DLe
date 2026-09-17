@@ -374,7 +374,7 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
     @Override
     public OWLObject visitLabelAnnotation(DLESyntaxParser.LabelAnnotationContext ctx) {
         IRI subject = expandName(ctx.name());
-        OWLLiteral value = stringLiteral(ctx.STRING().getText());
+        OWLLiteral value = annotationLiteral(ctx.annotationString());
         axioms.add(df.getOWLAnnotationAssertionAxiom(
             df.getOWLAnnotationProperty(OWLRDFVocabulary.RDFS_LABEL.getIRI()),
             subject, value));
@@ -384,7 +384,7 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
     @Override
     public OWLObject visitDocAnnotation(DLESyntaxParser.DocAnnotationContext ctx) {
         IRI subject = expandName(ctx.name());
-        OWLLiteral value = stringLiteral(ctx.STRING().getText());
+        OWLLiteral value = annotationLiteral(ctx.annotationString());
         axioms.add(df.getOWLAnnotationAssertionAxiom(
             df.getOWLAnnotationProperty(OWLRDFVocabulary.RDFS_COMMENT.getIRI()),
             subject, value));
@@ -394,7 +394,7 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
     @Override
     public OWLObject visitStorageAnnotation(DLESyntaxParser.StorageAnnotationContext ctx) {
         IRI subject = expandName(ctx.name());
-        OWLLiteral value = stringLiteral(ctx.STRING().getText());
+        OWLLiteral value = annotationLiteral(ctx.annotationString());
         axioms.add(df.getOWLAnnotationAssertionAxiom(
             df.getOWLAnnotationProperty(OWLRDFVocabulary.RDFS_SEE_ALSO.getIRI()),
             subject, value));
@@ -404,8 +404,8 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
     @Override
     public OWLObject visitDbAnnotation(DLESyntaxParser.DbAnnotationContext ctx) {
         IRI subject = expandName(ctx.name());
-        OWLLiteral value = ctx.STRING() != null
-            ? stringLiteral(ctx.STRING().getText())
+        OWLLiteral value = ctx.annotationString() != null
+            ? annotationLiteral(ctx.annotationString())
             : df.getOWLLiteral(ctx.name().getText());
         axioms.add(df.getOWLAnnotationAssertionAxiom(
             df.getOWLAnnotationProperty(OWLRDFVocabulary.RDFS_IS_DEFINED_BY.getIRI()),
@@ -438,7 +438,7 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
 
     @Override
     public OWLObject visitStringAnnotationValue(DLESyntaxParser.StringAnnotationValueContext ctx) {
-        return stringLiteral(ctx.STRING().getText());
+        return annotationLiteral(ctx.annotationString());
     }
 
     @Override
@@ -2292,6 +2292,29 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
         }
         IRI datatype = expandName(ctx.name());
         return df.getOWLLiteral(unquote(tokenText), df.getOWLDatatype(datatype));
+    }
+
+    /**
+     * An annotation value: a quoted string, with a language tag or a datatype.
+     *
+     * <p>The same rule as {@link #typedLiteral}, against the annotation grammar rather than
+     * the literal one. Kept as its own method rather than folded into that one because the
+     * two rules are separate in the grammar and the contexts do not share a type.
+     */
+    private OWLLiteral annotationLiteral(DLESyntaxParser.AnnotationStringContext ctx) {
+        String tokenText = ctx.STRING().getText();
+        if (ctx.name() == null) {
+            return stringLiteral(tokenText);
+        }
+        if (languageTag(tokenText) != null) {
+            throw new DLESemanticException(
+                "an annotation value cannot carry both a language tag and a datatype: "
+                    + ctx.getText() + ". A tagged string is rdf:langString already, so the"
+                    + " datatype either repeats that or contradicts it; write one or the"
+                    + " other.",
+                ctx.start.getLine(), ctx.start.getCharPositionInLine());
+        }
+        return df.getOWLLiteral(unquote(tokenText), df.getOWLDatatype(expandName(ctx.name())));
     }
 
     private OWLLiteral stringLiteral(String tokenText) {

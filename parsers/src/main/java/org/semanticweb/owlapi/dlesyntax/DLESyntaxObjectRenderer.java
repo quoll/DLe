@@ -347,8 +347,14 @@ public class DLESyntaxObjectRenderer extends DLSyntaxObjectRenderer {
      */
     private String renderLiteral(OWLLiteral lit) {
         if (lit.isBoolean()) return lit.getLiteral();
-        if ((lit.isInteger() || lit.isDouble() || lit.isFloat())
-                && NUMBER.matcher(lit.getLiteral()).matches()) {
+        // Ask the one method that knows what a bare spelling comes back as, rather than
+        // restating the rule. Restating it included xsd:float, which does not survive: the
+        // reader types a bare decimal as xsd:double, so every ordinary float value was
+        // silently retyped, a mixed DataOneOf lost members to the collision, and a float
+        // facet bound produced DatatypeRestriction(xsd:float ... "1.5"^^xsd:double). It also
+        // let a dotless xsd:double through as a bare integer.
+        if (NUMBER.matcher(lit.getLiteral()).matches()
+                && reconstructsFromSpellingAlone(lit)) {
             return lit.getLiteral();
         }
         return quoted(lit);

@@ -219,4 +219,77 @@ class TypedLiteralTest {
                 () -> String.valueOf(value));
         }
     }
+
+    /**
+     * An ordinary {@code xsd:float} keeps its type.
+     *
+     * <p>{@code renderLiteral} restated the bare-spelling rule instead of asking the method
+     * that knows it, and included {@code xsd:float} in the restatement. A bare decimal comes
+     * back {@code xsd:double}, so every float whose canonical form is an ordinary number —
+     * 0, 5, -5, 0.1, 1.5, 123.456, -0.0 — was silently retyped. Only the spellings that must
+     * be quoted anyway (NaN, INF, an exponent) escaped, which is why the existing test for
+     * "the special doubles" passed throughout.
+     */
+    @org.junit.jupiter.params.ParameterizedTest(name = "float {0} keeps its type")
+    @org.junit.jupiter.params.provider.ValueSource(strings = {
+        "0", "5", "-5", "0.1", "0.5", "1.5", "123.456", "-0.0"
+    })
+    void anOrdinaryFloatKeepsItsType(String spelling) throws Exception {
+        OWLLiteral value =
+            df.getOWLLiteral(spelling, df.getOWLDatatype(IRI.create(XSD + "float")));
+        OWLOntology back = read(write(withValue(value)));
+        OWLLiteral got = back.axioms(AxiomType.DATA_PROPERTY_ASSERTION)
+            .map(OWLDataPropertyAssertionAxiom::getObject).findFirst().orElseThrow();
+        assertEquals(XSD + "float", got.getDatatype().getIRI().toString(),
+            () -> "xsd:float " + spelling + " came back as "
+                + got.getDatatype().getIRI().getRemainder().orElse("?"));
+    }
+
+    /**
+     * A {@code xsd:double} with no decimal point keeps its type too.
+     *
+     * <p>The same restatement let this through bare, and a bare digit string reads back as
+     * {@code xsd:integer}. The guarded rule asks whether the spelling reconstructs the
+     * datatype, which for a dotless double it does not.
+     */
+    @Test
+    void aDoubleWithNoPointKeepsItsType() throws Exception {
+        OWLLiteral value = df.getOWLLiteral("5", df.getOWLDatatype(IRI.create(XSD + "double")));
+        String written = bodyOf(write(withValue(value)));
+        OWLOntology back = read(write(withValue(value)));
+        OWLLiteral got = back.axioms(AxiomType.DATA_PROPERTY_ASSERTION)
+            .map(OWLDataPropertyAssertionAxiom::getObject).findFirst().orElseThrow();
+        assertEquals(XSD + "double", got.getDatatype().getIRI().toString(),
+            () -> "a dotless xsd:double came back as "
+                + got.getDatatype().getIRI().getRemainder().orElse("?") + ", written as: "
+                + written);
+    }
+
+    /**
+     * An enumeration of numerically equal values in different datatypes keeps every member.
+     *
+     * <p>Retyping collapsed members together: a five-member {@code DataOneOf} mixing float
+     * and double came back with four, because the two had become the same literal. A count
+     * is the whole point here — the loss is invisible in any single member.
+     */
+    @Test
+    void aMixedNumericEnumerationKeepsEveryMember() throws Exception {
+        OWLDataRange oneOf = df.getOWLDataOneOf(
+            df.getOWLLiteral("1", df.getOWLDatatype(IRI.create(XSD + "decimal"))),
+            df.getOWLLiteral("1.0", df.getOWLDatatype(IRI.create(XSD + "double"))),
+            df.getOWLLiteral("1.0", df.getOWLDatatype(IRI.create(XSD + "float"))),
+            df.getOWLLiteral("1", df.getOWLDatatype(IRI.create(XSD + "integer"))),
+            df.getOWLLiteral("1"));
+        OWLOntology o = manager.createOntology();
+        manager.addAxiom(o, df.getOWLDataPropertyRangeAxiom(
+            df.getOWLDataProperty(IRI.create(NS + "d")), oneOf));
+        OWLOntology back = read(write(o));
+        long members = back.axioms(AxiomType.DATA_PROPERTY_RANGE)
+            .map(OWLDataPropertyRangeAxiom::getRange)
+            .filter(r -> r instanceof OWLDataOneOf)
+            .flatMap(r -> ((OWLDataOneOf) r).values())
+            .count();
+        assertEquals(5, members,
+            "every member of the enumeration must survive as a distinct literal");
+    }
 }

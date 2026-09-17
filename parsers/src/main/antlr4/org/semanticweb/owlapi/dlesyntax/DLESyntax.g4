@@ -28,18 +28,29 @@ statement
 // ── Annotations ──────────────────────────────────────────────────────────────
 
 annotation
-    : AT_LABEL     name STRING                # LabelAnnotation
-    | AT_DOC       name STRING                # DocAnnotation
-    | AT_STORAGE   name STRING                # StorageAnnotation
-    | AT_DB        name STRING?                # DbAnnotation
+    : AT_LABEL     name annotationString      # LabelAnnotation
+    | AT_DOC       name annotationString      # DocAnnotation
+    | AT_STORAGE   name annotationString      # StorageAnnotation
+    | AT_DB        name annotationString?      # DbAnnotation
     | AT_ANN       name name annotationValue           # AnnAnnotation
     | name '(' name (',' name)* ')' DEFINED_AS_LINE   # PredicateDefinition
     | name DEFINED_AS_LINE                             # FolAnnotation
     ;
 
 annotationValue
-    : STRING   # StringAnnotationValue
-    | name     # IriAnnotationValue
+    : annotationString   # StringAnnotationValue
+    | name               # IriAnnotationValue
+    ;
+
+// An annotation's value, with the datatype the writer puts on it.
+//
+// The writer quotes every annotation value and appends `^^<datatype>` whenever it is not
+// xsd:string, so a dated or numeric annotation — `@doc A "2024-01-02"^^xsd:date` — was
+// written and then refused by this same grammar with `extraneous input '^^'`. That is 71 of
+// 98 literal shapes, in all five spellings, and any ontology with a dated or numeric
+// annotation hit it. Shared by the four shorthands and by `@ann` so they cannot drift apart.
+annotationString
+    : STRING ('^^' name)?
     ;
 
 // ── Axioms ───────────────────────────────────────────────────────────────────
