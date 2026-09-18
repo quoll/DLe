@@ -813,6 +813,68 @@ class KindPreservationTest {
             () -> "the message must name the conflict: " + e.getMessage());
     }
 
+    /**
+     * A datatype and a property cannot share an IRI, in either property kind.
+     *
+     * <p>Class and property is a pun DLe allows on purpose. Datatype and property is not:
+     * OWL 2 DL keeps datatypes in a set disjoint from every property set, so the result is
+     * not a document with two readings but one outside the profile. Nothing checked it, and a
+     * datatype *position* records no finding, so {@code xsd:string} was invisible to the
+     * conflict rule — {@code x \u2261 xsd:string} with {@code A \u2291 \u2203x.B} produced
+     * {@code Declaration(ObjectProperty(xsd:string))}, reserved vocabulary as a property,
+     * with the datatype definition gone and an invented label on it, at exit 0.
+     */
+    @Test
+    void aDatatypeIsNotAlsoAProperty() {
+        String[] documents = {
+            "x \u2261 xsd:string\nA \u2291 \u2203x.B\n",
+            "x \u2261 xsd:string\n(a,\"5\"):x\n",
+        };
+        for (String body : documents) {
+            String document = "@prefix : <" + NS + ">\n" + body;
+            DLESemanticException e = assertThrows(DLESemanticException.class,
+                () -> read(document), () -> "a datatype is not a property:\n" + document);
+            assertTrue(e.getMessage().contains("datatype")
+                    && e.getMessage().contains("separate sets"),
+                () -> "the message must say why: " + e.getMessage());
+        }
+    }
+
+    /** The pun DLe does allow is untouched by that. */
+    @Test
+    void aClassAndPropertyPunIsStillAccepted() throws Exception {
+        OWLOntology o = assertDoesNotThrow(() -> read("@prefix : <" + NS + ">\n"
+            + "Attr \u2291 \u22a4\nAttr \u2291 owl:topObjectProperty\nsub \u2291 Attr\n"));
+        assertTrue(o.containsClassInSignature(IRI.create(NS + "Attr")),
+            () -> "Attr is a class: " + o.getLogicalAxioms());
+        assertTrue(o.containsObjectPropertyInSignature(IRI.create(NS + "Attr")),
+            () -> "and a property: " + o.getLogicalAxioms());
+    }
+
+    /**
+     * A kind conflict that can only be reached by propagation is reported.
+     *
+     * <p>The conflict check ran once, as the first statement of propagation, so it saw only
+     * what the document says directly. A data property propagated up a chain onto a name an
+     * {@code @ann} had already made an annotation property went unreported entirely, and the
+     * document left the OWL 2 DL profile at exit 0 with no declaration for the name at all.
+     * Propagation records what it reaches as PROPAGATED, which is evidence, so running the
+     * same rule again afterwards catches it.
+     */
+    @Test
+    void aConflictReachedByPropagationIsReported() {
+        String document = "@prefix : <" + NS + ">\n"
+            + "A \u2291 \u2203x.xsd:string\n"
+            + "x \u2291 y\n"
+            + "@ann C y \"v\"\n";
+        DLESemanticException e = assertThrows(DLESemanticException.class,
+            () -> read(document),
+            "y is a data property by propagation and an annotation property by position");
+        assertTrue(e.getMessage().contains("annotation property")
+                && e.getMessage().contains("data property"),
+            () -> "the message must name both kinds: " + e.getMessage());
+    }
+
     /** The fixture table has to actually exercise every kind, or it proves less than it says. */
     @Test
     void theFixturesCoverEveryKind() {

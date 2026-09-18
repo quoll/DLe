@@ -8,6 +8,7 @@ import java.util.LinkedHashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.LinkedHashSet;
 import java.util.Set;
 
 /**
@@ -438,6 +439,13 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
 
     private void reportKindConflicts() {
         reportObjectOnlyCharacteristicOnDataProperty();
+        Set<String> candidates = new LinkedHashSet<>();
+        findings.names().forEach(candidates::add);
+        candidates.addAll(objectPropertyNames);
+        candidates.addAll(dataPropertyNames);
+        for (String name : candidates) {
+            reportDatatypeUsedAsAProperty(name);
+        }
         for (String name : findings.names()) {
             Findings.Finding[] clash = findings.propertyKindConflict(name);
             if (clash == null) continue;
@@ -741,6 +749,51 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
      *       hierarchy at the shared root.</li>
      * </ol>
      */
+    /**
+     * Whether a name is a datatype for certain, rather than merely by its namespace.
+     *
+     * <p>{@link #isDatatypeIri} answers on the namespace, which is what the case convention
+     * needs — every name under the XSD namespace is beyond the convention's reach. It is too
+     * loose to refuse a document over: {@code xsd:p} is not a datatype, and a document that
+     * binds its default prefix to the XSD namespace has ordinary names resolving there.
+     * Refusal needs the strict question: a real built-in, or one this document defines.
+     */
+    private boolean isDefinitelyADatatype(String name) {
+        if (datatypeNames.contains(name)) return true;
+        String iri = resolve(name);
+        return iri != null
+            && org.semanticweb.owlapi.vocab.OWL2Datatype.isBuiltIn(
+                org.semanticweb.owlapi.model.IRI.create(iri));
+    }
+
+    /**
+     * A datatype and a property cannot share an IRI.
+     *
+     * <p>Class and property is a pun DLe allows on purpose. Datatype and property is not one:
+     * OWL 2 DL keeps datatypes in a set disjoint from every property set, so the result is
+     * not a document with two readings but a document outside the profile.
+     *
+     * <p>Nothing checked it, and a datatype position records no finding of its own, so
+     * {@code xsd:string} was invisible to the conflict rule. {@code x \u2261 xsd:string}
+     * followed by {@code A \u2291 \u2203x.B} therefore produced
+     * {@code Declaration(ObjectProperty(xsd:string))} — reserved vocabulary as an object
+     * property, with the datatype definition gone and an invented label on it — at exit 0.
+     */
+    private void reportDatatypeUsedAsAProperty(String name) {
+        if (!isDefinitelyADatatype(name)) return;
+        for (Findings.Kind kind : Findings.Kind.values()) {
+            if (!kind.isProperty()) continue;
+            Findings.Finding found = findings.firmestOf(name, kind);
+            if (found == null || !found.certainty.isEvidence()) continue;
+            throw new DLESemanticException(
+                name + " is a datatype, and is used as " + kind.description() + " on line "
+                    + found.line + ". OWL keeps datatypes and properties in separate sets, so"
+                    + " one IRI cannot be both — unlike a class and a property, which may"
+                    + " share a name.",
+                found.line, 0);
+        }
+    }
+
     void propagatePropertyTypes() {
         // Before anything is propagated: a contradiction in the direct evidence has to be
         // reported from the evidence itself, because propagation resolves it silently.
@@ -893,6 +946,13 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
                 }
             }
         }
+        // And again, now that propagation has run. The first call sees only what the document
+        // says directly, which is what lets a diagnostic name a position; but a conflict can
+        // also be *reached* — a data property propagated up a chain onto a name an @ann had
+        // already made an annotation property. Those went unreported entirely, and the
+        // document went out of the OWL 2 DL profile at exit 0. Propagation records what it
+        // reached as PROPAGATED, which is evidence, so the same rule catches it.
+        reportKindConflicts();
     }
 
     static final String OWL_NS = "http://www.w3.org/2002/07/owl#";
