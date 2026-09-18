@@ -674,6 +674,13 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
         // X ⊑ owl:topObjectProperty — a declaration that X is a role, not a subsumption
         // to record.  Written by the storer for a name whose kind the reader could not
         // otherwise infer: a pun, or one that breaks the case convention.
+        // T \u2291 rdfs:Literal \u2014 a declaration that T is a datatype. Recorded in the pre-pass
+        // too, so that a use of T above this line resolves the same way as one below it.
+        if (lhs != null && rhs != null && RDFS_LITERAL_IRI.equals(resolve(rhs))) {
+            markDatatype(lhs, ctx.start.getLine());
+            return null;
+        }
+
         String topProperty = rhs == null ? null : topPropertyIri(rhs);
         if (lhs != null && topProperty != null) {
             explicitRole.add(lhs);
@@ -999,6 +1006,21 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
     }
 
     static final String OWL_NS = "http://www.w3.org/2002/07/owl#";
+    /**
+     * OWL 2's top data range: every datatype lies beneath it.
+     *
+     * <p>Which is what makes {@code T \u2291 rdfs:Literal} the datatype counterpart of
+     * {@code C \u2291 \u22a4} and {@code r \u2291 owl:topObjectProperty} \u2014 a tautology, and so a
+     * statement about a name's kind that costs nothing semantically.
+     *
+     * <p>Unlike the two property markers it is not also an axiom: OWL has no datatype
+     * subsumption, only {@code DatatypeDefinition}, which is an equivalence. So there is
+     * nothing for the reader to produce and nothing to filter out afterwards \u2014 the
+     * statement is consumed whole into a declaration, and a round trip through DLe cannot
+     * gain an axiom from it the way the property markers can.
+     */
+    static final String RDFS_LITERAL_IRI = "http://www.w3.org/2000/01/rdf-schema#Literal";
+
     private static final String TOP_OBJECT_PROPERTY_IRI = OWL_NS + "topObjectProperty";
     private static final String TOP_DATA_PROPERTY_IRI   = OWL_NS + "topDataProperty";
 
@@ -1323,6 +1345,15 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
     }
 
     private void collectDatatypeDefinitionsOnce(org.antlr.v4.runtime.tree.ParseTree tree) {
+        if (tree instanceof DLESyntaxParser.SubClassAxiomContext) {
+            DLESyntaxParser.SubClassAxiomContext sub =
+                (DLESyntaxParser.SubClassAxiomContext) tree;
+            String lhs = singleBareName(sub.classExpr(0));
+            String rhs = singleBareName(sub.classExpr(1));
+            if (lhs != null && rhs != null && RDFS_LITERAL_IRI.equals(resolve(rhs))) {
+                markDatatype(lhs, sub.start.getLine());
+            }
+        }
         if (tree instanceof DLESyntaxParser.EquivAxiomContext) {
             List<DLESyntaxParser.ClassExprContext> operands =
                 ((DLESyntaxParser.EquivAxiomContext) tree).classExpr();
@@ -1499,6 +1530,17 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
             if (best == null || f.certainty.compareTo(best.certainty) > 0) best = f;
         }
         return best == null ? null : best.kind;
+    }
+
+    /**
+     * Records that the document has said outright that this name is a datatype.
+     *
+     * <p>STATED, the firmest tier: a statement beats every position and anything propagation
+     * can reach, which is the whole point of writing one.
+     */
+    private void markDatatype(String name, int line) {
+        datatypeNames.add(name);
+        findings.record(name, Findings.Kind.DATATYPE, Findings.Certainty.STATED, line);
     }
 
     /** Whether a name, as written in the source, denotes a datatype in this document. */

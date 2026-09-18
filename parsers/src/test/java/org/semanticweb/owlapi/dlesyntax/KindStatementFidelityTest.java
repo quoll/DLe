@@ -297,14 +297,62 @@ class KindStatementFidelityTest {
         // here, and it is now a datatype alias — a legitimate DatatypeDefinition, which is a
         // better answer than a refusal. A datatype on the right of `⊑` is still nothing but
         // a class position, so that is the probe.
+        // rdfs:Literal is deliberately not in this list. It is the top data range, and
+        // `T ⊑ rdfs:Literal` is now the datatype counterpart of `C ⊑ ⊤` and
+        // `r ⊑ owl:topObjectProperty` — a tautology that states a kind — so it is the one
+        // datatype that does belong on the right of a `⊑`. See
+        // {@link #theDatatypeMarkerStatesAKindAndProducesNoAxiom}.
         for (String datatype : new String[] {
                 "xsd:string", "owl:real", "owl:rational",
-                "rdf:langString", "rdf:dirLangString", "rdfs:Literal"}) {
+                "rdf:langString", "rdf:dirLangString"}) {
             Throwable t = assertThrows(Throwable.class,
                 () -> parse("@prefix : <http://example.org/t#>\nA ⊑ " + datatype + "\n"),
                 () -> datatype + " is a datatype and cannot be a class expression");
             assertTrue(String.valueOf(t.getMessage()).contains("datatype " + datatype),
                 () -> "the diagnostic must name it: " + t.getMessage());
+        }
+    }
+
+    /**
+     * {@code T ⊑ rdfs:Literal} says T is a datatype, and says nothing else.
+     *
+     * <p>The reader knows a built-in datatype by its namespace and one the document defines by
+     * its definition. A name that is only declared is neither, so {@code ⊤ ⊑ ∀d.T} came back
+     * as an object property range with T a class — the kind lost in both directions at once,
+     * silently, and the whole family of shapes with it.
+     *
+     * <p>Every datatype lies beneath OWL 2's top data range, so the statement asserts nothing
+     * that was not already true. Alone among the three kind markers it is not also an axiom:
+     * OWL has no datatype subsumption, only {@code DatatypeDefinition}, which is an
+     * equivalence and would say something far stronger. So it is consumed whole into a
+     * declaration, and — unlike the property markers, which parse as real sub-property axioms
+     * and are removed afterwards — there is nothing left to filter out. A round trip cannot
+     * gain an axiom from it, which is the cost #32 accepted for the other two.
+     */
+    @Test
+    void theDatatypeMarkerStatesAKindAndProducesNoAxiom() throws Exception {
+        OWLOntology o = parse("@prefix : <http://example.org/t#>\n"
+            + "T ⊑ rdfs:Literal\n");
+        assertTrue(o.containsDatatypeInSignature(IRI.create("http://example.org/t#T")),
+            () -> "the statement must declare T a datatype: " + o.getLogicalAxioms());
+        assertFalse(o.containsClassInSignature(IRI.create("http://example.org/t#T")),
+            () -> "and not a class as well: " + o.getLogicalAxioms());
+        assertTrue(o.getLogicalAxioms().isEmpty(),
+            () -> "the marker is not an axiom, so none should be produced: "
+                + o.getLogicalAxioms());
+    }
+
+    /** And the answer does not depend on where in the file the statement sits. */
+    @Test
+    void theDatatypeMarkerWorksFromEitherSideOfItsUse() throws Exception {
+        String marker = "T ⊑ rdfs:Literal\n";
+        String use = "⊤ ⊑ ∀d.T\n";
+        for (String document : new String[] {marker + use, use + marker}) {
+            OWLOntology o = parse("@prefix : <http://example.org/t#>\n" + document);
+            assertEquals(1, o.getAxioms(AxiomType.DATA_PROPERTY_RANGE).size(),
+                () -> "d is a data property either way:\n" + document + o.getLogicalAxioms());
+            assertEquals(0, o.getAxioms(AxiomType.OBJECT_PROPERTY_RANGE).size(),
+                () -> "and never an object property:\n" + document + o.getLogicalAxioms());
         }
     }
 

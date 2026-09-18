@@ -437,7 +437,8 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
         OWLRDFVocabulary.OWL_BOTTOM_OBJECT_PROPERTY.getIRI(),
         OWLRDFVocabulary.OWL_BOTTOM_DATA_PROPERTY.getIRI(),
         OWLRDFVocabulary.OWL_THING.getIRI(),
-        OWLRDFVocabulary.OWL_NOTHING.getIRI());
+        OWLRDFVocabulary.OWL_NOTHING.getIRI(),
+        IRI.create(EntityTypeScanner.RDFS_LITERAL_IRI));
 
     /**
      * Whether every statement a punned name needs can be spelled in this document.
@@ -468,6 +469,30 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
      * inexpressible, and writing something that resolves elsewhere would be worse than
      * writing nothing.
      */
+    /**
+     * Whether this datatype's kind has to be stated for the reader to recover it.
+     *
+     * <p>A built-in is known by its namespace and needs nothing. A datatype the document
+     * defines is settled by the definition itself. What is left is a name that is only
+     * declared, which nothing in the text distinguishes from a class.
+     */
+    private boolean datatypeKindNeedsStating(IRI iri) {
+        if (currentOntology == null) return false;
+        if (org.semanticweb.owlapi.vocab.OWL2Datatype.isBuiltIn(iri)) return false;
+        OWLDataFactory df = currentOntology.getOWLOntologyManager().getOWLDataFactory();
+        return currentOntology.datatypeDefinitions(df.getOWLDatatype(iri)).count() == 0;
+    }
+
+    /** The name to write for the top data range, or null if this document cannot spell it. */
+    @Nullable
+    private String topDataRangeName() {
+        String rendered = renderer.shortForm(
+            IRI.create(EntityTypeScanner.RDFS_LITERAL_IRI));
+        // As with the top properties: a bare name resolves into the default namespace on the
+        // way back in, so an unprefixed rendering is no use as a marker.
+        return rendered != null && rendered.indexOf(':') > 0 ? rendered : null;
+    }
+
     private String topPropertyName(boolean data) {
         IRI iri = data ? OWLRDFVocabulary.OWL_TOP_DATA_PROPERTY.getIRI()
                        : OWLRDFVocabulary.OWL_TOP_OBJECT_PROPERTY.getIRI();
@@ -1048,7 +1073,32 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
             .filter(text -> text != null && !text.trim().isEmpty())
             .distinct()
             .sorted()
-            .collect(Collectors.toList());
+            .collect(Collectors.toCollection(java.util.ArrayList::new));
+        // Datatype kind statements go here rather than in an entity block, because the
+        // inherited renderer's entity loop has no datatype pass at all — which is why a
+        // datatype that is only declared had nothing written about it anywhere.
+        //
+        // The reader knows a built-in datatype by its namespace, and one the document
+        // *defines* by its definition. A name that is only declared is neither, so
+        // `⊤ ⊑ ∀d.T` came back as an object property range with T a class — the kind lost in
+        // both directions at once, silently.
+        //
+        // `T ⊑ rdfs:Literal` is the datatype counterpart of `C ⊑ ⊤` and
+        // `r ⊑ owl:topObjectProperty`: every datatype lies beneath OWL 2's top data range, so
+        // it asserts nothing that was not already true. Alone among the three it is not also
+        // an axiom — OWL has no datatype subsumption, only DatatypeDefinition, which is an
+        // equivalence and would say something far stronger — so the reader consumes it into a
+        // declaration and there is nothing to filter out afterwards.
+        String literal = topDataRangeName();
+        if (literal != null) {
+            o.datatypesInSignature()
+                .filter(dt -> datatypeKindNeedsStating(dt.getIRI()))
+                .map(dt -> shortFormOrNull(dt.getIRI()))
+                .filter(java.util.Objects::nonNull)
+                .map(dtName -> dtName + " ⊑ " + literal)
+                .sorted()
+                .forEach(lines::add);
+        }
         if (lines.isEmpty()) return;
         writer.println();
         lines.forEach(writer::println);

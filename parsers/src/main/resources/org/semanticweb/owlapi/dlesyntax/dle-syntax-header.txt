@@ -40,8 +40,9 @@
 # Kind statements:
 # - `X ⊑ ⊤` states that X is a concept. `X ⊑ owl:topObjectProperty` states that X is an
 #   object property, and `X ⊑ owl:topDataProperty` that it is a data property — a name
-#   cannot be both, and stating both is an error. All three are ordinary subsumptions that
-#   are always true, so they add no information beyond the kind itself.
+#   cannot be both, and stating both is an error. `X ⊑ rdfs:Literal` states that X is a
+#   datatype. All four are ordinary subsumptions that are always true, so they add no
+#   information beyond the kind itself.
 # - They are written only where the text would otherwise be ambiguous: a name the reader's
 #   conventions cannot classify — one beginning with a digit or a capital — used where only
 #   a subsumption pair says it is a role; a data property, since the convention can only

@@ -779,4 +779,58 @@ class UnreadableOutputTest {
             () -> "the document must settle, not alternate:\nsecond:\n" + second
                 + "\nthird:\n" + third);
     }
+
+    /**
+     * A datatype that is only declared keeps its kind, and everything ranged on it with it.
+     *
+     * <p>The writer decides from the axiom type and the reader from whether the filler looks
+     * like a data range, which for a name the document neither defines nor takes from a
+     * built-in namespace it does not. So {@code DataPropertyRange(:d :T)} was written
+     * {@code ⊤ ⊑ ∀d.T} and read back as an {@code ObjectPropertyRange} with {@code T} a
+     * class: both kinds lost at once, silently, and the same for every shape that can hold a
+     * data range. Inside a connective it was worse — the reader refused its own output.
+     *
+     * <p>Fixed by writing the kind: {@code T ⊑ rdfs:Literal}, the datatype counterpart of
+     * {@code C ⊑ ⊤} and {@code r ⊑ owl:topObjectProperty}.
+     */
+    @Test
+    void aDeclarationOnlyDatatypeKeepsItsKind() throws Exception {
+        OWLDatatype t = df.getOWLDatatype(IRI.create(NS + "T"));
+        OWLDataProperty d = df.getOWLDataProperty(IRI.create(NS + "d"));
+        OWLClass a = df.getOWLClass(IRI.create(NS + "A"));
+        OWLDatatype string = df.getOWLDatatype(OWL2Datatype.XSD_STRING.getIRI());
+        OWLAxiom[] axioms = {
+            df.getOWLDataPropertyRangeAxiom(d, t),
+            df.getOWLSubClassOfAxiom(a, df.getOWLDataSomeValuesFrom(d, t)),
+            df.getOWLSubClassOfAxiom(a, df.getOWLDataAllValuesFrom(d, t)),
+            df.getOWLSubClassOfAxiom(a, df.getOWLDataMinCardinality(2, d, t)),
+            // The loud one: inside a connective the reader refused the writer's own output.
+            df.getOWLSubClassOfAxiom(a,
+                df.getOWLDataSomeValuesFrom(d, df.getOWLDataUnionOf(t, string))),
+        };
+        for (OWLAxiom axiom : axioms) {
+            OWLOntology o = ontology(axiom);
+            manager.addAxiom(o, df.getOWLDeclarationAxiom(t));
+            String written = write(o);
+            OWLOntology back = read(written);
+            assertTrue(back.containsAxiom(axiom),
+                () -> axiom + "\ndid not survive. written:\n" + written
+                    + "\nback: " + back.getLogicalAxioms());
+            assertTrue(back.containsDatatypeInSignature(t.getIRI()),
+                () -> "T must still be a datatype:\n" + written);
+            assertFalse(back.containsClassInSignature(t.getIRI()),
+                () -> "and never a class:\n" + written);
+        }
+    }
+
+    /** A datatype the document defines needs no marker: its definition already says so. */
+    @Test
+    void aDefinedDatatypeNeedsNoMarker() throws Exception {
+        OWLDatatype t = df.getOWLDatatype(IRI.create(NS + "T"));
+        OWLOntology o = ontology(df.getOWLDatatypeDefinitionAxiom(t,
+            df.getOWLDatatype(OWL2Datatype.XSD_STRING.getIRI())));
+        String written = write(o);
+        assertFalse(statementsOnly(written).contains("rdfs:Literal"),
+            () -> "the definition is enough on its own:\n" + statementsOnly(written));
+    }
 }

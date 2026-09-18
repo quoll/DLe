@@ -2042,6 +2042,26 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
         // earlier revision did — destroys a `SubClassOf(X, owl:Thing)` axiom the author
         // wrote, and makes writing non-idempotent, because the writer then re-adds the
         // line from a different source on the next pass.
+        // `T ⊑ rdfs:Literal` is the datatype counterpart of the two property markers, and
+        // the only one of the three with nothing to produce: OWL has no datatype subsumption,
+        // just DatatypeDefinition, which is an equivalence and would say something far
+        // stronger. So the statement becomes the declaration it means, and — unlike the
+        // property markers, which parse as real sub-property axioms and are removed
+        // afterwards — there is nothing left to filter out. A round trip cannot gain an axiom
+        // from it.
+        String rhsName = loneName(ctx.classExpr(1));
+        if (rhsName != null) {
+            IRI rhsIri = expandNameText(rhsName);
+            if (rhsIri != null
+                    && EntityTypeScanner.RDFS_LITERAL_IRI.equals(rhsIri.toString())) {
+                IRI iri = expandNameText(lhs);
+                if (iri == null) return false;
+                axioms.add(df.getOWLDeclarationAxiom(df.getOWLDatatype(iri)));
+                statedKindIRIs.add(iri);
+                return true;
+            }
+        }
+
         if (Parens.atomOf(ctx.classExpr(1)) instanceof DLESyntaxParser.TopAtomContext
                 && explicitRoleNames.contains(lhs)) {
             IRI iri = expandNameText(lhs);
