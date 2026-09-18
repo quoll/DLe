@@ -117,6 +117,12 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
      * <p>Recorded for both spellings that take one, so the ordinary literal and an annotation
      * value cannot disagree.
      */
+    /** The namespace a prefix declaration names, written as an IRI or as a quoted string. */
+    static String namespaceOf(DLESyntaxParser.PrefixDeclContext ctx) {
+        String text = ctx.IRI() != null ? ctx.IRI().getText() : ctx.STRING().getText();
+        return text.substring(1, text.length() - 1);
+    }
+
     @Override
     public Void visitStringLiteral(DLESyntaxParser.StringLiteralContext ctx) {
         recordDatatypePosition(ctx.name());
@@ -140,9 +146,7 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
     @Override
     public Void visitPrefixDecl(DLESyntaxParser.PrefixDeclContext ctx) {
         String label = ctx.PNAME_NS().getText();
-        String iri   = ctx.IRI().getText();
-        prefixes.put(label.endsWith(":") ? label : label + ":",
-                     iri.substring(1, iri.length() - 1));
+        prefixes.put(label.endsWith(":") ? label : label + ":", namespaceOf(ctx));
         return null;
     }
 

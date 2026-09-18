@@ -202,9 +202,8 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
         // PNAME_NS token text includes the trailing colon, e.g. "xsd:" or ":"
         String prefixLabel = ctx.PNAME_NS().getText();        // strip the trailing colon to get the namespace identifier
         String prefixName  = prefixLabel.endsWith(":") ? prefixLabel : prefixLabel + ":";
-        // IRI token includes the angle brackets — strip them
-        String iri = ctx.IRI().getText();
-        iri = iri.substring(1, iri.length() - 1);
+        // Either spelling: the token carries its own delimiters, angle brackets or quotes.
+        String iri = EntityTypeScanner.namespaceOf(ctx);
         warnOnDuplicateNamespace(prefixName, iri);
         declaredPrefixes.add(prefixName);
         prefixes.put(prefixName, iri);
@@ -222,8 +221,8 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
                     + ontologyIRI + ">, and an ontology has one identity",
                 ctx.start.getLine(), ctx.start.getCharPositionInLine());
         }
-        requireExplicitIri(ctx.iriRef(), "@ontology", ctx);
-        ontologyIRI = requireAbsolute(expandIriRef(ctx.iriRef()), "@ontology", ctx);
+        ontologyIRI = requireAbsolute(identityIri(ctx.iriRef(), ctx.STRING(), "@ontology", ctx),
+            "@ontology", ctx);
         return null;
     }
 
@@ -235,8 +234,8 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
                     + versionIRI + ">",
                 ctx.start.getLine(), ctx.start.getCharPositionInLine());
         }
-        requireExplicitIri(ctx.iriRef(), "@version", ctx);
-        versionIRI = requireAbsolute(expandIriRef(ctx.iriRef()), "@version", ctx);
+        versionIRI = requireAbsolute(identityIri(ctx.iriRef(), ctx.STRING(), "@version", ctx),
+            "@version", ctx);
         versionLine = ctx.start.getLine();
         versionColumn = ctx.start.getCharPositionInLine();
         return null;
@@ -256,6 +255,36 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
      * <p>Only the identity declarations are restricted. {@code @import} keeps the name form,
      * where resolving through a prefix is a convenience and names no local resource.
      */
+    /**
+     * The IRI an identity directive names, written either way.
+     *
+     * <p>`@import` has always taken a quoted string as well as an angle-bracket IRI, so an
+     * author who has written one writes the other — and a document naming itself
+     * {@code @ontology "https://…"} was refused with {@code extraneous input} and a list of
+     * the tokens the parser wanted instead, which explains nothing about what was wrong.
+     *
+     * <p>Unlike an import, there is no relative reading to fall back on: an identity must be
+     * an absolute IRI, and {@link #requireAbsolute} still enforces that on either form. A
+     * language tag is refused for the same reason it is on an import — this names a document,
+     * not text.
+     */
+    private IRI identityIri(@Nullable DLESyntaxParser.IriRefContext ref,
+                            @Nullable org.antlr.v4.runtime.tree.TerminalNode quoted,
+                            String keyword, ParserRuleContext ctx) {
+        if (quoted != null) {
+            String text = quoted.getText();
+            if (languageTag(text) != null) {
+                throw new DLESemanticException(
+                    keyword + " cannot carry a language tag: " + text
+                        + ". It names a document, not text.",
+                    ctx.start.getLine(), ctx.start.getCharPositionInLine());
+            }
+            return IRI.create(unquote(text));
+        }
+        requireExplicitIri(ref, keyword, ctx);
+        return expandIriRef(ref);
+    }
+
     private void requireExplicitIri(DLESyntaxParser.IriRefContext ref, String keyword,
                                     org.antlr.v4.runtime.ParserRuleContext ctx) {
         if (ref.IRI() == null) {

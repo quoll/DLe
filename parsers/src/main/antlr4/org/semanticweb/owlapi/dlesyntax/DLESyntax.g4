@@ -7,9 +7,16 @@ ontology
     ;
 
 // @prefix xsd: <http://www.w3.org/2001/XMLSchema#>
-prefixDecl   : AT_PREFIX   PNAME_NS IRI ;
-ontologyDecl : AT_ONTOLOGY iriRef       ;
-versionDecl  : AT_VERSION  iriRef       ;
+// The quoted form here too, for the same reason as the three directives below: a document
+// writing `@import "…"` writes `@prefix p: "…"` as well, and did. A namespace is an absolute
+// IRI in either spelling, so nothing about the meaning changes.
+prefixDecl   : AT_PREFIX   PNAME_NS (IRI | STRING) ;
+// The quoted form is accepted here as well as for `@import`, because an author who has
+// written `@import "…"` will write `@ontology "…"` — and did: a document naming itself that
+// way was refused with `extraneous input '"https://…"' expecting …`, which explains nothing.
+// The identity still has to be an absolute IRI; that is checked after parsing, not here.
+ontologyDecl : AT_ONTOLOGY (iriRef | STRING) ;
+versionDecl  : AT_VERSION  (iriRef | STRING) ;
 // An import may name its target as an IRI, a prefixed name, or a double-quoted string.
 // The string form exists because a relative path is the natural way to refer to a file
 // beside this one, and it cannot be written as an IRI: `file:x.dle` is opaque under
