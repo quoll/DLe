@@ -336,7 +336,11 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
         dataPropertyNames.add(property);
         objectPropertyNames.remove(property);
         recordKindEvidence(property, true, ctx.start.getLine());
-        return null;
+        // Descend, so that a `^^` datatype in the value is seen. Returning here meant the
+        // literal's own children were never visited, and `(a,"x"^^A):d` recorded nothing
+        // about A at all — so a name used as a datatype here and as a class elsewhere was
+        // invisible to the conflict rule.
+        return visitChildren(ctx);
     }
 
     @Override
@@ -346,7 +350,11 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
         dataPropertyNames.add(property);
         objectPropertyNames.remove(property);
         recordKindEvidence(property, true, ctx.start.getLine());
-        return null;
+        // Descend, so that a `^^` datatype in the value is seen. Returning here meant the
+        // literal's own children were never visited, and `(a,"x"^^A):d` recorded nothing
+        // about A at all — so a name used as a datatype here and as a class elsewhere was
+        // invisible to the conflict rule.
+        return visitChildren(ctx);
     }
 
     // Identity and distinctness name individuals only. An individual is neither a class
@@ -453,6 +461,7 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
         candidates.addAll(dataPropertyNames);
         for (String name : candidates) {
             reportDatatypeUsedAsAProperty(name);
+            reportDatatypeUsedAsAClass(name);
         }
         for (String name : findings.names()) {
             // Per finding, not per name. An object finding that came from a predicate filler
@@ -635,13 +644,18 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
         }
 
         // A ≡ (complex) → A is a class. An inverse atom is a property expression, not a
-        // complex class, so a name beside one is excluded.
+        // complex class, so a name beside one is excluded — and so is a data range, which
+        // makes the statement a datatype definition. Without that exclusion every
+        // `MyType ≡ [xsd:string ⊓ [minLength 3]]` marked MyType a class as well as a
+        // datatype, so the two findings were inseparable and the datatype/class overlap
+        // could not be told from a definition.
         if (!allBare) {
             for (int i = 0; i < n; i++) {
                 String name = singleBareName(operands.get(i));
                 if (name == null) continue;
                 boolean besideAComplexClass = false;
                 for (int j = 0; j < n; j++) {
+                    if (j != i && isDataClassExpr(operands.get(j))) continue;
                     if (j != i && singleBareName(operands.get(j)) == null
                             && singleInverseAtom(operands.get(j)) == null) {
                         besideAComplexClass = true;
@@ -795,6 +809,30 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
         if (byLine == null) return false;
         String filler = byLine.get(finding.line);
         return filler != null && predicateNames.contains(filler);
+    }
+
+    /**
+     * A datatype and a class cannot share an IRI either.
+     *
+     * <p>OWL 2 DL keeps class IRIs and datatype IRIs disjoint, so this is the same kind of
+     * violation as datatype-and-property, not the pun DLe allows. It is reachable through a
+     * datatype position: {@code (a,"x"^^A):d} makes {@code A} a datatype and {@code A ⊑ B}
+     * makes it a class, and the grammar's {@code ^^ name} accepts any name at all.
+     *
+     * <p>This could not be checked until a datatype definition stopped marking its own name
+     * as a class: {@code MyType ≡ [xsd:string ⊓ [minLength 3]]} recorded both findings, so
+     * every definition looked like this violation.
+     */
+    private void reportDatatypeUsedAsAClass(String name) {
+        Findings.Finding datatype = findings.firmestOf(name, Findings.Kind.DATATYPE);
+        Findings.Finding cls = findings.firmestOf(name, Findings.Kind.CLASS);
+        if (datatype == null || !datatype.certainty.isEvidence()) return;
+        if (cls == null || !cls.certainty.isEvidence()) return;
+        throw new DLESemanticException(
+            name + " is used as a datatype on line " + datatype.line + " and as a class on"
+                + " line " + cls.line + ". OWL keeps datatypes and classes in separate sets,"
+                + " so one IRI cannot be both.",
+            Math.max(datatype.line, cls.line), 0);
     }
 
     /**

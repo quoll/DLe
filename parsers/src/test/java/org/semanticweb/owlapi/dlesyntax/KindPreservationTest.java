@@ -1006,4 +1006,59 @@ class KindPreservationTest {
         }
         return DF.getOWLSubClassOfAxiom(a, DF.getOWLThing());
     }
+
+    /**
+     * A datatype and a class cannot share an IRI, and `^^` is a datatype position.
+     *
+     * <p>The grammar's {@code ^^ name} accepts any name, and nothing recorded what the
+     * position meant — so {@code (a,"x"^^A):d} beside {@code A ⊑ B} declared {@code A} as a
+     * class and used it as a datatype, which OWL 2 DL forbids, at exit 0.
+     *
+     * <p>Two things had to change before this could be checked. The scanner's data-assertion
+     * visit returned without descending, so the literal's own {@code ^^} name was never seen
+     * at all. And a datatype definition marked its own name as a class —
+     * {@code MyType ≡ [xsd:string ⊓ [minLength 3]]} recorded both findings — so every
+     * definition looked exactly like this violation.
+     */
+    @Test
+    void aDatatypeIsNotAlsoAClass() {
+        // Either order: the `^^` position and the class use may be written in either.
+        for (String body : new String[] {
+                "A \u2291 B\n(a,\"x\"^^A):d\n",
+                "(a,\"x\"^^A):d\nA \u2291 B\n"}) {
+            String document = "@prefix : <" + NS + ">\n" + body;
+            DLESemanticException e = assertThrows(DLESemanticException.class,
+                () -> read(document), () -> "a datatype is not a class:\n" + document);
+            assertTrue(e.getMessage().contains("datatype"),
+                () -> "the message must say so: " + e.getMessage());
+        }
+        // These two are reported by the kind rule itself rather than by a position check, so
+        // they assert its wording — naming both lines is what it adds over the nearer
+        // reporters, and without that the rule can be deleted with the suite still green.
+        for (String body : new String[] {
+                "Code \u2261 xsd:string\na : Code\n",
+                "Code \u2261 xsd:string\nCode \u2291 \u22a4\n"}) {
+            String document = "@prefix : <" + NS + ">\n" + body;
+            DLESemanticException e = assertThrows(DLESemanticException.class,
+                () -> read(document), () -> "a datatype is not a class:\n" + document);
+            assertTrue(e.getMessage().contains("separate sets"),
+                () -> "the kind rule must be what reports this: " + e.getMessage());
+            assertTrue(e.getMessage().contains("line 2") && e.getMessage().contains("line 3"),
+                () -> "and it must name both lines: " + e.getMessage());
+        }
+    }
+
+    /** A datatype definition, and a datatype used as a data range, are both still fine. */
+    @Test
+    void aDatatypeDefinitionIsNotMistakenForThatClash() throws Exception {
+        assertDoesNotThrow(() -> read("@prefix : <" + NS + ">\n"
+            + "MyType \u2261 [xsd:string \u2293 [minLength 3]]\n\u22a4 \u2291 \u2200d.MyType\n"));
+        OWLOntology o = read("@prefix : <" + NS + ">\n"
+            + "Code \u2261 xsd:string\nA \u2291 \u2203r.Code\n");
+        assertTrue(o.containsDataPropertyInSignature(IRI.create(NS + "r")),
+            () -> "a datatype filler makes the property a data property: "
+                + o.getLogicalAxioms());
+        assertTrue(o.containsDatatypeInSignature(IRI.create(NS + "Code")),
+            () -> "and Code stays a datatype: " + o.getLogicalAxioms());
+    }
 }
