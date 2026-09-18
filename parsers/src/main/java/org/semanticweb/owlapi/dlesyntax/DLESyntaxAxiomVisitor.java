@@ -433,7 +433,7 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
 
     @Override
     public OWLObject visitAnnAnnotation(DLESyntaxParser.AnnAnnotationContext ctx) {
-        IRI subject  = expandName(ctx.name(0));
+        OWLAnnotationSubject subject = annotationSubject(ctx.name(0));
         IRI propIRI  = expandName(ctx.name(1));
         OWLAnnotationValue value = (OWLAnnotationValue) visit(ctx.annotationValue());
         axioms.add(df.getOWLAnnotationAssertionAxiom(
@@ -448,7 +448,27 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
 
     @Override
     public OWLObject visitIriAnnotationValue(DLESyntaxParser.IriAnnotationValueContext ctx) {
+        // A blank node is a legal annotation value as well as a legal subject.
+        if (isBlankNodeName(ctx.name().getText())) {
+            return df.getOWLAnonymousIndividual(ctx.name().getText());
+        }
         return expandName(ctx.name());
+    }
+
+    /**
+     * An annotation's subject: an IRI, or a blank node.
+     *
+     * <p>OWL allows either, and the writer emits either — but this read the subject as an IRI
+     * unconditionally, so `@ann _:genid2147483648 note "s"` came back as "unknown prefix
+     * '_:'". A document with a blank node anywhere in an annotation was written and then
+     * refused, which is the one place `_:` was still not understood after the logical
+     * positions were fixed.
+     */
+    private OWLAnnotationSubject annotationSubject(DLESyntaxParser.NameContext ctx) {
+        if (isBlankNodeName(ctx.getText())) {
+            return df.getOWLAnonymousIndividual(ctx.getText());
+        }
+        return expandName(ctx);
     }
 
     // ── Axioms ───────────────────────────────────────────────────────────────

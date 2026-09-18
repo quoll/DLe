@@ -147,4 +147,43 @@ class AnonymousIndividualTest {
         roundTrip(ontology(df.getOWLClassAssertionAxiom(a,
             df.getOWLNamedIndividual(IRI.create(NS + "_foo")))));
     }
+
+    /**
+     * A blank node works in an annotation's subject and in its value.
+     *
+     * <p>The logical positions were fixed when `_:` stopped being resolved as a prefix, but
+     * the annotation subject was still read as an IRI unconditionally — so
+     * {@code @ann _:genid… note "s"} came back as "unknown prefix '_:'". The writer emits it,
+     * so any ontology with a blank node in an annotation produced a document it could not
+     * read back.
+     *
+     * <p>Asserted on the shape rather than on equality: the label is regenerated on load, as
+     * it is in every syntax, so {@code _:x15} comes back under a different name. What has to
+     * survive is that the subject, or the value, is anonymous at all.
+     */
+    @Test
+    void aBlankNodeWorksInAnAnnotation() throws Exception {
+        OWLAnnotationProperty ap = df.getOWLAnnotationProperty(IRI.create(NS + "note"));
+        OWLAnonymousIndividual node = df.getOWLAnonymousIndividual("_:x15");
+
+        OWLOntology subjectSide = read(write(ontology(
+            df.getOWLAnnotationAssertionAxiom(ap, node, df.getOWLLiteral("s")))));
+        assertTrue(subjectSide.axioms(AxiomType.ANNOTATION_ASSERTION)
+                .anyMatch(ax -> ap.equals(ax.getProperty())
+                    && ax.getSubject() instanceof OWLAnonymousIndividual
+                    && df.getOWLLiteral("s").equals(ax.getValue())),
+            () -> "an anonymous subject must survive: "
+                + subjectSide.axioms(AxiomType.ANNOTATION_ASSERTION)
+                    .map(Object::toString).collect(java.util.stream.Collectors.toList()));
+
+        OWLOntology valueSide = read(write(ontology(
+            df.getOWLAnnotationAssertionAxiom(ap, IRI.create(NS + "C"), node))));
+        assertTrue(valueSide.axioms(AxiomType.ANNOTATION_ASSERTION)
+                .anyMatch(ax -> ap.equals(ax.getProperty())
+                    && IRI.create(NS + "C").equals(ax.getSubject())
+                    && ax.getValue() instanceof OWLAnonymousIndividual),
+            () -> "and so must an anonymous value: "
+                + valueSide.axioms(AxiomType.ANNOTATION_ASSERTION)
+                    .map(Object::toString).collect(java.util.stream.Collectors.toList()));
+    }
 }
