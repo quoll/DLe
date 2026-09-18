@@ -109,9 +109,12 @@ class AnnotationLiteralTest {
         manager.addAxiom(o, df.getOWLAnnotationAssertionAxiom(
             df.getOWLAnnotationProperty(OWLRDFVocabulary.RDFS_LABEL.getIRI()),
             IRI.create(NS + "A"), df.getOWLLiteral("plain")));
-        String written = write(o);
-        assertFalse(written.contains("^^"),
-            () -> "a plain string needs no datatype written:\n" + written);
+        // The statements, not the document. The generated header documents `^^` itself, so
+        // this assertion began failing the moment the header gained that section — which is
+        // the hazard every `contains` check against a whole DLe document carries.
+        String body = statementsOnly(write(o));
+        assertFalse(body.contains("^^"),
+            () -> "a plain string needs no datatype written:\n" + body);
     }
 
     /** A language tag still works, and is still exclusive of a datatype. */

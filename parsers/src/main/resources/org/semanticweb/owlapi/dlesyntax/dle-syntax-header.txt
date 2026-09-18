@@ -15,10 +15,13 @@
 # @import <IRI>  — imports another ontology
 # @import "path"  — imports a file, resolved relative to this document
 # @ontology <IRI>  — declares the ontology IRI. A document without one is anonymous.
-#   Must be an IRI in angle brackets, not a name: a name would be expanded through the
-#   prefix map, making the document's identity depend on its own @prefix lines
+#   Must be an IRI, not a name: a name would be expanded through the prefix map, making the
+#   document's identity depend on its own @prefix lines
 # @version <IRI>  — declares the version IRI. Requires @ontology, since a version
 #   identifies a version of a named ontology. Both IRIs must be absolute
+# All four of these take the IRI in angle brackets or in double quotes — <http://x/> and
+#   "http://x/" are the same namespace, the same import and the same identity. Only an
+#   @import may be relative; an identity and a namespace must be absolute
 #
 # Naming conventions:
 # - An entity with no @label is given one equal to its local name. A name whose local
@@ -34,8 +37,9 @@
 # - Concept/class identifiers conventionally begin with an upper-case letter
 # - Role/reference/field identifiers conventionally begin with a lower-case letter
 # - The convention is read from the local part, so ex:hasPart names a role as plainly as
-#   hasPart does. Datatypes are the exception: everything in xsd:, and rdf:langString,
-#   rdf:dirLangString, owl:rational and owl:real, are datatypes despite the lower case
+#   hasPart does. Datatypes are the exception: everything in xsd:, and rdf:PlainLiteral,
+#   rdf:langString, rdf:dirLangString, rdf:HTML, rdf:XMLLiteral, rdf:JSON, rdfs:Literal,
+#   owl:rational and owl:real, are datatypes despite the lower case
 #
 # Kind statements:
 # - `X ⊑ ⊤` states that X is a concept. `X ⊑ owl:topObjectProperty` states that X is an
@@ -57,6 +61,18 @@
 #   import defines as a concept, used here only in a subsumption pair, is read by the rules
 #   above and can come out a role. State its kind in this document to settle it.
 #
+# Typed literals:
+# - A value may carry its datatype, as Turtle spells it: "2024-01-01"^^xsd:date
+# - The datatype must follow the closing quote with nothing between them
+# - xsd:string is what a bare string already means, so it is never written; it is accepted
+#   when spelled out
+# - A datatype and a language tag are mutually exclusive: a tagged string is
+#   rdf:langString by definition, so a datatype beside the tag either repeats or contradicts
+#   it
+# - A number or a boolean needs no quotes — 7, 1.5, true — but only where the spelling
+#   rebuilds the value exactly: 007 keeps its quotes and its datatype, because bare it would
+#   come back as 7
+#
 # Language tags:
 # - A string may carry one, as Turtle spells it: @label A "Neoplasm"@en
 # - The tag must follow the closing quote with nothing between them. A tag on its own,
@@ -65,6 +81,22 @@
 #   happens to spell an annotation keyword, since @doc and @ann are real language codes
 # - Not allowed where it could not mean anything: on a facet value, which compares against
 #   a typed value, or on an @import reference, which names a document rather than text
+#
+# Enumerations:
+# - {a, b, c} is the concept of exactly those individuals, and {"x", "y"} the data range of
+#   exactly those values
+#
+# Chains:
+# - ≡ takes any number of operands: A ≡ B ≡ C says all three are equivalent, and the same
+#   holds for roles and for data properties
+#
+# Inverses:
+# - r⁻ is the inverse of r, and is accepted wherever OWL allows a role expression: in a
+#   restriction, on either side of ⊑ or ≡, in a chain, and as the argument of a keyword —
+#   Trans(r⁻), Func(r⁻), Disj(r, r⁻), key(r⁻)
+# - A doubled ⁻ cancels: r⁻⁻ is r
+# - An assertion has no room for the marker, so (a,b):r⁻ is written the other way round as
+#   (b,a):r, which says the same thing
 #
 # Assertions about individuals:
 # - a : C          a is a C. C may be any concept expression, e.g. a : Cat ⊓ Pet
@@ -81,6 +113,8 @@
 #   are pairwise distinct
 # - A digit-initial property is spelled with its own colon, so the statement carries two:
 #   (a,b)::116676008. A digit-initial class likewise needs the space: a : :116676008
+# - An individual may be anonymous, written as a blank node: _:b1 : C, (_:b1,b):r. The
+#   label identifies it within one document and carries no meaning beyond that
 #
 # Database convention:
 # - Resources only appear explicitly in the database if they have an @db annotation

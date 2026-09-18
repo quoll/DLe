@@ -1004,9 +1004,39 @@ public class DLESyntaxObjectRenderer extends DLSyntaxObjectRenderer {
      */
     private static boolean reconstructsFromSpellingAlone(OWLLiteral literal) {
         String datatype = literal.getDatatype().getIRI().toString();
-        return literal.getLiteral().contains(".")
+        String lexical = literal.getLiteral();
+        boolean rightDatatype = lexical.contains(".")
             ? "http://www.w3.org/2001/XMLSchema#double".equals(datatype)
             : "http://www.w3.org/2001/XMLSchema#integer".equals(datatype);
+        // And the spelling has to come back as itself. A bare `007` is read as the integer
+        // seven and written `7` on the next pass, so the lexical form the document had was
+        // lost — silently, and only on a value the OWL API itself preserves. The datatype was
+        // right, which is all this used to ask.
+        return rightDatatype && lexical.equals(canonicalNumber(lexical));
+    }
+
+    /**
+     * The spelling a number comes back with, for comparison with the one it went out as.
+     *
+     * <p>Only the forms a bare token can carry need considering: a leading {@code +} is
+     * dropped, and leading zeros are not kept. Anything else is left alone, so a spelling
+     * this does not change is one that survives.
+     */
+    private static String canonicalNumber(String lexical) {
+        String sign = "";
+        String digits = lexical;
+        if (digits.startsWith("+")) {
+            digits = digits.substring(1);
+        } else if (digits.startsWith("-")) {
+            sign = "-";
+            digits = digits.substring(1);
+        }
+        int firstSignificant = 0;
+        while (firstSignificant < digits.length() - 1 && digits.charAt(firstSignificant) == '0'
+                && digits.charAt(firstSignificant + 1) != '.') {
+            firstSignificant++;
+        }
+        return sign + digits.substring(firstSignificant);
     }
 
     /**

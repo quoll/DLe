@@ -344,4 +344,39 @@ class TypedLiteralTest {
         assertTrue(body.contains("\u225d"),
             () -> "a plain body is still written with \u225d:\n" + body);
     }
+
+    /**
+     * A number keeps the spelling it was written with.
+     *
+     * <p>The bare form is only safe when the reader rebuilds the same literal, and that means
+     * the same *lexical form* as well as the same datatype. `"007"^^xsd:integer` was written
+     * bare as {@code 007}, read back as the integer seven, and written {@code 7} on the next
+     * pass — a spelling the OWL API itself preserves, lost only by going through DLe.
+     *
+     * <p>Most of the near neighbours are normalised by the OWL API before DLe sees them —
+     * {@code +7}, {@code -007} and {@code 1.50} all arrive already canonical — which is why
+     * this needed a value the API leaves alone.
+     */
+    @Test
+    void aNumberKeepsItsSpelling() throws Exception {
+        OWLLiteral value =
+            df.getOWLLiteral("007", df.getOWLDatatype(IRI.create(XSD + "integer")));
+        OWLOntology back = read(write(withValue(value)));
+        OWLLiteral got = back.axioms(AxiomType.DATA_PROPERTY_ASSERTION)
+            .map(OWLDataPropertyAssertionAxiom::getObject).findFirst().orElseThrow();
+        assertEquals("007", got.getLiteral(),
+            () -> "the lexical form must survive: " + got);
+        assertEquals(XSD + "integer", got.getDatatype().getIRI().toString(),
+            () -> "and so must the datatype: " + got);
+    }
+
+    /** A canonical number is still written bare, which is the point of the bare form. */
+    @Test
+    void aCanonicalNumberIsStillWrittenBare() throws Exception {
+        OWLLiteral value =
+            df.getOWLLiteral("7", df.getOWLDatatype(IRI.create(XSD + "integer")));
+        String body = bodyOf(write(withValue(value)));
+        assertTrue(body.contains("(a,7):d"),
+            () -> "an ordinary integer needs no quoting:\n" + body);
+    }
 }
