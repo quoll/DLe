@@ -204,4 +204,35 @@ class DualDeclarationResolverTest {
         assertTrue(ontology.objectPropertiesInSignature().anyMatch(p -> p.getIRI().equals(yIRI)),
             "Y must remain in object property signature (Z still references it as a property)");
     }
+
+    /**
+     * The resolver asks the index, not the whole document.
+     *
+     * <p>It looked for the children of a punned name by streaming every sub-object-property
+     * axiom in the ontology and filtering on the super-property — once per punned name, inside
+     * a fixpoint loop. That is quadratic, and it runs on every {@code .dle} parse. Against a
+     * size-matched document with no puns the excess ran 0.32s / 1.50s / 5.23s at 8k / 16k /
+     * 32k puns, quadrupling per doubling while the control stayed linear; with the index it is
+     * 0.16s / 0.30s / 0.68s, and a 32 000-pun document halved overall from 10.6s to 5.4s.
+     *
+     * <p>It is masked for documents DLe wrote, which state their kinds — the stated-kind
+     * exemption skips the loop entirely — and hits a hand-written or externally produced
+     * punned document, which is the documented SNOMED CT case.
+     *
+     * <p>Asserted structurally. A timing assertion is the obvious alternative and a bad one:
+     * the growth is only visible at sizes that make the suite slow, and it is sensitive to
+     * machine load in a way that produces false failures. What can be checked cheaply and
+     * exactly is that the indexed accessor is the one being called.
+     */
+    @Test
+    void theResolverUsesTheSuperPropertyIndex() throws Exception {
+        byte[] bytecode = java.nio.file.Files.readAllBytes(java.nio.file.Path.of(
+            DualDeclarationResolver.class.getResource("DualDeclarationResolver.class").toURI()));
+        String constants = new String(bytecode, java.nio.charset.StandardCharsets.ISO_8859_1);
+        assertTrue(constants.contains("objectSubPropertyAxiomsForSuperProperty"),
+            "the children of a punned name must come from the index, not a full scan");
+        assertFalse(constants.contains("SUB_OBJECT_PROPERTY"),
+            "streaming every sub-property axiom per punned name is the quadratic this"
+                + " replaced");
+    }
 }

@@ -4,7 +4,6 @@ import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
 
-import org.semanticweb.owlapi.model.AxiomType;
 import org.semanticweb.owlapi.model.IRI;
 import org.semanticweb.owlapi.model.OWLClass;
 import org.semanticweb.owlapi.model.OWLDataFactory;
@@ -65,9 +64,15 @@ class DualDeclarationResolver {
                 OWLObjectProperty xProp = df.getOWLObjectProperty(xIRI);
                 OWLClass xClass = df.getOWLClass(xIRI);
 
+                // Indexed by super-property. Streaming every sub-property axiom in the
+                // document and filtering made this quadratic, once per punned name per
+                // fixpoint pass: against a size-identical document with no puns, the excess
+                // ran 0.8s / 2.6s / 11.9s at 8k / 16k / 32k — quadrupling per doubling while
+                // the control stayed linear. It is masked for documents DLe wrote, which
+                // state their kinds and carry labels, and hits a hand-written punned document
+                // — which is the documented SNOMED CT case.
                 List<OWLSubObjectPropertyOfAxiom> toSwap = ontology
-                    .axioms(AxiomType.SUB_OBJECT_PROPERTY)
-                    .filter(a -> a.getSuperProperty().equals(xProp))
+                    .objectSubPropertyAxiomsForSuperProperty(xProp)
                     .filter(a -> a.getSubProperty().isNamed())
                     .filter(a -> !ontology.annotationAssertionAxioms(
                         a.getSubProperty().getNamedProperty().getIRI()).findAny().isPresent())
