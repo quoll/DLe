@@ -1708,8 +1708,11 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
     private void assertNamedClass(String individual, String className,
                                   org.antlr.v4.runtime.ParserRuleContext ctx) {
         IRI classIri = expandNameText(className);
-        if (classIri != null
-                && EntityTypeScanner.isDatatypeIri(classIri.toString())) {
+        // Through namesADatatype, which knows the datatypes this document defines as well as
+        // the built-in ones. Asking isDatatypeIri alone meant `b:Code` was accepted as
+        // ClassAssertion(:Code :b) while the spaced `b : Code` was refused — the same
+        // assertion, two answers, and the accepted one puts a datatype in a class position.
+        if (classIri != null && namesADatatype(className, classIri)) {
             // The spaced form refuses this through asClass; these paths built the class
             // directly and so accepted what the spaced spelling rejects — and then wrote
             // the spaced spelling back out, producing a document this reader will not read.

@@ -974,8 +974,17 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
         return !local.isEmpty() && Character.isLowerCase(local.charAt(0));
     }
 
-    /** The reader's own view of the name, resolving it with this document's prefixes. */
+    /**
+     * The reader's own view of the name, resolving it with this document's prefixes.
+     *
+     * <p>Also excludes a datatype the *document* defines, which the static form cannot see:
+     * it is given a resolved IRI and the built-in list, and {@code datatypeNames} is instance
+     * state. So {@code code \u2261 [xsd:string \u2293 [minLength 3]]} followed by
+     * {@code code \u2291 thing} guessed {@code code} to be a role on its spelling, and the
+     * name ended up declared as both a datatype and an object property.
+     */
     private boolean caseSuggestsRole(String name) {
+        if (isDataTypeName(name)) return false;
         return caseSuggestsRole(name, resolve(name));
     }
 
@@ -1180,6 +1189,37 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
      * class equivalence, so the shape is unambiguous without knowing anything else yet.
      */
     void collectDatatypeDefinitions(org.antlr.v4.runtime.tree.ParseTree tree) {
+        // Prefixes first. Every judgement below resolves a name, and this pass runs before
+        // the main scan, which is where prefix declarations were being recorded — so a
+        // document that rebinds `xsd:` elsewhere had its own `xsd:notAType` resolved against
+        // the real XSD namespace and called a datatype. Resolution cannot depend on how far
+        // down the file the reader has got.
+        collectPrefixes(tree);
+        // Then to a fixpoint, because the walk reads the set it is filling: isDataClassExpr
+        // asks isDataTypeName, so `Alias \u2261 Code` is only recognised once `Code` is known.
+        // One pass in document order gave a different answer for every ordering of the same
+        // statements — `A1 \u2261 xsd:string / A2 \u2261 A1 / A3 \u2261 A2` found three
+        // datatypes, two, or one across the six permutations, and the pass that found fewest
+        // went on to declare a datatype as a class. This pre-pass exists to remove an order
+        // dependence, so it must not have one of its own.
+        int before;
+        do {
+            before = datatypeNames.size();
+            collectDatatypeDefinitionsOnce(tree);
+        } while (datatypeNames.size() > before);
+    }
+
+    /** Records every prefix declaration in the tree, wherever it appears. */
+    private void collectPrefixes(org.antlr.v4.runtime.tree.ParseTree tree) {
+        if (tree instanceof DLESyntaxParser.PrefixDeclContext) {
+            visitPrefixDecl((DLESyntaxParser.PrefixDeclContext) tree);
+        }
+        for (int i = 0; i < tree.getChildCount(); i++) {
+            collectPrefixes(tree.getChild(i));
+        }
+    }
+
+    private void collectDatatypeDefinitionsOnce(org.antlr.v4.runtime.tree.ParseTree tree) {
         if (tree instanceof DLESyntaxParser.EquivAxiomContext) {
             List<DLESyntaxParser.ClassExprContext> operands =
                 ((DLESyntaxParser.EquivAxiomContext) tree).classExpr();
@@ -1199,7 +1239,7 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
             }
         }
         for (int i = 0; i < tree.getChildCount(); i++) {
-            collectDatatypeDefinitions(tree.getChild(i));
+            collectDatatypeDefinitionsOnce(tree.getChild(i));
         }
     }
 

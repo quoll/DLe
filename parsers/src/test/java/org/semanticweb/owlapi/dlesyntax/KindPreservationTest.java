@@ -732,6 +732,87 @@ class KindPreservationTest {
         }
     }
 
+    /**
+     * A chain of datatype aliases resolves the same way whatever order it is written in.
+     *
+     * <p>The pre-pass that finds datatype definitions reads the set it is filling — deciding
+     * whether the right-hand side is a data range asks whether its name is a datatype — and
+     * it walked the tree once, in document order. So {@code A2 \u2261 A1} was only recognised
+     * if {@code A1 \u2261 xsd:string} had already been passed. Across the six orderings of the
+     * same three statements it found three datatypes, or two, or one, and the orderings that
+     * found fewest went on to declare a datatype as a class and a data property as an object
+     * property — all at exit 0.
+     *
+     * <p>The single-definition test above cannot see this: one definition needs no fixpoint.
+     */
+    @Test
+    void aChainOfDatatypeAliasesDoesNotDependOnOrder() throws Exception {
+        String[] statements = {
+            "A1 \u2261 xsd:string\n",
+            "A2 \u2261 A1\n",
+            "A3 \u2261 A2\n",
+        };
+        int[][] orders = {{0,1,2},{0,2,1},{1,0,2},{1,2,0},{2,0,1},{2,1,0}};
+        for (int[] order : orders) {
+            String document = "@prefix : <" + NS + ">\n"
+                + statements[order[0]] + statements[order[1]] + statements[order[2]]
+                + "B \u2291 \u2200d.A3\n";
+            OWLOntology o = assertDoesNotThrow(() -> read(document),
+                () -> "must parse in every order:\n" + document);
+            assertEquals(3, o.datatypesInSignature()
+                    .filter(t -> t.getIRI().toString().contains("#A")).count(),
+                () -> "all three aliases are datatypes:\n" + document + o.getLogicalAxioms());
+            assertEquals(0, o.classesInSignature()
+                    .filter(c -> c.getIRI().toString().contains("#A")).count(),
+                () -> "and none of them is a class:\n" + document + o.getLogicalAxioms());
+            assertTrue(o.containsDataPropertyInSignature(IRI.create(NS + "d")),
+                () -> "d stays a data property:\n" + document + o.getLogicalAxioms());
+            assertFalse(o.containsObjectPropertyInSignature(IRI.create(NS + "d")),
+                () -> "and not an object one:\n" + document + o.getLogicalAxioms());
+        }
+    }
+
+    /**
+     * A datatype the document defines is refused in a class position, in both spellings.
+     *
+     * <p>{@code assertNamedClass} asked only the built-in datatype list, so the compact
+     * {@code b:Code} was accepted as {@code ClassAssertion(:Code :b)} while the spaced
+     * {@code b : Code} was refused. The same assertion, two answers, and the accepted one put
+     * a datatype where only a class may go.
+     */
+    @Test
+    void aDocumentDefinedDatatypeIsRefusedInAClassPositionInEitherSpelling() {
+        for (String assertion : new String[] {"b:Code", "b : Code"}) {
+            String document = "@prefix : <" + NS + ">\nCode \u2261 xsd:string\n" + assertion + "\n";
+            DLESemanticException e = assertThrows(DLESemanticException.class,
+                () -> read(document),
+                () -> "a datatype is not a class, whichever way it is spelled:\n" + document);
+            assertTrue(e.getMessage().contains("datatype"),
+                () -> "the message must say what is wrong: " + e.getMessage());
+        }
+    }
+
+    /**
+     * The case convention does not override a datatype the document defines.
+     *
+     * <p>The convention's datatype exception consulted the built-in list only, because the
+     * static form it shares with the writer is handed a resolved IRI and cannot see
+     * {@code datatypeNames}. So a lower-case defined datatype was guessed to be a role on its
+     * spelling, and ended up declared as a datatype *and* an object property — a pun OWL 2 DL
+     * does not allow, at exit 0.
+     */
+    @Test
+    void aLowerCaseDefinedDatatypeIsNotGuessedToBeARole() {
+        String document = "@prefix : <" + NS + ">\n"
+            + "code \u2261 [xsd:string \u2293 [minLength 3]]\n"
+            + "code \u2291 thing\n";
+        DLESemanticException e = assertThrows(DLESemanticException.class,
+            () -> read(document),
+            "a datatype cannot also be a property, and saying so beats guessing from case");
+        assertTrue(e.getMessage().contains("datatype"),
+            () -> "the message must name the conflict: " + e.getMessage());
+    }
+
     /** The fixture table has to actually exercise every kind, or it proves less than it says. */
     @Test
     void theFixturesCoverEveryKind() {
