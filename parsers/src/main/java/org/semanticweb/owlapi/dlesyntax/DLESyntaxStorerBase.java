@@ -211,6 +211,12 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
         writtenAxioms = new HashSet<>();
         roleEvidence.clear();
         currentPrefixes = prefixesFor(o, outputFormat);
+        // A label the lexer cannot read is worse than no label: it goes out as
+        // `@prefix a.b: <…>`, is refused on the way back in — `mismatched input 'a'
+        // expecting PNAME_NS` — and takes every name that used it down with it. Dropped
+        // before minting runs, so the namespace gets a label that works instead.
+        currentPrefixes.keySet()
+            .removeIf(label -> !DLESyntaxObjectRenderer.isSpellablePrefixLabel(label));
         declareUncoveredNamespaces(o, currentPrefixes);
         if (!currentPrefixes.isEmpty()) {
             DefaultPrefixManager pm = new DefaultPrefixManager();

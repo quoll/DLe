@@ -153,4 +153,52 @@ class NameSpellingTest {
         }
         return out.toString();
     }
+
+    /**
+     * A prefix label the lexer cannot read is replaced, not written.
+     *
+     * <p>{@code PNAME_NS} is {@code NameChar* ':'}, and a dot is not a {@code NameChar}. A
+     * document declaring {@code a.b:} had {@code @prefix a.b: <…>} written straight out and
+     * refused by this same reader — taking every name that used it down with it.
+     *
+     * <p>Unlike a local part there is nothing to salvage by splitting: a label is the
+     * author's choice of abbreviation and carries no meaning, so an unusable one is dropped
+     * and the namespace left for minting.
+     */
+    @Test
+    void anUnusablePrefixLabelIsReplaced() throws Exception {
+        OWLOntology o = manager.createOntology(IRI.create("http://example.org/o"));
+        manager.addAxiom(o, df.getOWLSubClassOfAxiom(
+            df.getOWLClass(IRI.create("http://example.org/d#X")),
+            df.getOWLClass(IRI.create(NS + "Base"))));
+        DLESyntaxDocumentFormat format = new DLESyntaxDocumentFormat();
+        format.setDefaultPrefix(NS);
+        format.setPrefix("a.b:", "http://example.org/d#");
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        o.getOWLOntologyManager().saveOntology(o, format, new StreamDocumentTarget(out));
+        String written = new String(out.toByteArray(), StandardCharsets.UTF_8);
+
+        assertFalse(statementsOnly(written).contains("a.b:"),
+            () -> "an unreadable label must not be written:\n" + statementsOnly(written));
+        assertTrue(read(written).containsClassInSignature(IRI.create("http://example.org/d#X")),
+            () -> "and the name it covered must still be the same name:\n" + written);
+    }
+
+    /** Every label the lexer does accept is left exactly as the document had it. */
+    @ParameterizedTest(name = "prefix {0}: is kept")
+    @ValueSource(strings = {"ex", "a-b", "a1", "A", "_x", "ns9"})
+    void anUsablePrefixLabelIsKept(String label) throws Exception {
+        OWLOntology o = manager.createOntology(IRI.create("http://example.org/o"));
+        manager.addAxiom(o, df.getOWLSubClassOfAxiom(
+            df.getOWLClass(IRI.create("http://example.org/d#X")),
+            df.getOWLClass(IRI.create(NS + "Base"))));
+        DLESyntaxDocumentFormat format = new DLESyntaxDocumentFormat();
+        format.setDefaultPrefix(NS);
+        format.setPrefix(label + ":", "http://example.org/d#");
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        o.getOWLOntologyManager().saveOntology(o, format, new StreamDocumentTarget(out));
+        String written = new String(out.toByteArray(), StandardCharsets.UTF_8);
+        assertTrue(written.contains("@prefix " + label + ":"),
+            () -> "the document's own label must survive:\n" + statementsOnly(written));
+    }
 }

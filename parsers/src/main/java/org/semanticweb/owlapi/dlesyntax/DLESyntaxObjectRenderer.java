@@ -211,6 +211,27 @@ public class DLESyntaxObjectRenderer extends DLSyntaxObjectRenderer {
             || (cp >= 0xFDF0 && cp <= 0xFFFD);
     }
 
+    /**
+     * Whether a prefix label can be written and read back.
+     *
+     * <p>{@code PNAME_NS} is {@code NameChar* ':'}, and a dot is not a {@code NameChar}. A
+     * document declaring {@code a.b:} had {@code @prefix a.b: <…>} written straight out and
+     * refused by this same reader with {@code mismatched input 'a' expecting PNAME_NS} —
+     * along with every name that used it.
+     *
+     * <p>Unlike a local part there is nothing to salvage by splitting: the label is the
+     * author's choice of abbreviation and carries no meaning. So an unusable one is dropped
+     * and the namespace left for minting, which produces a label that works.
+     */
+    static boolean isSpellablePrefixLabel(String label) {
+        if (!label.endsWith(":")) return false;
+        String name = label.substring(0, label.length() - 1);
+        for (int i = 0; i < name.length(); i++) {
+            if (!isNameChar(name.charAt(i))) return false;
+        }
+        return true;
+    }
+
     static boolean isReservedLocalName(String local) {
         return RESERVED_LOCAL_NAMES.contains(local);
     }
@@ -1098,7 +1119,12 @@ public class DLESyntaxObjectRenderer extends DLSyntaxObjectRenderer {
         OWLAnnotationValue value = axiom.getValue();
 
         IRI rdfValueIRI = IRI.create("http://www.w3.org/1999/02/22-rdf-syntax-ns#value");
-        if (rdfValueIRI.equals(propIRI) && value instanceof OWLLiteral) {
+        // Only for a plain untagged string. The `≝` line writes the literal's text and
+        // nothing else — there is no room after it for `@en` or `^^xsd:token` — so a tagged
+        // or typed rdf:value was silently reduced to a plain string. The general `@ann` form
+        // below carries both, and is what a literal that needs them goes through.
+        if (rdfValueIRI.equals(propIRI) && value instanceof OWLLiteral
+                && isPlainString((OWLLiteral) value)) {
             String literal = ((OWLLiteral) value).getLiteral();
             int arrowIdx = literal.indexOf('\u2192');  // →
             if (arrowIdx >= 0) {

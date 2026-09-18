@@ -292,4 +292,44 @@ class TypedLiteralTest {
         assertEquals(5, members,
             "every member of the enumeration must survive as a distinct literal");
     }
+
+    /**
+     * A typed or tagged {@code rdf:value} keeps what it carries.
+     *
+     * <p>The {@code ≝} form writes the literal's text and nothing else — there is no room
+     * after it for {@code @en} or {@code ^^xsd:token} — so a tagged or typed
+     * {@code rdf:value} was silently reduced to a plain string. It now goes through the
+     * general {@code @ann} form, which carries both.
+     */
+    @Test
+    void aTypedPredicateBodyKeepsItsDatatype() throws Exception {
+        OWLOntology o = manager.createOntology();
+        IRI rdfValue = IRI.create("http://www.w3.org/1999/02/22-rdf-syntax-ns#value");
+        for (OWLLiteral value : new OWLLiteral[] {
+                df.getOWLLiteral("u,v \u2192 u > v",
+                    df.getOWLDatatype(IRI.create(XSD + "token"))),
+                df.getOWLLiteral("u,v \u2192 u > v", "en")}) {
+            OWLAxiom axiom = df.getOWLAnnotationAssertionAxiom(
+                df.getOWLAnnotationProperty(rdfValue), IRI.create(NS + "p"), value);
+            OWLOntology one = manager.createOntology();
+            manager.addAxiom(one, axiom);
+            String written = write(one);
+            assertTrue(read(written).containsAxiom(axiom),
+                () -> "the predicate body must keep what it carries: " + value
+                    + "\n" + written);
+        }
+    }
+
+    /** A plain predicate definition still uses the compact form. */
+    @Test
+    void aPlainPredicateBodyStillUsesTheCompactForm() throws Exception {
+        OWLOntology o = manager.createOntology();
+        manager.addAxiom(o, df.getOWLAnnotationAssertionAxiom(
+            df.getOWLAnnotationProperty(
+                IRI.create("http://www.w3.org/1999/02/22-rdf-syntax-ns#value")),
+            IRI.create(NS + "p"), df.getOWLLiteral("u,v \u2192 u > v")));
+        String body = bodyOf(write(o));
+        assertTrue(body.contains("\u225d"),
+            () -> "a plain body is still written with \u225d:\n" + body);
+    }
 }
