@@ -173,6 +173,32 @@ class PropagationEvidenceTest {
             "the statement settles hasPart, and relatedTo follows it rather than the spelling");
     }
 
+    /**
+     * `X ⊑ ⊤` states a kind, so it is recorded as stated.
+     *
+     * <p>It is the class counterpart of the two property markers, and §6.3 of the design
+     * leans on it being the firmest tier — a class under a pun can then be said outright and
+     * outrank the role that propagation would otherwise give it. Every class finding was
+     * POSITIONAL, so CLASS/STATED had no producer at all and a statement carried no more
+     * weight than a position.
+     *
+     * <p>Any other complex right-hand side is a position and stays one.
+     */
+    @Test
+    void aClassStatedOutrightIsRecordedAsStated() {
+        Findings stated = findingsOf(scan(PREFIX + "Thing1 \u2291 \u22a4\n"));
+        Findings.Finding f = stated.firmestOf("Thing1", Findings.Kind.CLASS);
+        assertNotNull(f, "the statement must record a class finding");
+        assertEquals(Findings.Certainty.STATED, f.certainty,
+            "`X \u2291 \u22a4` says the kind outright");
+
+        Findings positional = findingsOf(scan(PREFIX + "Thing2 \u2291 \u2203r.B\n"));
+        Findings.Finding p = positional.firmestOf("Thing2", Findings.Kind.CLASS);
+        assertNotNull(p, "a complex right-hand side still makes the left a class");
+        assertEquals(Findings.Certainty.POSITIONAL, p.certainty,
+            "but by position, not by statement");
+    }
+
     private static Findings findingsOf(EntityTypeScanner scanner) {
         try {
             java.lang.reflect.Field f = EntityTypeScanner.class.getDeclaredField("findings");

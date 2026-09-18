@@ -180,11 +180,25 @@ final class Findings {
      */
     @Nullable
     Finding[] propertyKindConflict(String name) {
+        return propertyKindConflict(name, f -> false);
+    }
+
+    /**
+     * The same, ignoring findings the caller knows are not evidence of anything.
+     *
+     * <p>One case needs this: an object finding recorded because a restriction's filler
+     * looked like a class, where the filler turns out to be a predicate reference. Only the
+     * scanner can tell, and only after the whole document has been read, so the finding is
+     * recorded and discounted here rather than never recorded.
+     *
+     * @param exclude findings to leave out of the comparison
+     */
+    Finding[] propertyKindConflict(String name, java.util.function.Predicate<Finding> exclude) {
         List<Finding> evidence = new ArrayList<>();
         for (Kind kind : Kind.values()) {
             if (!kind.isProperty()) continue;
             Finding found = of(name).stream()
-                .filter(f -> f.kind == kind && f.certainty.isEvidence())
+                .filter(f -> f.kind == kind && f.certainty.isEvidence() && !exclude.test(f))
                 .max(Comparator.comparing(f -> f.certainty))
                 .orElse(null);
             if (found != null) evidence.add(found);

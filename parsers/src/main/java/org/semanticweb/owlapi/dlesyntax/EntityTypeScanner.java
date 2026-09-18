@@ -74,6 +74,19 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
      */
     private final Map<String, String> objectEvidenceFiller = new LinkedHashMap<>();
 
+    /**
+     * Which line each name's object evidence came from a filler on, and which filler.
+     *
+     * <p>{@link #objectEvidenceFiller} keeps one filler per name, and the conflict rule used
+     * it to skip the *whole* conflict for that name. So an unrelated, genuine conflict
+     * elsewhere in the document was suppressed whenever the name's first recorded filler
+     * happened to be a predicate — and the diagnostic that did surface blamed the filler for
+     * a clash two lines away, which is precisely the failure this area's comments say the
+     * design avoids. The exemption has to be per finding, so it is keyed by line.
+     */
+    private final Map<String, Map<Integer, String>> objectEvidenceFillerByLine =
+        new LinkedHashMap<>();
+
     // Roles the document states outright, via `X ⊑ owl:topObjectProperty` or
     // `X ⊑ owl:topDataProperty`, for the case inference cannot reach: a name whose kind
     // nothing in the document implies. Paired with `X ⊑ ⊤` — which lands in mustBeClass
@@ -442,11 +455,14 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
             reportDatatypeUsedAsAProperty(name);
         }
         for (String name : findings.names()) {
-            Findings.Finding[] clash = findings.propertyKindConflict(name);
+            // Per finding, not per name. An object finding that came from a predicate filler
+            // is not evidence of anything — the filler is a predicate reference, not a class
+            // — so that finding is excluded and the rest of the name's evidence is judged
+            // normally. Skipping the whole name instead hid genuine conflicts elsewhere in
+            // the document and left the filler being blamed for them.
+            Findings.Finding[] clash =
+                findings.propertyKindConflict(name, f -> fromPredicateFiller(name, f));
             if (clash == null) continue;
-            // A predicate filler is not evidence; see objectEvidenceFiller.
-            String filler = objectEvidenceFiller.get(name);
-            if (filler != null && predicateNames.contains(filler)) continue;
             throw new DLESemanticException(
                 name + " is used as " + clash[0].kind.description() + " on line "
                     + clash[0].line + " and as " + clash[1].kind.description()
@@ -735,8 +751,19 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
         }
         // A ⊑ (complex) → A is definitively a class; (complex) ⊑ B → B is a class.
         // Exclude inverse-atom RHS/LHS since those are property expressions.
-        if (lhs != null && rhs == null && singleInverseAtom(ctx.classExpr(1)) == null)
-            markClass(lhs, Findings.Certainty.POSITIONAL, ctx.start.getLine());
+        if (lhs != null && rhs == null && singleInverseAtom(ctx.classExpr(1)) == null) {
+            // `X ⊑ ⊤` is the document saying outright that X is a concept — the class
+            // counterpart of the two property markers, and what §6.3 of the design leans on
+            // to put a class under a pun beyond the reach of role propagation. So it is
+            // STATED, the firmest tier, which previously had no producer at all: every class
+            // finding was POSITIONAL, and a statement carried no more weight than a position.
+            // Any other complex right-hand side really is just a position.
+            boolean statedOutright =
+                Parens.atomOf(ctx.classExpr(1)) instanceof DLESyntaxParser.TopAtomContext;
+            markClass(lhs,
+                statedOutright ? Findings.Certainty.STATED : Findings.Certainty.POSITIONAL,
+                ctx.start.getLine());
+        }
         if (lhs == null && rhs != null && singleInverseAtom(ctx.classExpr(0)) == null)
             markClass(rhs, Findings.Certainty.POSITIONAL, ctx.start.getLine());
         return visitChildren(ctx);
@@ -759,6 +786,15 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
         return iri != null
             && org.semanticweb.owlapi.vocab.OWL2Datatype.isBuiltIn(
                 org.semanticweb.owlapi.model.IRI.create(iri));
+    }
+
+    /** Whether this finding is the object evidence a predicate filler produced. */
+    private boolean fromPredicateFiller(String name, Findings.Finding finding) {
+        if (finding.kind != Findings.Kind.OBJECT_PROPERTY) return false;
+        Map<Integer, String> byLine = objectEvidenceFillerByLine.get(name);
+        if (byLine == null) return false;
+        String filler = byLine.get(finding.line);
+        return filler != null && predicateNames.contains(filler);
     }
 
     /**
@@ -1269,6 +1305,9 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
             recordKindEvidence(name, isData && !inverse, propCtx.start.getLine());
             if (!isData && fillerName != null) {
                 objectEvidenceFiller.putIfAbsent(name, fillerName);
+                objectEvidenceFillerByLine
+                    .computeIfAbsent(name, k -> new LinkedHashMap<>())
+                    .putIfAbsent(propCtx.start.getLine(), fillerName);
             }
         }
         if (PropertyExprs.isInverse(propCtx)) {

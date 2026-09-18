@@ -896,4 +896,53 @@ class KindPreservationTest {
         seen.forEach((kind, count) -> assertTrue(count > 0,
             () -> "no fixture exercises " + kind + "; the table covers " + seen));
     }
+
+    /**
+     * A predicate filler excuses its own finding, not every conflict on the name.
+     *
+     * <p>An object finding recorded because a restriction's filler looked like a class is not
+     * evidence when the filler turns out to be a predicate reference. The exemption was keyed
+     * on the name, and only the first filler recorded for it, so a genuine and unrelated
+     * conflict elsewhere in the document was suppressed — and what surfaced instead blamed
+     * the filler for a clash two lines away, the precise failure this area's comments say the
+     * design exists to avoid.
+     *
+     * <p>Asserted against the same document with the predicate definition removed: the two
+     * must report the same conflict, because the predicate has nothing to do with it.
+     */
+    @Test
+    void aPredicateFillerDoesNotHideAnUnrelatedConflict() {
+        String conflict = "A \u2291 \u2203x.B\n(a,\"5\"):x\n";
+        DLESemanticException withPredicate = assertThrows(DLESemanticException.class,
+            () -> read("@prefix : <" + NS + ">\n"
+                + "greaterThan(u,v) \u225d u > v\n"
+                + "R \u2261 \u2203x.greaterThan\n" + conflict),
+            "x is an object property on one line and a data property on the next");
+        DLESemanticException without = assertThrows(DLESemanticException.class,
+            () -> read("@prefix : <" + NS + ">\n" + conflict));
+
+        assertTrue(withPredicate.getMessage().contains("as an object property")
+                && withPredicate.getMessage().contains("as a data property"),
+            () -> "the real conflict must be reported: " + withPredicate.getMessage());
+        assertFalse(withPredicate.getMessage().contains("found"),
+            () -> "and not as a complaint about a filler: " + withPredicate.getMessage());
+        // Same complaint, with the line numbers normalised away — the predicate definition
+        // shifts them by two, and nothing else about the report may change.
+        assertEquals(normaliseLines(without.getMessage()),
+            normaliseLines(withPredicate.getMessage()),
+            "the predicate definition must make no difference to what is reported");
+    }
+
+    /** A diagnostic with every line and column reference replaced by a placeholder. */
+    private static String normaliseLines(String message) {
+        return message.replaceAll("at \\d+:\\d+", "at N:N").replaceAll("line \\d+", "line N");
+    }
+
+    /** A predicate reference on its own is still perfectly acceptable. */
+    @Test
+    void aPredicateReferenceAloneIsStillAccepted() {
+        assertDoesNotThrow(() -> read("@prefix : <" + NS + ">\n"
+            + "greaterThan(u,v) \u225d u > v\n"
+            + "R \u2261 \u2203x.greaterThan\n"));
+    }
 }
