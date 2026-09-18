@@ -210,7 +210,16 @@ class ChainedEquivalenceTest {
         manager.addAxiom(objects, df.getOWLSubClassOfAxiom(cls("A"),
             df.getOWLObjectSomeValuesFrom(p, cls("B"))));
         String writtenObjects = write(objects);
-        assertDoesNotThrow(() -> read(writtenObjects), () -> bodyOf(writtenObjects));
+        // And the rest of the document survives. Two `assertDoesNotThrow` calls are satisfied
+        // by an empty document, so this passed whether or not anything was written at all —
+        // the class-valued twin of this test already compares an axiom, and this one did not.
+        assertTrue(read(writtenObjects).containsAxiom(df.getOWLSubClassOfAxiom(cls("A"),
+                df.getOWLObjectSomeValuesFrom(p, cls("B")))),
+            () -> "the degenerate equivalence goes, the rest stays:\n"
+                + bodyOf(writtenObjects));
+        assertEquals(0, read(writtenObjects)
+                .getAxioms(AxiomType.EQUIVALENT_OBJECT_PROPERTIES).size(),
+            () -> "and the equivalence itself is not written:\n" + bodyOf(writtenObjects));
 
         OWLDataProperty d = df.getOWLDataProperty(IRI.create(NS + "d"));
         OWLOntology data = manager.createOntology();
@@ -218,7 +227,12 @@ class ChainedEquivalenceTest {
         manager.addAxiom(data, df.getOWLDataPropertyAssertionAxiom(d,
             df.getOWLNamedIndividual(IRI.create(NS + "a")), df.getOWLLiteral("x")));
         String writtenData = write(data);
-        assertDoesNotThrow(() -> read(writtenData), () -> bodyOf(writtenData));
+        assertTrue(read(writtenData).containsAxiom(df.getOWLDataPropertyAssertionAxiom(d,
+                df.getOWLNamedIndividual(IRI.create(NS + "a")), df.getOWLLiteral("x"))),
+            () -> "the same for the data side:\n" + bodyOf(writtenData));
+        assertEquals(0, read(writtenData)
+                .getAxioms(AxiomType.EQUIVALENT_DATA_PROPERTIES).size(),
+            () -> "and its equivalence is not written either:\n" + bodyOf(writtenData));
     }
 
     /** A name repeated in a chain is vacuous, not contradictory, so it is accepted. */

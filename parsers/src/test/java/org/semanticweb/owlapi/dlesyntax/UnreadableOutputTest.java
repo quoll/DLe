@@ -246,8 +246,13 @@ class UnreadableOutputTest {
         String body = statementsOnly(write(o));
         assertFalse(body.contains("Disj("),
             () -> "a one-property disjointness says nothing and has no spelling:\n" + body);
-        assertDoesNotThrow(() -> read(write(o)),
-            () -> "and the rest of the document must still load:\n" + body);
+        // The rest of the document, by name. `assertDoesNotThrow(read(...))` is satisfied by
+        // an empty document, so this pair of assertions held whether or not anything was
+        // written.
+        assertTrue(read(write(o)).containsAxiom(df.getOWLSubClassOfAxiom(
+                df.getOWLClass(IRI.create(NS + "A")),
+                df.getOWLObjectSomeValuesFrom(p, df.getOWLClass(IRI.create(NS + "B"))))),
+            () -> "the rest of the document must still be there:\n" + body);
     }
 
     /** A real disjointness is still written, or the guard has swallowed the feature. */

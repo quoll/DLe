@@ -137,6 +137,14 @@ class LanguageTagTest {
     @Test
     void anUntaggedStringStaysUntagged() throws Exception {
         OWLOntology o = parse(PREFIX + "@label A \"plain\"\n");
+        // The label has to be there before "it has no tag" means anything: `noneMatch` is
+        // satisfied by an ontology with no annotation in it, and dropping every annotation
+        // assertion left this green.
+        OWLDataFactory f = OWLManager.getOWLDataFactory();
+        assertTrue(o.containsAxiom(f.getOWLAnnotationAssertionAxiom(
+                f.getRDFSLabel(), IRI.create(NS + "A"), f.getOWLLiteral("plain"))),
+            () -> "the untagged label itself must be there: "
+                + o.getAxioms(AxiomType.ANNOTATION_ASSERTION));
         assertTrue(o.getAxioms(AxiomType.ANNOTATION_ASSERTION).stream()
                 .filter(ax -> ax.getValue() instanceof OWLLiteral)
                 .noneMatch(ax -> ((OWLLiteral) ax.getValue()).hasLang()),

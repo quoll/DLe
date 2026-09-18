@@ -705,9 +705,19 @@ class KindPreservationTest {
     void whatIsNotAClashIsStillAccepted() throws Exception {
         assertDoesNotThrow(() -> read("@prefix : <" + NS + ">\n"
             + "@ann C p \"v\"\n@ann D p \"w\"\n"), "one annotation property, twice");
-        assertDoesNotThrow(() -> read("@prefix : <" + NS + ">\n"
+        // And the claim itself, which was never checked: `@label` is rdfs:label, so the
+        // document's own `label` is free to be an object property. Three
+        // `assertDoesNotThrow` calls are all satisfied by an empty read.
+        OWLOntology labels = assertDoesNotThrow(() -> read("@prefix : <" + NS + ">\n"
             + "@label A \"x\"\n(aa,bb):label\n"),
             "@label names rdfs:label, not the document's `label`");
+        assertTrue(labels.containsObjectPropertyInSignature(IRI.create(NS + "label")),
+            () -> "the document's own `label` is an object property here: "
+                + labels.getLogicalAxioms());
+        assertTrue(labels.axioms(AxiomType.ANNOTATION_ASSERTION)
+                .anyMatch(ax -> DF.getRDFSLabel().equals(ax.getProperty())),
+            () -> "and @label still means rdfs:label: "
+                + labels.getAxioms(AxiomType.ANNOTATION_ASSERTION));
         assertDoesNotThrow(() -> read("@prefix : <" + NS + ">\n"
             + "@ann C note \"v\"\nA ⊑ ∃r.B\n"), "unrelated names");
     }
