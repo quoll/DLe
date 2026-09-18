@@ -133,24 +133,6 @@ public class DLESyntaxObjectRenderer extends DLSyntaxObjectRenderer {
         super.visit(ce);
     }
 
-    @Nullable
-    private OWLDataRange dataPropertyRange(OWLDataPropertyExpression property) {
-        if (ontology == null) return null;
-        return ontology.axioms(AxiomType.DATA_PROPERTY_RANGE)
-            .filter(ax -> ax.getProperty().equals(property))
-            .map(ax -> ax.getRange())
-            .findFirst().orElse(null);
-    }
-
-    @Nullable
-    private OWLClassExpression objectPropertyRange(OWLObjectPropertyExpression property) {
-        if (ontology == null) return null;
-        return ontology.axioms(AxiomType.OBJECT_PROPERTY_RANGE)
-            .filter(ax -> ax.getProperty().equals(property))
-            .map(ax -> ax.getRange())
-            .findFirst().orElse(null);
-    }
-
     /**
      * Sets the prefix manager used to produce short-form IRIs.
      * Also updates the parent's ShortFormProvider so entity rendering is consistent.
@@ -173,16 +155,6 @@ public class DLESyntaxObjectRenderer extends DLSyntaxObjectRenderer {
         }
     }
 
-    /**
-     * Strips the leading colon from a CURIE that belongs to the default (empty)
-     * namespace prefix, e.g. {@code ":Dog"} becomes {@code "Dog"}.
-     * Prefixed names with an explicit prefix (e.g. {@code "xsd:boolean"}) are unchanged.
-     *
-     * <p>A local part beginning with a digit keeps its colon. The bare form has no
-     * spelling for it — {@code NAME} requires a NameStart, so {@code 762705008}
-     * would lex as a number and the document would not parse. {@code :762705008} is
-     * the {@code DEFAULT_NAME} form and reads back to the same IRI.
-     */
     /**
      * Words the grammar keeps for itself, which therefore cannot be written bare.
      *
@@ -273,6 +245,16 @@ public class DLESyntaxObjectRenderer extends DLSyntaxObjectRenderer {
         return isSpellableLocalName(spelling.substring(colon + 1));
     }
 
+    /**
+     * Strips the leading colon from a CURIE that belongs to the default (empty)
+     * namespace prefix, e.g. {@code ":Dog"} becomes {@code "Dog"}.
+     * Prefixed names with an explicit prefix (e.g. {@code "xsd:boolean"}) are unchanged.
+     *
+     * <p>A local part beginning with a digit keeps its colon. The bare form has no
+     * spelling for it — {@code NAME} requires a NameStart, so {@code 762705008}
+     * would lex as a number and the document would not parse. {@code :762705008} is
+     * the {@code DEFAULT_NAME} form and reads back to the same IRI.
+     */
     private String stripDefaultPrefix(String curie) {
         if (!curie.startsWith(":")) return curie;
         String local = curie.substring(1);
@@ -404,7 +386,6 @@ public class DLESyntaxObjectRenderer extends DLSyntaxObjectRenderer {
         return shortFormIRI(iri);
     }
 
-    /** Renders an OWLLiteral as a DLE literal token: NUMBER/BOOL unquoted, strings quoted. */
     /**
      * Writes a literal, wherever the visitor reaches one.
      *
@@ -459,14 +440,6 @@ public class DLESyntaxObjectRenderer extends DLSyntaxObjectRenderer {
         return quoted(lit);
     }
 
-    /**
-     * A string literal, with its language tag when it has one.
-     *
-     * <p>The tag used to be dropped, silently and everywhere: 177 of the 292 annotation
-     * assertions in one corpus document are tagged, and every one came back as a plain
-     * string — a different literal, and a different axiom. Any multilingual vocabulary lost
-     * every language it had.
-     */
     /** Implicit, and so never written: a plain string is just a string. */
     private static final String XSD_STRING = "http://www.w3.org/2001/XMLSchema#string";
 
@@ -483,6 +456,14 @@ public class DLESyntaxObjectRenderer extends DLSyntaxObjectRenderer {
         return !lit.hasLang() && XSD_STRING.equals(lit.getDatatype().getIRI().toString());
     }
 
+    /**
+     * A string literal, with its language tag when it has one.
+     *
+     * <p>The tag used to be dropped, silently and everywhere: 177 of the 292 annotation
+     * assertions in one corpus document are tagged, and every one came back as a plain
+     * string — a different literal, and a different axiom. Any multilingual vocabulary lost
+     * every language it had.
+     */
     private String quoted(OWLLiteral lit) {
         String escaped = lit.getLiteral().replace("\\", "\\\\").replace("\"", "\\\"");
         String text = "\"" + escaped + "\"";

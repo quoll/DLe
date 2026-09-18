@@ -38,9 +38,12 @@ import static org.junit.jupiter.api.Assertions.*;
  * {@link #parenthesesThatGroupAreNotStripped()}.
  *
  * <p>The transparency covers role positions, class positions, the {@code Self}
- * filler and predicate-restriction fillers. It deliberately stops at
- * keyword-argument positions such as {@code Trans(r)}; see
- * {@link #keywordArgumentPositionsTakeABareName}.
+ * filler and predicate-restriction fillers, and keyword-argument positions such as
+ * {@code Trans(r)} — which it used not to, and this paragraph went on saying it stopped
+ * there after the grammar had been widened to a property expression; see
+ * {@link #keywordArgumentPositionsTakeAPropertyExpression}. Where it does stop is the
+ * positions that take a bare name and nothing else; see
+ * {@link #namePositionsStillTakeABareName}.
  */
 class ParenthesisTransparencyTest {
 
@@ -363,11 +366,17 @@ class ParenthesisTransparencyTest {
         "@label (A) \"x\"",
     })
     void namePositionsStillTakeABareName(String body) {
-        // Specifically a syntax error, not any exception: a broad assertThrows
-        // would also be satisfied by an internal failure elsewhere.
-        assertThrows(OWLParserException.class,
+        // Specifically a *syntax* error. OWLParserException alone is not specific enough:
+        // DLESemanticException extends it, so a widening that accepted the parentheses in the
+        // grammar and rejected them in the visitor — the shape the keyword positions took
+        // when they were widened — would have left this green. The message prefix is what
+        // distinguishes the two.
+        OWLParserException thrown = assertThrows(OWLParserException.class,
             () -> parse("⊤ ⊑ ∀id.xsd:string\n" + body + "\n"),
             "parentheses are not accepted where a bare name is required");
+        assertTrue(thrown.getMessage().startsWith("DLE syntax error"),
+            () -> "the grammar must be what refuses this, not the visitor: "
+                + thrown.getMessage());
     }
 
     // ── Writing back out ────────────────────────────────────────────────────

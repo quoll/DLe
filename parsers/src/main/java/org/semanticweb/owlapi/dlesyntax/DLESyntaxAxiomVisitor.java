@@ -96,7 +96,6 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
     /** Where @version was declared, so a refusal raised after the parse can point at it. */
     private int versionLine = -1;
     private int versionColumn;
-    /** IRIs declared via {@code @import}. */
     /** `@import <iri>` references, used exactly as written. */
     private final List<String> iriImportRefs = new ArrayList<>();
     /** `@import "…"` references: an IRI with a retrievable scheme, or a file path. */
@@ -238,15 +237,6 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
     }
 
     /**
-     * Rejects a relative IRI used as an ontology or version identity.
-     *
-     * <p>OWL 2 requires both to be absolute, and for good reason: they identify the
-     * document to everything that imports it, so an identity that means different
-     * things depending on where it is read is not an identity. OWL API does not check
-     * this, and a relative one survives as far as the first importer, which is a much
-     * worse place to find out.
-     */
-    /**
      * Requires the angle-bracket form for an identity, refusing a bare or prefixed name.
      *
      * <p>The grammar's {@code iriRef} allows either, and a name is expanded through the
@@ -272,6 +262,15 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
         }
     }
 
+    /**
+     * Rejects a relative IRI used as an ontology or version identity.
+     *
+     * <p>OWL 2 requires both to be absolute, and for good reason: they identify the
+     * document to everything that imports it, so an identity that means different
+     * things depending on where it is read is not an identity. OWL API does not check
+     * this, and a relative one survives as far as the first importer, which is a much
+     * worse place to find out.
+     */
     private IRI requireAbsolute(IRI iri, String keyword,
                                 org.antlr.v4.runtime.ParserRuleContext ctx) {
         if (!iri.toURI().isAbsolute()) {
@@ -678,9 +677,18 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
         // One side a data range and the other a bare name is unambiguous: a class
         // equivalence cannot have a data range on either side.
         if (operands.size() == 2) {
+            // The name comes from operand i and the range from the other one, so i == 0 tries
+            // the left-hand side as the defined datatype. It used to be the other way round,
+            // which was invisible while one side was always a built-in — the guard below
+            // rejects a built-in as the defined name, so the correct side won by elimination.
+            // With a datatype on both sides nothing eliminated anything and the right-hand
+            // side won: `T2 ≡ T` was read as `DatatypeDefinition(:T :T2)`, which writes as
+            // `T ≡ T2`, which reads as `DatatypeDefinition(:T2 :T)`. The document alternated
+            // between two forms forever and never reached a fixed point — the only such
+            // document found in 727 fixtures.
             for (int i = 0; i < 2; i++) {
-                OWLObject range = operands.get(i);
-                DLESyntaxParser.ClassExprContext other = ctx.classExpr(1 - i);
+                OWLObject range = operands.get(1 - i);
+                DLESyntaxParser.ClassExprContext other = ctx.classExpr(i);
                 String name = loneName(other);
                 // Any data range, a plain datatype included: `Code ≡ xsd:string` is an
                 // alias, and OWL's DatatypeDefinition takes any range.
@@ -918,17 +926,6 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
     }
 
     /**
-     * The object property a characteristic is about, refusing a data property.
-     *
-     * <p>Transitivity, symmetry, asymmetry, reflexivity and irreflexivity are relations
-     * between two individuals; OWL defines them for object properties only, and there is no
-     * data-property counterpart to fall back on. Every one of these built an object
-     * property regardless, so a document applying {@code Trans} to a name the rest of it
-     * used with a datatype produced an ontology declaring that name as both kinds at once —
-     * punning OWL 2 DL forbids, which no reasoner will load and which DLe cannot write
-     * back. Functionality is the exception, and has both forms.
-     */
-    /**
      * An object property expression for a characteristic that is object-only.
      *
      * <p>OWL permits an expression here, and the writer emits one — {@code Trans(r⁻)} comes
@@ -958,6 +955,17 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
         }
     }
 
+    /**
+     * The object property a characteristic is about, refusing a data property.
+     *
+     * <p>Transitivity, symmetry, asymmetry, reflexivity and irreflexivity are relations
+     * between two individuals; OWL defines them for object properties only, and there is no
+     * data-property counterpart to fall back on. Every one of these built an object
+     * property regardless, so a document applying {@code Trans} to a name the rest of it
+     * used with a datatype produced an ontology declaring that name as both kinds at once —
+     * punning OWL 2 DL forbids, which no reasoner will load and which DLe cannot write
+     * back. Functionality is the exception, and has both forms.
+     */
     private OWLObjectProperty objectOnlyProp(String keyword, DLESyntaxParser.NameContext ctx) {
         String name = ctx.getText();
         if (dataPropertyNames.contains(name)) {
@@ -1306,11 +1314,10 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
 
     // ── Comment capture ──────────────────────────────────────────────────────
 
-    /**
-     * For each statement, collect any hidden {@code #} comment tokens that immediately
-     * precede it and attach them as {@code dle:comment} annotation assertions on the
-     * first named entity referenced in the statement.
-     */
+    //
+    // For each statement, any hidden `#` comment tokens immediately preceding it are
+    // collected and attached as `dle:comment` annotation assertions on the first named
+    // entity the statement references.
     /**
      * Captures the comment block after the last statement.
      *
@@ -1837,10 +1844,6 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
         return IRI.create(base + text);
     }
 
-    /**
-     * Returns an OWLObjectProperty, OWLDataProperty, or OWLClass depending on
-     * how the name was classified by the scanner.
-     */
     /** If classExpr is a flat intersection of bare names only, returns those NameContexts; else null. */
     private List<DLESyntaxParser.NameContext> allIntersectedNameCtxs(DLESyntaxParser.ClassExprContext ctx) {
         if (!(ctx instanceof DLESyntaxParser.IntersectionWrapContext)) return null;
@@ -1936,6 +1939,10 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
         return dleClass;
     }
 
+    /**
+     * Returns an OWLObjectProperty, OWLDataProperty, or OWLClass depending on
+     * how the name was classified by the scanner.
+     */
     private OWLObject nameToPropertyOrClass(DLESyntaxParser.NameContext ctx) {
         String text = ctx.getText();
         IRI iri = expandName(ctx);
@@ -2241,7 +2248,6 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
         return literalOf(lit);
     }
 
-    /** Builds a literal from any of the three spellings the grammar admits. */
     /**
      * An integer value, of any size.
      *
@@ -2259,6 +2265,7 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
         }
     }
 
+    /** Builds a literal from any of the three spellings the grammar admits. */
     private OWLLiteral literalOf(DLESyntaxParser.LiteralContext lit) {
         if (lit instanceof DLESyntaxParser.StringLiteralContext) {
             return typedLiteral((DLESyntaxParser.StringLiteralContext) lit);
@@ -2271,7 +2278,6 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
         return df.getOWLLiteral(Boolean.parseBoolean(lit.getText()));
     }
 
-    /** Strips surrounding double-quotes and unescapes basic sequences. */
     /**
      * A string literal, with a datatype or a language tag when it carries one.
      *

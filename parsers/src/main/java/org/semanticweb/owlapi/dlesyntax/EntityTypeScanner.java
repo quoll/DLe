@@ -184,35 +184,6 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
         return visitChildren(ctx);
     }
 
-    /**
-     * If the primary is a bare NameAtom starting with a lowercase letter (and not
-     * already known as a property), record it as a predicate name.
-     */
-    /**
-     * A single-role restriction filler is a predicate reference only if it is a declared
-     * predicate.
-     *
-     * <p>This used to invent one. A bare lower-case filler that was not already known to be
-     * a property became a predicate on the strength of its case alone, which destroyed any
-     * class whose name broke the convention: {@code A ⊑ ∃r.lowerC} put {@code lowerC} in
-     * {@code predicateNames}, and the reader then built the skolem class
-     * {@code dle:E_lowerC_…} and discarded both {@code lowerC} and {@code r} — exit 0,
-     * document loading, two entities gone (#37).
-     *
-     * <p>It was also the order dependence in #27, because it read
-     * {@code objectPropertyNames} and {@code dataPropertyNames} while the scan was still
-     * filling them: the same document gave different answers depending on whether the
-     * restriction sat above or below the statement that classified the name.
-     *
-     * <p>Both faults were the guess, not the mechanism. A real predicate is always declared
-     * — {@code greaterThan(x,y) ≝ …}, or a multi-role reference {@code ∃a,b.p} whose comma
-     * makes it unambiguous — and the visitor reads {@code predicateNames} only after this
-     * scan has finished, so a declaration below the reference is found either way. With
-     * nothing invented here there is nothing to get the order of.
-     *
-     * <p>Kept as a method, and still called, so the restriction sites continue to name what
-     * they are doing; it now only asserts that the guess is gone.
-     */
     @Override
     public Void visitCardinalityRestriction(DLESyntaxParser.CardinalityRestrictionContext ctx) {
         classifyRestriction(ctx.propertyExpr(), ctx.primary());
@@ -379,7 +350,6 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
         recordObjectOnly(nameCtx.getText(), ctx);
     }
 
-    /** Notes that structure forced this name to one kind, keeping the first line for each. */
     /** A position only one kind of property can occupy. */
     private void recordKindEvidence(String name, boolean isData, int line) {
         recordKind(name, isData, Findings.Certainty.POSITIONAL, line);
@@ -392,30 +362,6 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
             certainty, line);
     }
 
-    /**
-     * Refuses a name the document forces to be both an object and a data property.
-     *
-     * <p>OWL 2 DL requires the two sets of property IRIs to be disjoint, and DLe has one
-     * statement per kind, so such a name can be neither written nor loaded. It used to be
-     * resolved quietly by letting data win, which gave four different outcomes for four
-     * documents saying the same contradictory thing: two misleading messages about datatypes
-     * and class fillers, one accurate message, and one document accepted in silence that
-     * then declared the name as both kinds at once.
-     *
-     * <p>A class and a property on one name is a different matter — that is a pun, which is
-     * legal and supported. This is only about the two <em>property</em> kinds.
-     */
-    /**
-     * Reports a name the document gives two different property kinds.
-     *
-     * <p>One rule for all three pairs now. It used to be a loop over object-versus-data
-     * followed by two more for the annotation pairs, which is why the annotation kind went
-     * unwatched for so long — adding a kind meant remembering to add another loop.
-     *
-     * <p>A class and a property is not a conflict: that is the pun DLe carries on purpose.
-     * Nor is a guess ever half of one — it loses to the evidence instead, which is what
-     * {@link Findings.Certainty#isEvidence} decides.
-     */
     /**
      * A characteristic OWL defines only for object properties, applied to a data property.
      *
@@ -437,6 +383,24 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
         }
     }
 
+    /**
+     * Reports a name the document gives two different property kinds.
+     *
+     * <p>OWL 2 DL requires the property IRI sets to be disjoint, and DLe has one statement
+     * per kind, so such a name can be neither written nor loaded. It used to be resolved
+     * quietly by letting data win, which gave four different outcomes for four documents
+     * saying the same contradictory thing: two misleading messages about datatypes and class
+     * fillers, one accurate message, and one document accepted in silence that then declared
+     * the name as both kinds at once.
+     *
+     * <p>One rule for all three pairs. It used to be a loop over object-versus-data followed
+     * by two more for the annotation pairs, which is why the annotation kind went unwatched
+     * for so long — adding a kind meant remembering to add another loop.
+     *
+     * <p>A class and a property is not a conflict: that is the pun DLe carries on purpose.
+     * Nor is a guess ever half of one — it loses to the evidence instead, which is what
+     * {@link Findings.Certainty#isEvidence} decides.
+     */
     private void reportKindConflicts() {
         reportObjectOnlyCharacteristicOnDataProperty();
         Set<String> candidates = new LinkedHashSet<>();
@@ -461,14 +425,6 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
         }
     }
 
-    /**
-     * A name known to be a role, without anything saying which kind.
-     *
-     * <p>Object property is the fallback, so the finding is recorded as such: DEFAULTED, not
-     * evidence. That is the distinction the old sets could not make — this went into
-     * {@code objectPropertyNames} and was then indistinguishable from a name the document
-     * had actually put in an object-only position.
-     */
     /**
      * Marks a name as a class, recording why.
      *
@@ -498,8 +454,14 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
      *
      * <p>PROPAGATED, never POSITIONAL: a name reached this way has no position of its own
      * saying what it is, and recording otherwise would let it contradict something later on
-     * evidence it does not have. It is still evidence — firmer than the case convention —
+     * evidence it does not have. It is still evidence, and firmer than the case convention,
      * which is what lets it settle a name the convention would have guessed wrong.
+     *
+     * <p>That only holds because the caller propagates *from* evidence. When the guards read
+     * set membership instead, this method re-exported the convention's own guesses as
+     * PROPAGATED, and a guess then outranked a position — the exact inversion the paragraph
+     * above describes. The comment was accurate about the intent and the code did the
+     * opposite.
      *
      * @return true when this changed anything, for the fixpoint loop
      */
@@ -736,20 +698,6 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
     // ── Propagation ──────────────────────────────────────────────────────────
 
     /**
-     * Propagates property classifications through sub-property axioms until
-     * no new names are added.  Must be called after visiting the full tree.
-     *
-     * <p>Two phases:
-     * <ol>
-     *   <li>Propagate {@code mustBeClass} upward (sub → sup): if A is definitively a class
-     *       and A ⊑ B, then B is also a class.  This marks the SNOMED-CT concept-hierarchy
-     *       root before role propagation reaches it.</li>
-     *   <li>Propagate role classifications, skipping any node in {@code mustBeClass}.
-     *       This stops attribute-hierarchy propagation from bleeding into the concept
-     *       hierarchy at the shared root.</li>
-     * </ol>
-     */
-    /**
      * Whether a name is a datatype for certain, rather than merely by its namespace.
      *
      * <p>{@link #isDatatypeIri} answers on the namespace, which is what the case convention
@@ -794,6 +742,20 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
         }
     }
 
+    /**
+     * Propagates property classifications through sub-property axioms until
+     * no new names are added.  Must be called after visiting the full tree.
+     *
+     * <p>Two phases:
+     * <ol>
+     *   <li>Propagate {@code mustBeClass} upward (sub → sup): if A is definitively a class
+     *       and A ⊑ B, then B is also a class.  This marks the SNOMED-CT concept-hierarchy
+     *       root before role propagation reaches it.</li>
+     *   <li>Propagate role classifications, skipping any node in {@code mustBeClass}.
+     *       This stops attribute-hierarchy propagation from bleeding into the concept
+     *       hierarchy at the shared root.</li>
+     * </ol>
+     */
     void propagatePropertyTypes() {
         // Before anything is propagated: a contradiction in the direct evidence has to be
         // reported from the evidence itself, because propagation resolves it silently.
@@ -1220,10 +1182,10 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
         }
     }
 
-    /**
+    /*
      * A note on what is deliberately *not* inferred.
      *
-     * <p>A single-role restriction filler used to be taken for a predicate reference when its
+     * A single-role restriction filler used to be taken for a predicate reference when its
      * name was lower-case and not already known to be a property. That destroyed any class
      * whose name broke the convention — {@code A ⊑ ∃r.lowerC} built the skolem class
      * {@code dle:E_lowerC_…} and discarded both the class and the property, with the document
@@ -1398,7 +1360,6 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
             && (resolvedIri.startsWith(XSD_NS) || NON_XSD_DATATYPES.contains(resolvedIri));
     }
 
-    /** Whether a name, as written in the source, denotes a datatype in this document. */
     /**
      * Where the findings and the name sets disagree, if anywhere.
      *
@@ -1459,6 +1420,7 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
         return best == null ? null : best.kind;
     }
 
+    /** Whether a name, as written in the source, denotes a datatype in this document. */
     boolean isDataTypeName(String name) {
         return datatypeNames.contains(name) || isDatatypeIri(resolve(name));
     }

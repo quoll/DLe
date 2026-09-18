@@ -115,14 +115,6 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
     }
 
     /**
-     * Renders an import target: a quoted relative path when it sits beside this document or
-     * below it, and an absolute IRI otherwise.
-     *
-     * <p>Relativised only downward. {@link java.net.URI#relativize} declines to produce
-     * {@code ../} chains, which is the behaviour wanted here — a path that climbs out of the
-     * document's own directory is more fragile than an absolute one.
-     */
-    /**
      * Where the document being written came from, used when the output has no location of
      * its own — writing to stdout or a stream.
      *
@@ -143,6 +135,14 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
         return value.replace("\\", "\\\\").replace("\"", "\\\"");
     }
 
+    /**
+     * Renders an import target: a quoted relative path when it sits beside this document or
+     * below it, and an absolute IRI otherwise.
+     *
+     * <p>Relativised only downward. {@link java.net.URI#relativize} declines to produce
+     * {@code ../} chains, which is the behaviour wanted here — a path that climbs out of the
+     * document's own directory is more fragile than an absolute one.
+     */
     private String renderImport(IRI importIRI) {
         IRI location = targetDocumentIRI != null ? targetDocumentIRI : sourceDocumentIRI();
         if (location != null) {
@@ -440,18 +440,6 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
         OWLRDFVocabulary.OWL_NOTHING.getIRI());
 
     /**
-     * The name to write for a top property, or null if this document cannot spell it.
-     *
-     * <p>Rendered through the prefix manager rather than hard-coded as {@code "owl:…"}. The
-     * reader resolves these to IRIs precisely because a document may bind {@code owl:} to
-     * some other namespace; writing the literal text in such a document produced a line that
-     * meant a different entity, and the round trip both lost axioms and gained invented ones.
-     *
-     * <p>Null when no declared prefix maps to the OWL namespace — the statement is then
-     * inexpressible, and writing something that resolves elsewhere would be worse than
-     * writing nothing.
-     */
-    /**
      * Whether every statement a punned name needs can be spelled in this document.
      *
      * <p>Asked before either half is written; see the call site for why a half-written pun
@@ -468,6 +456,18 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
     }
 
     @Nullable
+    /**
+     * The name to write for a top property, or null if this document cannot spell it.
+     *
+     * <p>Rendered through the prefix manager rather than hard-coded as {@code "owl:…"}. The
+     * reader resolves these to IRIs precisely because a document may bind {@code owl:} to
+     * some other namespace; writing the literal text in such a document produced a line that
+     * meant a different entity, and the round trip both lost axioms and gained invented ones.
+     *
+     * <p>Null when no declared prefix maps to the OWL namespace — the statement is then
+     * inexpressible, and writing something that resolves elsewhere would be worse than
+     * writing nothing.
+     */
     private String topPropertyName(boolean data) {
         IRI iri = data ? OWLRDFVocabulary.OWL_TOP_DATA_PROPERTY.getIRI()
                        : OWLRDFVocabulary.OWL_TOP_OBJECT_PROPERTY.getIRI();
@@ -526,6 +526,14 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
                 shortFormOrNull(other.asOWLClass().getIRI()), other.asOWLClass().getIRI()));
     }
 
+    /** Whether any data cardinality in this axiom is written without its filler. */
+    private static boolean hasUnqualifiedDataCardinality(OWLAxiom axiom) {
+        return axiom.nestedClassExpressions()
+            .filter(OWLDataCardinalityRestriction.class::isInstance)
+            .map(OWLDataCardinalityRestriction.class::cast)
+            .anyMatch(r -> r.getFiller().isTopDatatype());
+    }
+
     /**
      * Whether an axiom, once rendered, shows the reader that its subject is a role.
      *
@@ -541,14 +549,6 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
      * or range, a characteristic, a chain, an inverse — puts the name somewhere only a role
      * can go.
      */
-    /** Whether any data cardinality in this axiom is written without its filler. */
-    private static boolean hasUnqualifiedDataCardinality(OWLAxiom axiom) {
-        return axiom.nestedClassExpressions()
-            .filter(OWLDataCardinalityRestriction.class::isInstance)
-            .map(OWLDataCardinalityRestriction.class::cast)
-            .anyMatch(r -> r.getFiller().isTopDatatype());
-    }
-
     private static boolean pinsTheKind(OWLAxiom axiom, boolean dataProperty) {
         if (axiom instanceof OWLDeclarationAxiom
                 || axiom instanceof OWLSubObjectPropertyOfAxiom
@@ -694,6 +694,13 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
      * whole document, which made writing quadratic: 32 000 properties under one super took
      * 99s against 0.9s before this mechanism existed, each doubling roughly quadrupling.
      *
+     * <p>The properties have to be <em>capitalised</em> for that measurement, and the same
+     * goes for reproducing it. A lower-case object property makes {@code readerCanGuessRole}
+     * true, so {@link #hasRoleEvidence} is never asked and nothing here runs: 32 000 of those
+     * emit one kind statement between them and take no measurable time. Leaving the case out
+     * is what made this figure look invented — the obvious fixture built {@code p0…pN} and
+     * measured a path it never entered.
+     *
      * <p>It is also the more accurate question. A class axiom mentioning the same name is
      * not evidence that the name is a role, and the IRI form counted it as such.
      *
@@ -730,6 +737,12 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
     private boolean thingSubsumptionExists(IRI iri) {
         // Indexed by sub-class. Streaming every SUBCLASS_OF axiom per candidate made writing
         // quadratic — 190s for 100 000 lower-case-named classes against 2s before.
+        //
+        // Lower-case *and* in guessable role pairs, for that measurement and for reproducing
+        // it: what brings a class here is `classContradictsCase`, which needs both halves of
+        // a `⊑` to look like roles. 100 000 lower-case classes that are not paired that way
+        // never reach this at all, which is the other half of why these figures looked
+        // unreproducible.
         OWLDataFactory df = currentOntology.getOWLOntologyManager().getOWLDataFactory();
         return currentOntology.subClassAxiomsForSubClass(df.getOWLClass(iri))
             .anyMatch(ax -> ax.getSuperClass().isOWLThing());
@@ -774,32 +787,6 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
         return wrote[0];
     }
 
-    /**
-     * The prefixes to write with, merged from the two places they can come from:
-     * the format passed to {@code saveOntology} and the format the ontology was
-     * loaded from.
-     *
-     * <p>Both matter. The usual call is
-     * {@code saveOntology(o, new DLESyntaxDocumentFormat(), t)}, where the
-     * ontology's own format is the only place document prefixes exist. But a
-     * caller who invokes the parser directly gets a populated format back and may
-     * hand it straight to {@code saveOntology}, and preferring the ontology's
-     * format outright discarded it — dropping every {@code @prefix} line and
-     * re-resolving bare names to the DLe default namespace on reload.
-     *
-     * <p>Neither source can simply win, because neither is ever empty: a fresh
-     * {@code DLESyntaxDocumentFormat} already carries {@code owl:}, {@code rdf:},
-     * {@code rdfs:}, {@code xsd:} and {@code xml:} from
-     * {@code PrefixDocumentFormatImpl}. Letting it win would silently reset a
-     * document that redeclares one of those, and the renderer would then write the
-     * affected names bare, to be re-resolved against a different namespace on
-     * reload. Letting the ontology win loses the same thing in the other
-     * direction.
-     *
-     * <p>So a declaration that merely repeats a DLe default never displaces one
-     * that says something, and where both say something the ontology's wins,
-     * because that is the namespace its entities actually live in.
-     */
     /**
      * Gives a prefix to every namespace the document uses but does not declare.
      *
@@ -915,6 +902,32 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
         return Stream.concat(entities, Stream.concat(annotationSubjects, annotationValues));
     }
 
+    /**
+     * The prefixes to write with, merged from the two places they can come from:
+     * the format passed to {@code saveOntology} and the format the ontology was
+     * loaded from.
+     *
+     * <p>Both matter. The usual call is
+     * {@code saveOntology(o, new DLESyntaxDocumentFormat(), t)}, where the
+     * ontology's own format is the only place document prefixes exist. But a
+     * caller who invokes the parser directly gets a populated format back and may
+     * hand it straight to {@code saveOntology}, and preferring the ontology's
+     * format outright discarded it — dropping every {@code @prefix} line and
+     * re-resolving bare names to the DLe default namespace on reload.
+     *
+     * <p>Neither source can simply win, because neither is ever empty: a fresh
+     * {@code DLESyntaxDocumentFormat} already carries {@code owl:}, {@code rdf:},
+     * {@code rdfs:}, {@code xsd:} and {@code xml:} from
+     * {@code PrefixDocumentFormatImpl}. Letting it win would silently reset a
+     * document that redeclares one of those, and the renderer would then write the
+     * affected names bare, to be re-resolved against a different namespace on
+     * reload. Letting the ontology win loses the same thing in the other
+     * direction.
+     *
+     * <p>So a declaration that merely repeats a DLe default never displaces one
+     * that says something, and where both say something the ontology's wins,
+     * because that is the namespace its entities actually live in.
+     */
     private static Map<String, String> prefixesFor(OWLOntology o, OWLDocumentFormat outputFormat) {
         Map<String, String> merged = new LinkedHashMap<>();
         contribute(merged, outputFormat);

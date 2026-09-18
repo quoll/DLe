@@ -320,7 +320,6 @@ public class DLEOntologyParser extends AbstractOWLParser {
         }
     }
 
-    /** Adds a warning to the parse in progress, wherever on the stack it started. */
     /**
      * Removes `X ⊑ owl:topObjectProperty` and `X ⊑ owl:topDataProperty`, leaving a
      * declaration in their place.
@@ -394,6 +393,7 @@ public class DLEOntologyParser extends AbstractOWLParser {
         manager.removeAxioms(ontology, new java.util.HashSet<>(remove));
     }
 
+    /** Adds a warning to the parse in progress, wherever on the stack it started. */
     private static void warn(String message) {
         List<String> sink = ACTIVE_WARNINGS.get();
         if (sink != null) sink.add(message);

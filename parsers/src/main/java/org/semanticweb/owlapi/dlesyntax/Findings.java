@@ -27,11 +27,21 @@ import javax.annotation.Nullable;
  * <p>A finding records a kind, how it was arrived at, and the line it came from. A name may
  * gather several, and a conflict is two firm findings that disagree.
  *
- * <p><b>What this does not yet do.</b> The firmest finding is not yet what the rest of the
- * reader consults. Resolution still lives in the scanner's name sets, which propagation
- * walks and the visitor is handed; findings are the evidence those sets are built from, and
- * the sole authority on how firm that evidence is. Making the firmest finding the operative
- * answer is the other half of §4.1 and is not done.
+ * <p><b>How far this has got.</b> Propagation reads findings: a kind crosses a subsumption
+ * edge only from a name something in the document evidenced, which is what keeps the case
+ * convention's guesses from being carried as though they were facts. The conflict rules read
+ * findings too, before and after propagation.
+ *
+ * <p>What the name sets still own is the answer handed to the visitor. They are kept in step
+ * with the findings rather than derived from them, and {@code findingsDisagreements} exists
+ * because two representations of one thing can drift — it once did, silently, which is how a
+ * guess came to outrank a stated kind. Making the firmest finding the operative answer, and
+ * retiring the sets, is the rest of §4.1 and is not done.
+ *
+ * <p>Two kinds are outside the model altogether: an annotation property has no set, so it can
+ * produce a conflict but never a classification, and {@code predicateNames} records no
+ * findings at all. Both need a way to state the kind, which DLe has only for classes and the
+ * two property kinds.
  *
  * <p>See {@code docs/inference-design.md} §4.1.
  */

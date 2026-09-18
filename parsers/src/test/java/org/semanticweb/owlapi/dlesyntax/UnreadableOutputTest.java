@@ -741,4 +741,42 @@ class UnreadableOutputTest {
                 () -> axiom.getAxiomType() + " did not survive:\n" + written);
         }
     }
+
+    /**
+     * An alias between two datatypes the document defines keeps its direction.
+     *
+     * <p>The reader took the defined name from the *right*-hand operand, which was invisible
+     * while one side was always a built-in: the guard that rejects a built-in as the defined
+     * name meant the correct side won by elimination. With a datatype on both sides nothing
+     * eliminated anything, so `T2 \u2261 T` was read as {@code DatatypeDefinition(:T :T2)},
+     * which writes as `T \u2261 T2`, which reads as {@code DatatypeDefinition(:T2 :T)}. The
+     * document alternated between two forms forever and never reached a fixed point.
+     *
+     * <p>Idempotency is the assertion that matters here, so it is made explicitly rather than
+     * through {@code roundTrip}: the axiom sets of the two forms differ, so a single round
+     * trip would have caught this, but only a second pass shows it never settles.
+     */
+    @Test
+    void anAliasBetweenTwoDefinedDatatypesKeepsItsDirection() throws Exception {
+        OWLDatatype t = df.getOWLDatatype(IRI.create(NS + "T"));
+        OWLDatatype t2 = df.getOWLDatatype(IRI.create(NS + "T2"));
+        OWLAxiom base = df.getOWLDatatypeDefinitionAxiom(t,
+            df.getOWLDatatypeRestriction(
+                df.getOWLDatatype(OWL2Datatype.XSD_INTEGER.getIRI()),
+                df.getOWLFacetRestriction(org.semanticweb.owlapi.vocab.OWLFacet.MIN_INCLUSIVE,
+                    df.getOWLLiteral(1))));
+        OWLAxiom alias = df.getOWLDatatypeDefinitionAxiom(t2, t);
+        OWLOntology o = ontology(base);
+        manager.addAxiom(o, alias);
+
+        String first = write(o);
+        assertTrue(read(first).containsAxiom(alias),
+            () -> "the alias must keep the direction it was written in:\n" + first);
+
+        String second = write(read(first));
+        String third = write(read(second));
+        assertEquals(second, third,
+            () -> "the document must settle, not alternate:\nsecond:\n" + second
+                + "\nthird:\n" + third);
+    }
 }
