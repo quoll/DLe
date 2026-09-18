@@ -213,4 +213,49 @@ class CliFailureTest {
         assertNull(Main.unparsableCause(new RuntimeException("nothing in here")));
         assertNull(Main.unparsableCause(null));
     }
+
+    /**
+     * A rebound conventional prefix is not passed to a writer that cannot express it.
+     *
+     * <p>Prefixes are copied from the source format to the output format so that output
+     * syntaxes abbreviate names. A document may bind `rdfs:` — or `owl:`, `xsd:` — to a
+     * namespace of its own; nothing forbids it, and the DLe storer handles it by minting a
+     * fresh prefix for the real namespace so both survive.
+     *
+     * <p>Other writers cannot do that. Handed the binding, they abbreviate the *real*
+     * vocabulary with it: `C ⊑ D` came out of the Turtle writer as
+     * `:C rdfs:subClassOf :D` against the rebound namespace, and reading that back gave an
+     * annotation assertion on a foreign property with the subsumption gone — exit 0, and the
+     * document's only logical axiom lost.
+     */
+    @Test
+    void aReboundConventionalPrefixIsNotPassedToOtherWriters(@TempDir Path dir)
+            throws Exception {
+        Path source = dir.resolve("in.dle");
+        Files.write(source, ("@ontology <http://example.org/o>\n"
+            + "@prefix : <http://example.org/o#>\n"
+            + "@prefix rdfs: <http://evil.example.com/rdfs#>\n"
+            + "C \u2291 D\n").getBytes(StandardCharsets.UTF_8));
+
+        Path turtle = dir.resolve("out.ttl");
+        assertEquals(0, run(source.toString(), turtle.toString()).status);
+        String written = new String(Files.readAllBytes(turtle), StandardCharsets.UTF_8);
+        assertTrue(written.contains("@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#>"),
+            () -> "the real RDFS namespace must be what `rdfs:` means here:\n" + written);
+
+        // And the subsumption has to come back as one.
+        Path back = dir.resolve("back.ofn");
+        assertEquals(0, run(turtle.toString(), back.toString()).status);
+        String functional = new String(Files.readAllBytes(back), StandardCharsets.UTF_8);
+        assertTrue(functional.contains("SubClassOf("),
+            () -> "the subsumption must survive the Turtle route:\n" + functional);
+
+        // DLe output keeps the document's own binding, because it can express both.
+        Path dle = dir.resolve("out.dle");
+        assertEquals(0, run(source.toString(), dle.toString()).status);
+        String dleText = new String(Files.readAllBytes(dle), StandardCharsets.UTF_8);
+        assertTrue(dleText.contains("@prefix rdfs: <http://evil.example.com/rdfs#>"),
+            () -> "DLe mints a fresh prefix for the real namespace and keeps this one:\n"
+                + dleText);
+    }
 }

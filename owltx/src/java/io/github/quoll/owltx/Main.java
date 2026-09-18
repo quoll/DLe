@@ -263,11 +263,30 @@ public class Main {
         // Copy prefix mappings from the source format to the output format so
         // that output syntaxes that support prefixes (OFN, Manchester, Turtle, …)
         // use short-form names instead of full IRIs.
+        //
+        // Except a prefix that rebinds a conventional label to some other namespace. Those
+        // writers abbreviate every IRI they can against the map they are given, so handing
+        // them `rdfs:` bound elsewhere made them write the *real* RDFS vocabulary under it:
+        // `C ⊑ D` came out as `:C rdfs:subClassOf :D` against the rebound namespace, and
+        // reading that back gave an annotation assertion on a foreign property with the
+        // subsumption gone. Exit 0, and the document's only logical axiom lost.
+        //
+        // The DLe storer handles the same document correctly — it mints a fresh prefix for
+        // the real namespace — so the rebinding is kept for DLe output, where it round-trips,
+        // and dropped for the formats that cannot express it. A dropped prefix costs
+        // readability, never meaning: the writer falls back to the full IRI.
         OWLDocumentFormat sourceFormat = ontology.getFormat();
         if (sourceFormat instanceof PrefixDocumentFormat
                 && outputFormat instanceof PrefixDocumentFormat) {
+            boolean dleOutput = outputFormat instanceof DLESyntaxDocumentFormat;
             ((PrefixDocumentFormat) sourceFormat).getPrefixName2PrefixMap()
-                .forEach(((PrefixDocumentFormat) outputFormat)::setPrefix);
+                .forEach((label, namespace) -> {
+                    if (!dleOutput && org.semanticweb.owlapi.dlesyntax.DLESyntaxStorerBase
+                            .rebindsConventionalPrefix(label, namespace)) {
+                        return;
+                    }
+                    ((PrefixDocumentFormat) outputFormat).setPrefix(label, namespace);
+                });
         }
 
         // Write output

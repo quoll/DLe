@@ -928,6 +928,23 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
         return iri.getNamespace();
     }
 
+    /**
+     * Whether a prefix uses a conventional label for some other namespace.
+     *
+     * <p>{@code owl:}, {@code rdf:}, {@code rdfs:}, {@code xsd:}, {@code xml:} and
+     * {@code dle:} have fixed meanings every reader assumes. A document may bind one of them
+     * elsewhere and DLe keeps that binding, minting a fresh prefix for the real namespace so
+     * both survive. Other writers cannot do that — handed the binding they abbreviate the
+     * real vocabulary with it — so the command asks this before passing prefixes on.
+     *
+     * <p>Public because the question belongs here, beside the map that answers it, rather
+     * than being restated by every caller. The map itself stays package-private.
+     */
+    public static boolean rebindsConventionalPrefix(String label, String namespace) {
+        String conventional = DLE_DEFAULT_PREFIXES.get(label);
+        return conventional != null && !conventional.equals(namespace);
+    }
+
     /** Whether some prefix other than the default already covers this namespace. */
     private static boolean hasNonDefaultPrefix(Map<String, String> prefixes, String namespace) {
         return prefixes.entrySet().stream()
