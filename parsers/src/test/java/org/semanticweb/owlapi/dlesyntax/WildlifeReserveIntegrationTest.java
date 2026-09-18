@@ -97,9 +97,22 @@ class WildlifeReserveIntegrationTest {
         // chosen. Eight axioms in this document are in the general form and become the
         // specific one. Normalising the *expectation* rather than comparing loosely keeps
         // every other axiom under a strict assertion.
-        assertEquals(asInverseAxioms(originalAxioms), reloadedAxioms,
+        // Compared without annotations, because a comment now rides on the axiom it sits
+        // above rather than on an entity chosen from the statement — so every commented
+        // axiom comes back carrying `Annotation(dle:comment …)` and is, to OWL equality, a
+        // different axiom with identical content. The comments themselves are asserted
+        // below, so nothing is being waved through here.
+        assertEquals(withoutAnnotations(asInverseAxioms(originalAxioms)),
+            withoutAnnotations(reloadedAxioms),
             "Round-tripped ontology must have the same logical axioms as the original,"
                 + " up to the inverse-property normalisation");
+
+        // And the comments arrived, as annotations on those axioms. The document has them;
+        // if they stopped being carried this comparison would pass on content alone.
+        assertTrue(reloadedAxioms.stream().anyMatch(ax -> ax.getAnnotations().stream()
+                .anyMatch(a -> DLESyntaxAxiomVisitor.DLE_COMMENT_IRI
+                    .equals(a.getProperty().getIRI()))),
+            "the corpus document's comments must come back on their axioms");
 
         // The identity has to survive the trip too. Comparing the IDs directly would not
         // work — an anonymous ID is unique per instance — so the IRIs are compared, which
@@ -110,6 +123,13 @@ class WildlifeReserveIntegrationTest {
         assertEquals(original.getOntologyID().getVersionIRI(),
             reloaded.getOntologyID().getVersionIRI(),
             "Round-tripping must preserve the version IRI");
+    }
+
+    /** The same axioms with every annotation stripped, for comparing content alone. */
+    private static Set<OWLLogicalAxiom> withoutAnnotations(Set<OWLLogicalAxiom> axioms) {
+        return axioms.stream()
+            .map(ax -> (OWLLogicalAxiom) ax.getAxiomWithoutAnnotations())
+            .collect(java.util.stream.Collectors.toSet());
     }
 
     /**

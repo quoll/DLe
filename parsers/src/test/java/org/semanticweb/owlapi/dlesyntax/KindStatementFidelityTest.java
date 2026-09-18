@@ -360,6 +360,26 @@ class KindStatementFidelityTest {
     }
 
     /**
+     * A datatype the reader already knows needs no marker.
+     *
+     * <p>The writer asked OWL 2's built-in datatype map, and the reader asks the namespace
+     * as well — two different sets. {@code xsd:date} is not in the map, so every document
+     * that mentioned one grew a line of {@code xsd:date \u2291 rdfs:Literal} saying what
+     * {@code xsd:} had already said. The marker is for the names neither test recognises.
+     */
+    @Test
+    void aDatatypeRecognisedByItsNamespaceGetsNoMarker() throws Exception {
+        OWLOntology o = parse("@prefix : <http://example.org/t#>\n"
+            + "\u22A4 \u2291 \u2200d.xsd:date\n");
+        String body = statementsOnly(write(o, "http://example.org/t#"));
+        assertFalse(body.contains("xsd:date \u2291 rdfs:Literal"),
+            () -> "xsd: already says it is a datatype:\n" + body);
+        assertEquals(1, parse(write(o, "http://example.org/t#"))
+                .getAxioms(AxiomType.DATA_PROPERTY_RANGE).size(),
+            () -> "and the range must still come back as a data property:\n" + body);
+    }
+
+    /**
      * A document may define its own datatype, and it is then a datatype everywhere.
      *
      * <p>The built-in list cannot know about one, so it was read as a class: a data property

@@ -28,6 +28,7 @@ import org.semanticweb.owlapi.model.OWLClass;
 import org.semanticweb.owlapi.model.OWLSubDataPropertyOfAxiom;
 import org.semanticweb.owlapi.model.OWLSubObjectPropertyOfAxiom;
 import org.semanticweb.owlapi.model.AxiomType;
+import org.semanticweb.owlapi.model.OWLAnnotation;
 import org.semanticweb.owlapi.model.OWLAnnotationProperty;
 import org.semanticweb.owlapi.model.OWLSubAnnotationPropertyOfAxiom;
 import org.semanticweb.owlapi.model.IRI;
@@ -530,6 +531,11 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
     private boolean datatypeKindNeedsStating(IRI iri) {
         if (currentOntology == null) return false;
         if (org.semanticweb.owlapi.vocab.OWL2Datatype.isBuiltIn(iri)) return false;
+        // The reader recognises a datatype by its namespace as well as by the built-in map,
+        // and the two are not the same set — `xsd:date` is not in OWL 2's datatype map, so
+        // without this the writer stated a kind for it that the reader never needed and
+        // every document mentioning one grew a line of noise.
+        if (EntityTypeScanner.isDatatypeIri(iri.toString())) return false;
         OWLDataFactory df = currentOntology.getOWLOntologyManager().getOWLDataFactory();
         return currentOntology.datatypeDefinitions(df.getOWLDatatype(iri)).count() == 0;
     }
@@ -1116,7 +1122,14 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
             heldAxioms.add(axiom);
             return;
         }
-        super.writeAxiom(entity, axiom, writer);
+        // Rendered here rather than by the base class, so that a comment carried on the
+        // axiom is written with it. Several paths reach an axiom without holding it — the
+        // annotation sweep, the direct writes — and each of them would otherwise drop the
+        // comment entirely, which is worse than the misplacement it replaced.
+        Emission emission = Emission.of(getRendering(entity, axiom), axiom);
+        emission.before.forEach(writer::println);
+        lastRenderingEmpty = emission.statement.isEmpty();
+        if (!emission.statement.isEmpty()) writer.write(emission.text());
     }
 
     /**
@@ -1178,10 +1191,12 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
                         .filter(this::annotationKindIsRecoverable)
                         .map(axiom -> (OWLAxiom) axiom)))
             .filter(axiom -> !writtenAxioms.contains(axiom))
-            .map(axiom -> getRendering(null, axiom))
-            .filter(text -> text != null && !text.trim().isEmpty())
+            .map(axiom -> Emission.of(getRendering(null, axiom), axiom))
+            .filter(e -> e.statement != null && !e.statement.trim().isEmpty())
+            .sorted(Comparator.comparing(e -> e.statement))
             .distinct()
-            .sorted()
+            // Comments first, then the statement they belong to.
+            .flatMap(e -> Stream.concat(e.before.stream(), Stream.of(e.text())))
             .collect(Collectors.toCollection(java.util.ArrayList::new));
         // Datatype kind statements go here rather than in an entity block, because the
         // inherited renderer's entity loop has no datatype pass at all — which is why a
@@ -1211,6 +1226,7 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
         if (lines.isEmpty()) return;
         writer.println();
         lines.forEach(writer::println);
+        // Comments on those axioms are emitted with them, above; see Emission.
     }
 
     @Override
@@ -1316,26 +1332,78 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
     private void flushHeldAxioms(PrintWriter writer) {
         if (!holdingAxioms) return;
         holdingAxioms = false;
-        List<String> lines = new ArrayList<>();
+        List<Emission> lines = new ArrayList<>();
         for (OWLAxiom axiom : heldAxioms) {
-            lines.add(getRendering(currentEntity, axiom));
+            lines.add(Emission.of(getRendering(currentEntity, axiom), axiom));
         }
         heldAxioms.clear();
         // A kind statement is already the text an axiom would render to, so it joins the
-        // list as text and takes its place by the same rule.
-        lines.addAll(pendingKindStatements);
+        // list as text and takes its place by the same rule. It carries no comment: nothing
+        // in the document wrote it.
+        for (String kindStatement : pendingKindStatements) {
+            lines.add(Emission.plain(kindStatement));
+        }
         pendingKindStatements.clear();
 
+        // Sorted on the statement alone, so a comment stays with the statement it describes
+        // rather than being ordered by its own text.
         String own = ownName();
         lines.sort(Comparator
-            .comparingInt((String text) -> startsWithName(text, own) ? 0 : 1)
-            .thenComparing(Comparator.naturalOrder()));
+            .comparingInt((Emission e) -> startsWithName(e.statement, own) ? 0 : 1)
+            .thenComparing(e -> e.statement));
 
-        for (String text : lines) {
+        for (Emission emission : lines) {
+            emission.before.forEach(writer::println);
             super.beginWritingAxiom(writer);
-            lastRenderingEmpty = text.isEmpty();
-            if (!text.isEmpty()) writer.write(text);
+            lastRenderingEmpty = emission.statement.isEmpty();
+            if (!emission.statement.isEmpty()) writer.write(emission.text());
             endWritingAxiom(writer);
+        }
+    }
+
+    /**
+     * One statement as it will be written, with whatever comments belong to it.
+     *
+     * <p>A comment is an annotation on the axiom, so the two have to travel together through
+     * the sort — and the sort has to key on the statement, or a comment would decide where
+     * its own statement goes.
+     */
+    private static final class Emission {
+        /** The rendered statement, and the sort key. */
+        private final String statement;
+        /** Comment lines to write above it. */
+        private final List<String> before;
+        /** An inline comment, written after it on the same line. */
+        @Nullable private final String inline;
+
+        private Emission(String statement, List<String> before, @Nullable String inline) {
+            this.statement = statement;
+            this.before = before;
+            this.inline = inline;
+        }
+
+        static Emission plain(String statement) {
+            return new Emission(statement, List.of(), null);
+        }
+
+        static Emission of(String statement, OWLAxiom axiom) {
+            List<String> before = new ArrayList<>();
+            String inline = null;
+            for (OWLAnnotation annotation : axiom.getAnnotations()) {
+                IRI property = annotation.getProperty().getIRI();
+                if (!(annotation.getValue() instanceof OWLLiteral)) continue;
+                String value = ((OWLLiteral) annotation.getValue()).getLiteral();
+                if (DLESyntaxAxiomVisitor.DLE_COMMENT_IRI.equals(property)) {
+                    for (String line : value.split("\n", -1)) before.add("# " + line);
+                } else if (DLESyntaxAxiomVisitor.DLE_INLINE_COMMENT_IRI.equals(property)) {
+                    inline = value;
+                }
+            }
+            return new Emission(statement, before, inline);
+        }
+
+        String text() {
+            return inline == null ? statement : statement + "  # " + inline;
         }
     }
 

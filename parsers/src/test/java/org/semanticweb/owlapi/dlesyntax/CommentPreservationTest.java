@@ -42,6 +42,33 @@ class CommentPreservationTest {
 
     private static final String PREFIX = "@prefix : <http://example.org/t#>\n";
 
+    /**
+     * The {@code dle:comment} values carried by axioms whose rendering mentions a fragment.
+     *
+     * <p>A comment is an annotation on the axiom it sits above, so asking "which entity is
+     * this comment about" no longer has an answer — the question is which *statement* it
+     * belongs to.
+     */
+    private static List<String> commentsOnAxiom(OWLOntology o, String fragment) {
+        return annotationsOnAxiom(o, fragment, DLESyntaxAxiomVisitor.DLE_COMMENT_IRI);
+    }
+
+    /** The same, for an inline comment. */
+    private static List<String> inlineCommentsOnAxiom(OWLOntology o, String fragment) {
+        return annotationsOnAxiom(o, fragment, DLESyntaxAxiomVisitor.DLE_INLINE_COMMENT_IRI);
+    }
+
+    private static List<String> annotationsOnAxiom(OWLOntology o, String fragment, IRI property) {
+        List<String> out = new ArrayList<>();
+        o.logicalAxioms()
+            .filter(ax -> ax.toString().contains(fragment))
+            .forEach(ax -> ax.getAnnotations().stream()
+                .filter(a -> property.equals(a.getProperty().getIRI()))
+                .filter(a -> a.getValue() instanceof OWLLiteral)
+                .forEach(a -> out.add(((OWLLiteral) a.getValue()).getLiteral())));
+        return out;
+    }
+
     /** Parses a DLe document into a fresh ontology. */
     private OWLOntology readDocument(String document) throws Exception {
         OWLOntologyManager m = OWLManager.createOWLOntologyManager();
@@ -227,6 +254,65 @@ class CommentPreservationTest {
             () -> "a comment above @prefix must survive: " + after);
     }
 
+    /**
+     * A comment above a statement that builds a synthetic class survives.
+     *
+     * <p>{@code MigrationInFuture ≡ ∃migrationDate.afterNow} is not one axiom. The
+     * predicate restriction becomes an internal {@code dle:} class first, and the comment
+     * went onto the first axiom the statement produced — that class's label, which the
+     * writer suppresses because internal classes are rendered inline in the expressions
+     * that use them. Nothing wrote the comment and nothing reported it: a section heading
+     * above a block of derived classes was gone after one pass.
+     */
+    @Test
+    void aCommentAboveAPredicateRestrictionSurvives() throws Exception {
+        String source = PREFIX
+            + "migrationDate \u2291 owl:topDataProperty\n"
+            + "afterNow(x) \u225D x > now()\n"
+            + "# Derived classes\n"
+            + "MigrationInFuture \u2261 \u2203migrationDate.afterNow\n";
+        String first = rewrite(source);
+        assertTrue(comments(first).contains("Derived classes"),
+            () -> "the heading must be written back:\n" + first);
+        String second = rewrite(first);
+        assertTrue(comments(second).contains("Derived classes"),
+            () -> "and must survive the pass after that:\n" + second);
+        assertEquals(lineAbove(first, "MigrationInFuture"), "# Derived classes",
+            () -> "it belongs above its own statement:\n" + first);
+        assertEquals(bodyOf(first), bodyOf(second),
+            () -> "and the document must not keep moving:\n" + second);
+    }
+
+    /**
+     * A comment above a predicate definition stays above it.
+     *
+     * <p>A {@code ≝} statement produces a label and an {@code rdf:value}, and the writer
+     * renders the definition from the {@code rdf:value}. With the label first, the comment
+     * went onto the axiom that is never written as a statement, so nothing emitted it and
+     * it came back as a document comment at the far end of the file — moving once per pass
+     * and never settling.
+     */
+    @Test
+    void aCommentAboveAPredicateDefinitionStaysAboveIt() throws Exception {
+        String source = PREFIX + "# how far ahead counts as soon\n"
+            + "withinNextYear(x) \u225D now() < x\n";
+        String first = rewrite(source);
+        assertEquals(lineAbove(first, "withinNextYear(x)"), "# how far ahead counts as soon",
+            () -> "the comment belongs above the definition:\n" + first);
+        String second = rewrite(first);
+        assertEquals(lineAbove(second, "withinNextYear(x)"), "# how far ahead counts as soon",
+            () -> "and must still be there on the next pass:\n" + second);
+    }
+
+    /** The line preceding the first line that contains {@code fragment}. */
+    private static String lineAbove(String document, String fragment) {
+        String[] lines = document.split("\n", -1);
+        for (int i = 0; i < lines.length; i++) {
+            if (lines[i].contains(fragment)) return i == 0 ? "" : lines[i - 1];
+        }
+        return "<no line containing " + fragment + ">";
+    }
+
     /** The document body, with the generated explanatory header stripped. */
     private static String bodyOf(String document) {
         StringBuilder out = new StringBuilder();
@@ -318,23 +404,21 @@ class CommentPreservationTest {
      * round trip, from the role to an individual.
      */
     @Test
-    void aCommentAboveAnAssertionKeepsItsSubject() throws Exception {
+    void aCommentAboveAnAssertionBelongsToTheAssertion() throws Exception {
         String first = rewrite(PREFIX + "# about the knows role\n(bob,ann):knows\n");
         assertTrue(bodyOf(first).contains("# about the knows role"),
             () -> "written back:\n" + first);
         assertEquals(bodyOf(first), bodyOf(rewrite(first)),
-            () -> "and stable, which it is not if the subject moves:\n" + first);
+            () -> "and stable:\n" + first);
 
-        OWLOntologyManager manager = OWLManager.createOWLOntologyManager();
-        OWLOntology o = manager.createOntology();
-        new DLEOntologyParser().parse(new StringDocumentSource(first), o,
-            manager.getOntologyLoaderConfiguration());
-        assertTrue(o.axioms(org.semanticweb.owlapi.model.AxiomType.ANNOTATION_ASSERTION)
-                .anyMatch(ax -> DLESyntaxAxiomVisitor.DLE_COMMENT_IRI
-                        .equals(ax.getProperty().getIRI())
-                    && ax.getSubject().toString().contains("knows")),
-            () -> "the subject is the role, not an individual: "
-                + o.getAxioms(org.semanticweb.owlapi.model.AxiomType.ANNOTATION_ASSERTION));
+        // On the assertion itself. This used to ask which *entity* the comment was about,
+        // and answered `knows` — the role, because that was the block the statement would be
+        // written in. That question has no answer now and needs none: the comment is on the
+        // axiom, so it goes wherever the axiom goes.
+        OWLOntology o = readDocument(first);
+        assertEquals(List.of("about the knows role"),
+            commentsOnAxiom(o, "ObjectPropertyAssertion"),
+            () -> "the comment belongs to the assertion: " + o.getLogicalAxioms());
     }
 
     /**
@@ -355,14 +439,11 @@ class CommentPreservationTest {
         new DLEOntologyParser().parse(new StringDocumentSource(document), o,
             manager.getOntologyLoaderConfiguration());
 
-        java.util.List<org.semanticweb.owlapi.model.OWLAnnotationAssertionAxiom> notes =
-            o.axioms(org.semanticweb.owlapi.model.AxiomType.ANNOTATION_ASSERTION)
-                .filter(ax -> String.valueOf(ax.getValue()).contains("INLINE NOTE"))
-                .collect(java.util.stream.Collectors.toList());
-        assertEquals(1, notes.size(),
-            () -> "one comment, one annotation: " + notes);
-        assertTrue(notes.get(0).getSubject().toString().contains("#A"),
-            () -> "and it belongs to the statement it sits on: " + notes);
+        assertEquals(List.of("INLINE NOTE"), inlineCommentsOnAxiom(o, "#A"),
+            () -> "one comment, one annotation, on the statement it sits on: "
+                + o.getLogicalAxioms());
+        assertEquals(List.of(), commentsOnAxiom(o, "#C"),
+            () -> "and the statement below does not also claim it: " + o.getLogicalAxioms());
 
         // And it is written once, not once per claimant.
         String written = rewrite(document);
@@ -379,13 +460,11 @@ class CommentPreservationTest {
         new DLEOntologyParser().parse(new StringDocumentSource(
             PREFIX + "A ⊑ B\n\n# BLOCK NOTE\nC ⊑ D\n"), o,
             manager.getOntologyLoaderConfiguration());
-        assertTrue(o.axioms(org.semanticweb.owlapi.model.AxiomType.ANNOTATION_ASSERTION)
-                .anyMatch(ax -> DLESyntaxAxiomVisitor.DLE_COMMENT_IRI
-                        .equals(ax.getProperty().getIRI())
-                    && String.valueOf(ax.getValue()).contains("BLOCK NOTE")
-                    && ax.getSubject().toString().contains("#C")),
+        assertEquals(List.of("BLOCK NOTE"), commentsOnAxiom(o, "#C"),
             () -> "the block comment belongs to the statement below it: "
-                + o.getAxioms(org.semanticweb.owlapi.model.AxiomType.ANNOTATION_ASSERTION));
+                + o.getLogicalAxioms());
+        assertEquals(List.of(), commentsOnAxiom(o, "#A"),
+            () -> "and not to the one above it: " + o.getLogicalAxioms());
     }
 
     /**
@@ -405,16 +484,9 @@ class CommentPreservationTest {
                 PREFIX + "# about cats\n" + spelling + "\n"), o,
                 manager.getOntologyLoaderConfiguration());
 
-            java.util.Set<org.semanticweb.owlapi.model.OWLAnnotationAssertionAxiom> comments =
-                o.axioms(org.semanticweb.owlapi.model.AxiomType.ANNOTATION_ASSERTION)
-                    .filter(ax -> DLESyntaxAxiomVisitor.DLE_COMMENT_IRI
-                        .equals(ax.getProperty().getIRI()))
-                    .collect(java.util.stream.Collectors.toSet());
-            assertEquals(1, comments.size(),
-                () -> "'" + spelling + "' must keep its comment: " + comments);
-            assertTrue(comments.iterator().next().getSubject().toString().contains("Cat"),
-                () -> "'" + spelling + "' must give it the same subject as the other"
-                    + " spelling: " + comments);
+            assertEquals(List.of("about cats"), commentsOnAxiom(o, "ClassAssertion"),
+                () -> "'" + spelling + "' must keep its comment, on its own axiom: "
+                    + o.getLogicalAxioms());
         }
     }
 
@@ -478,14 +550,9 @@ class CommentPreservationTest {
                 "bob : Person",
                 "bob : Person \u2293 \u00acKeeper"}) {
             OWLOntology o = readDocument(PREFIX + "# NOTE\n" + assertion + "\n");
-            assertTrue(o.axioms(AxiomType.ANNOTATION_ASSERTION)
-                    .filter(ax -> DLESyntaxAxiomVisitor.DLE_COMMENT_IRI
-                        .equals(ax.getProperty().getIRI()))
-                    .anyMatch(ax -> ax.getSubject().toString().endsWith("#Person>")
-                        || ax.getSubject().toString().endsWith("#Person")),
-                () -> "the comment above `" + assertion + "` belongs to the class: "
-                    + o.axioms(AxiomType.ANNOTATION_ASSERTION).map(Object::toString)
-                        .collect(Collectors.toList()));
+            assertEquals(List.of("NOTE"), commentsOnAxiom(o, "ClassAssertion"),
+                () -> "the comment above `" + assertion + "` belongs to that assertion: "
+                    + o.getLogicalAxioms());
         }
     }
 }

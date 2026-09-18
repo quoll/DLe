@@ -404,12 +404,17 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
 
         OWLAnnotationProperty predProp = df.getOWLAnnotationProperty(predicateIRI);
         axioms.add(df.getOWLDeclarationAxiom(predProp));
-        axioms.add(df.getOWLAnnotationAssertionAxiom(
-            df.getOWLAnnotationProperty(OWLRDFVocabulary.RDFS_LABEL.getIRI()),
-            predicateIRI, df.getOWLLiteral(label)));
+        // rdf:value before rdfs:label, because the writer renders the `≝` statement from the
+        // rdf:value assertion and `firstWritableAxiom` hands a comment to the first axiom the
+        // statement produced. With the label first, a comment above a predicate definition
+        // landed on an axiom that is never written as a statement: nothing emitted it, and it
+        // came back as a document comment at the far end of the file, moving once per pass.
         axioms.add(df.getOWLAnnotationAssertionAxiom(
             df.getOWLAnnotationProperty(RDF_VALUE_IRI),
             predicateIRI, df.getOWLLiteral(rdfValue)));
+        axioms.add(df.getOWLAnnotationAssertionAxiom(
+            df.getOWLAnnotationProperty(OWLRDFVocabulary.RDFS_LABEL.getIRI()),
+            predicateIRI, df.getOWLLiteral(label)));
         return null;
     }
 
@@ -1513,6 +1518,7 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
     @Override
     public OWLObject visitStatement(DLESyntaxParser.StatementContext ctx) {
         currentLine = ctx.start.getLine();
+        int axiomsBefore = axioms.size();
         OWLObject result = visitChildren(ctx);
         if (tokenStream == null) return result;
 
@@ -1559,7 +1565,21 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
             }
             hidden = hidden.subList(afterPrevious, hidden.size());
             if (!hidden.isEmpty()) {
+                String block = commentText(hidden);
+                // The axiom this statement produced, if it produced one that gets written.
+                // A comment belongs to the statement it sits above, and an axiom is the only
+                // thing that carries a statement's identity through the writer — an entity
+                // does not, because which entity's block an axiom lands in is decided by the
+                // renderer, not by the comment. Attaching to an entity is what let a comment
+                // be written at the far end of the document from its own statement, and then
+                // stop being that entity's comment at all on the next read.
                 subjectIRI = findFirstNameIRI(ctx);
+                int statementAxiom = firstWritableAxiom(axiomsBefore, subjectIRI);
+                if (statementAxiom >= 0 && !block.isEmpty()) {
+                    axioms.set(statementAxiom, annotated(axioms.get(statementAxiom),
+                        DLE_COMMENT_IRI, block));
+                    return result;
+                }
                 if (subjectIRI == null) {
                     // No name in this statement to hang it on — `@prefix`, `@ontology`,
                     // `@version` and `@import` have none — so the comment was dropped.
@@ -1605,20 +1625,91 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
             if (right != null && !right.isEmpty()) {
                 Token first = right.get(0);
                 if (first.getLine() == ctx.stop.getLine()) {
+                    String text = commentText(List.of(first));
                     if (subjectIRI == null) subjectIRI = findFirstNameIRI(ctx);
-                    if (subjectIRI != null) {
-                        String text = first.getText();
-                        if (text.startsWith("#")) text = text.substring(1);
-                        if (!text.isEmpty() && text.charAt(0) == ' ') text = text.substring(1);
-                        axioms.add(df.getOWLAnnotationAssertionAxiom(
-                            df.getOWLAnnotationProperty(DLE_INLINE_COMMENT_IRI),
-                            subjectIRI, df.getOWLLiteral(text)));
+                    int statementAxiom = firstWritableAxiom(axiomsBefore, subjectIRI);
+                    if (statementAxiom >= 0 && !text.isEmpty()) {
+                        // On the axiom, like the block comment above, which is what keeps an
+                        // inline comment inline: as an assertion on an entity it was written
+                        // as a block comment above that entity and came back as an ordinary
+                        // one, so the distinction survived exactly one pass.
+                        axioms.set(statementAxiom, annotated(axioms.get(statementAxiom),
+                            DLE_INLINE_COMMENT_IRI, text));
+                    } else {
+                        if (subjectIRI == null) subjectIRI = findFirstNameIRI(ctx);
+                        if (subjectIRI != null && !text.isEmpty()) {
+                            axioms.add(df.getOWLAnnotationAssertionAxiom(
+                                df.getOWLAnnotationProperty(DLE_INLINE_COMMENT_IRI),
+                                subjectIRI, df.getOWLLiteral(text)));
+                        }
                     }
                 }
             }
         }
 
         return result;
+    }
+
+    /**
+     * The index in {@link #axioms} of the first axiom this statement produced that the
+     * writer will render as a statement, or -1 if it produced none.
+     *
+     * <p>A declaration is skipped: DLe has no line for one, so a comment attached to it
+     * would have nowhere to be written. Statements that produce only declarations — a kind
+     * statement, for instance — fall back to the entity form, which is where they were.
+     *
+     * <p>The axiom also has to be <em>about</em> the name the statement is about. A
+     * statement is not one axiom: {@code MigrationInFuture ≡ ∃migrationDate.afterNow}
+     * builds a synthetic {@code dle:} class for the predicate restriction first, and the
+     * first axiom it produced was that class's label — which the writer suppresses,
+     * because internal classes are rendered inline within the expressions that use them.
+     * A comment attached there was written by nobody and lost without trace. Requiring the
+     * subject rules the synthetic axioms out, since none of them mention it.
+     *
+     * @param subject the name the statement is about, or null if it has none
+     */
+    private int firstWritableAxiom(int from, @Nullable IRI subject) {
+        for (int i = from; i < axioms.size(); i++) {
+            OWLAxiom axiom = axioms.get(i);
+            if (axiom instanceof OWLDeclarationAxiom) continue;
+            if (subject == null) return i;
+            if (isAbout(axiom, subject)) return i;
+        }
+        // Nothing this statement produced is about its own subject — leave it to the
+        // entity form rather than guess, which is where a comment lived before axiom
+        // annotations and is still written.
+        return -1;
+    }
+
+    /** Whether {@code axiom} names {@code subject} as what it is about. */
+    private static boolean isAbout(OWLAxiom axiom, IRI subject) {
+        if (axiom instanceof OWLAnnotationAssertionAxiom) {
+            // An annotation assertion's subject is an IRI, not an entity, so it is not in
+            // the axiom's signature — which holds only the annotation property.
+            return subject.equals(((OWLAnnotationAssertionAxiom) axiom).getSubject());
+        }
+        return axiom.signature().anyMatch(e -> subject.equals(e.getIRI()));
+    }
+
+    /** The same axiom carrying one more annotation. */
+    private OWLAxiom annotated(OWLAxiom axiom, IRI property, String text) {
+        Set<OWLAnnotation> annotations = new LinkedHashSet<>(axiom.getAnnotations());
+        annotations.add(df.getOWLAnnotation(
+            df.getOWLAnnotationProperty(property), df.getOWLLiteral(text)));
+        return axiom.getAnnotatedAxiom(annotations);
+    }
+
+    /** Comment tokens joined into one block, each stripped of its `#` and one space. */
+    private static String commentText(List<Token> tokens) {
+        StringBuilder sb = new StringBuilder();
+        for (Token tok : tokens) {
+            String text = tok.getText();
+            if (text.startsWith("#")) text = text.substring(1);
+            if (!text.isEmpty() && text.charAt(0) == ' ') text = text.substring(1);
+            if (sb.length() > 0) sb.append('\n');
+            sb.append(text);
+        }
+        return sb.toString();
     }
 
     /**
