@@ -831,6 +831,30 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
             }
         }
 
+        // A class expression is not a property, so an equivalence with one on either side
+        // is not between properties whatever the names suggested. Without this the operand
+        // went into the cast below and what the user saw was
+        // `OWLObjectIntersectionOfImpl cannot be cast to OWLObjectPropertyExpression` — an
+        // OWL API internal, for a document whose only fault is not saying what its names
+        // are. The scanner now reads `⊓`, `⊔` and `¬` as class evidence, which settles the
+        // cases that arose from a guess; this catches whatever a stated kind can still
+        // build, and any shape not yet thought of.
+        if (objects || data) {
+            for (OWLObject operand : operands) {
+                if (operand instanceof OWLObjectPropertyExpression
+                        || operand instanceof OWLDataPropertyExpression
+                        || operand instanceof OWLClass) {
+                    continue;
+                }
+                throw new DLESemanticException(
+                    "cannot make a property equivalent to a class expression."
+                        + " `⊓`, `⊔` and `¬` build classes, not properties, so an"
+                        + " equivalence using one is between classes — but a name in this"
+                        + " one is already a property. State the intended kind with"
+                        + " `X ⊑ ⊤` for a class.",
+                    ctx.start.getLine(), ctx.start.getCharPositionInLine());
+            }
+        }
         if (objects && !data) {
             List<OWLObjectPropertyExpression> props = operands.stream()
                 .map(o -> o instanceof OWLClass

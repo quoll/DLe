@@ -714,6 +714,84 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
         return visitChildren(ctx);
     }
 
+    // ── Boolean class constructors ───────────────────────────────────────────
+
+    /**
+     * A bare name under {@code ⊓}, {@code ⊔} or {@code ¬} is a class.
+     *
+     * <p>Those three build class expressions and nothing else — OWL has no intersection,
+     * union or complement of properties — so the position states the kind rather than
+     * suggesting it, and is POSITIONAL. Without it the case convention had the last word:
+     * {@code a ⊑ b} guessed both names roles, the guess propagated, {@code a ≡ b ⊓ c} was
+     * built as an equivalence of properties, and what the user saw was a
+     * {@code ClassCastException} naming an OWL API implementation class.
+     *
+     * <p>The datatype reading needs no rule of its own and cannot collide with this one. A
+     * data range is recognised from its operands already being datatypes —
+     * {@code ∀d.(xsd:string ⊔ xsd:integer)} settles {@code d} that way — so a name already
+     * known to be a datatype is left alone here, and a name that is not known to be one
+     * can never be the operand that makes the expression a data range.
+     */
+    @Override
+    public Void visitIntersectionOf(DLESyntaxParser.IntersectionOfContext ctx) {
+        // `p ⊓ q ⊑ ⊥` is DLe's spelling of property disjointness, and is the one place the
+        // operands of `⊓` are not classes. Left alone rather than decided twice: it has its
+        // own rule in visitSubClassAxiom, which also weighs the case convention, and the two
+        // must not disagree about the same line.
+        if (!isDisjointPropertyIdiom(ctx)) {
+            markBooleanOperand(primaryBareName(ctx.primary()), ctx.start.getLine());
+            markLeafOperand(ctx.intersectionExpr(), ctx.start.getLine());
+        }
+        return visitChildren(ctx);
+    }
+
+    @Override
+    public Void visitUnionOf(DLESyntaxParser.UnionOfContext ctx) {
+        markBooleanOperand(singleBareName(ctx.classExpr()), ctx.start.getLine());
+        markLeafOperand(ctx.intersectionExpr(), ctx.start.getLine());
+        return visitChildren(ctx);
+    }
+
+    @Override
+    public Void visitComplement(DLESyntaxParser.ComplementContext ctx) {
+        markBooleanOperand(primaryBareName(ctx.primary()), ctx.start.getLine());
+        return visitChildren(ctx);
+    }
+
+    /**
+     * Marks the left operand of a chain, which is another {@code intersectionExpr}.
+     *
+     * <p>{@code a ⊓ b ⊓ c} nests to the left, so every operand but the innermost is reached
+     * as some {@code IntersectionOf}'s own primary. The innermost is a {@code PrimaryWrap}
+     * and is reached from nowhere else — without this, the first name in every intersection
+     * went unmarked.
+     */
+    private void markLeafOperand(DLESyntaxParser.IntersectionExprContext inter, int line) {
+        if (inter instanceof DLESyntaxParser.PrimaryWrapContext) {
+            markBooleanOperand(
+                primaryBareName(((DLESyntaxParser.PrimaryWrapContext) inter).primary()), line);
+        }
+    }
+
+    /** Records class evidence for one Boolean operand, unless it is already a datatype. */
+    private void markBooleanOperand(String name, int line) {
+        if (name == null || isDefinitelyADatatype(name)) return;
+        markClass(name, Findings.Certainty.POSITIONAL, line);
+    }
+
+    /** Whether this intersection is the {@code p ⊓ q ⊑ ⊥} property-disjointness idiom. */
+    private boolean isDisjointPropertyIdiom(DLESyntaxParser.IntersectionExprContext ctx) {
+        org.antlr.v4.runtime.tree.ParseTree node = ctx;
+        while (node instanceof DLESyntaxParser.IntersectionExprContext) {
+            node = node.getParent();
+        }
+        if (!(node instanceof DLESyntaxParser.ClassExprContext)) return false;
+        org.antlr.v4.runtime.tree.ParseTree parent = node.getParent();
+        if (!(parent instanceof DLESyntaxParser.SubClassAxiomContext)) return false;
+        DLESyntaxParser.SubClassAxiomContext sub = (DLESyntaxParser.SubClassAxiomContext) parent;
+        return sub.classExpr(0) == node && isBottomClassExpr(sub.classExpr(1));
+    }
+
     // ── Sub-property pair collection ─────────────────────────────────────────
 
     @Override
@@ -971,8 +1049,47 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
         }
     }
 
+    /**
+     * Withdraws a role guess the document went on to contradict.
+     *
+     * <p>The case convention writes into the role sets as it goes — {@code a ⊑ b} puts both
+     * names there on the strength of their spelling — and nothing ever took them out. A
+     * later line saying otherwise could not be heard: {@code a ≡ b ⊓ c} puts every name in
+     * a position only a class can occupy, and all three were marked classes, but they were
+     * already object properties too, so the equivalence was built between properties and an
+     * OWL API cast failed in front of the user. Order made no difference, because the guess
+     * does not consult {@code mustBeClass} either.
+     *
+     * <p>Certainty settles it. A guess is the weakest thing that can put a name in a set, so
+     * class evidence outranks it; a role finding as firm or firmer stays, which leaves a
+     * stated kind alone and leaves a genuine pun — a name that is a class in one position
+     * and a property in another, on evidence both times — exactly as it was.
+     */
+    private void retractRoleGuessesBeatenByClassEvidence() {
+        for (String name : mustBeClass) {
+            Findings.Finding cls = findings.firmestOf(name, Findings.Kind.CLASS);
+            if (cls == null || !cls.certainty.isEvidence()) continue;
+            retractIfWeaker(name, Findings.Kind.OBJECT_PROPERTY, objectPropertyNames, cls);
+            retractIfWeaker(name, Findings.Kind.DATA_PROPERTY, dataPropertyNames, cls);
+        }
+    }
+
+    private void retractIfWeaker(String name, Findings.Kind roleKind,
+                                 Set<String> roleNames, Findings.Finding cls) {
+        if (!roleNames.contains(name)) return;
+        Findings.Finding role = findings.firmestOf(name, roleKind);
+        // Nothing recorded at all is left alone: the membership came from somewhere that
+        // does not report why, and removing it on no stated grounds is how a real
+        // classification gets lost.
+        if (role == null || role.certainty.compareTo(cls.certainty) >= 0) return;
+        roleNames.remove(name);
+    }
+
     void propagatePropertyTypes() {
         seedReservedPropertyKinds();
+        // Before the conflict reports: a guess the document contradicted is not one of the
+        // two sides of a contradiction, and leaving it in makes the report name it.
+        retractRoleGuessesBeatenByClassEvidence();
         // Before the generic clash, which would otherwise report the same document without
         // mentioning that an inverse is what forced the object reading.
         //
