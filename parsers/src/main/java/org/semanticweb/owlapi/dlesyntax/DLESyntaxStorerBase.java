@@ -28,6 +28,8 @@ import org.semanticweb.owlapi.model.OWLClass;
 import org.semanticweb.owlapi.model.OWLSubDataPropertyOfAxiom;
 import org.semanticweb.owlapi.model.OWLSubObjectPropertyOfAxiom;
 import org.semanticweb.owlapi.model.AxiomType;
+import org.semanticweb.owlapi.model.OWLAnnotationProperty;
+import org.semanticweb.owlapi.model.OWLSubAnnotationPropertyOfAxiom;
 import org.semanticweb.owlapi.model.IRI;
 import org.semanticweb.owlapi.model.OWLAnnotationAssertionAxiom;
 import org.semanticweb.owlapi.model.OWLAxiom;
@@ -1090,6 +1092,27 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
      * written as a blank line — that is how the writer declines the forms it cannot spell,
      * such as a one-property disjointness, and this pass must not undo those decisions.
      */
+    /**
+     * Whether the document says enough for `ap ⊑ bp` to read back as an annotation axiom.
+     *
+     * <p>One of the two names has to be recognisable as an annotation property from
+     * something else the document contains — a domain, a range, or being the property of an
+     * annotation assertion. The reader propagates the kind from there along the subsumption,
+     * exactly as it does for the other two property kinds.
+     */
+    private boolean annotationKindIsRecoverable(OWLSubAnnotationPropertyOfAxiom axiom) {
+        if (currentOntology == null) return false;
+        return establishesAnnotationKind(axiom.getSubProperty())
+            || establishesAnnotationKind(axiom.getSuperProperty());
+    }
+
+    private boolean establishesAnnotationKind(OWLAnnotationProperty property) {
+        return currentOntology.annotationPropertyDomainAxioms(property).findAny().isPresent()
+            || currentOntology.annotationPropertyRangeAxioms(property).findAny().isPresent()
+            || currentOntology.axioms(AxiomType.ANNOTATION_ASSERTION)
+                .anyMatch(ax -> property.equals(ax.getProperty()));
+    }
+
     private void writeAxiomsWithNoBlock(OWLOntology o, PrintWriter writer) {
         if (writtenAxioms == null) return;
         // Logical axioms, plus the annotation-property domain and range — which are not
@@ -1097,18 +1120,23 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
         // for them were never reached. A document whose only content was an
         // AnnotationPropertyDomain came out empty, at exit 0.
         //
-        // SubAnnotationPropertyOf is deliberately not here. Its only DLe spelling is
-        // `ap ⊑ bp`, which is indistinguishable from a sub-property axiom between two object
-        // properties, and that is how it reads back — turning an annotation-property axiom
-        // into an object-property one and punning the name across two property kinds, out of
-        // the OWL 2 DL profile. Dropping it loses an axiom; writing it changes one, and a
-        // changed axiom is the worse outcome. Stating the annotation kind is what would fix
-        // it, and DLe has no form for that yet.
+        // SubAnnotationPropertyOf only when the reader can tell what it is. Its DLe spelling
+        // is `ap ⊑ bp`, which is what a sub-property axiom between two object properties
+        // looks like, so on its own it reads back as one — changing the axiom type and
+        // punning the name across two property kinds, out of the OWL 2 DL profile. What
+        // settles it is the document saying elsewhere that one of the two names is an
+        // annotation property, through `@ann`, `domain` or `range`; the reader then
+        // propagates that along the edge. Where the document says none of those, the axiom
+        // is still dropped: losing an axiom is better than changing one.
         List<String> lines = Stream.concat(
                 o.logicalAxioms().map(axiom -> (OWLAxiom) axiom),
-                Stream.of(AxiomType.ANNOTATION_PROPERTY_DOMAIN,
-                          AxiomType.ANNOTATION_PROPERTY_RANGE)
-                    .flatMap(type -> o.axioms(type).map(axiom -> (OWLAxiom) axiom)))
+                Stream.concat(
+                    Stream.of(AxiomType.ANNOTATION_PROPERTY_DOMAIN,
+                              AxiomType.ANNOTATION_PROPERTY_RANGE)
+                        .flatMap(type -> o.axioms(type).map(axiom -> (OWLAxiom) axiom)),
+                    o.axioms(AxiomType.SUB_ANNOTATION_PROPERTY_OF)
+                        .filter(this::annotationKindIsRecoverable)
+                        .map(axiom -> (OWLAxiom) axiom)))
             .filter(axiom -> !writtenAxioms.contains(axiom))
             .map(axiom -> getRendering(null, axiom))
             .filter(text -> text != null && !text.trim().isEmpty())

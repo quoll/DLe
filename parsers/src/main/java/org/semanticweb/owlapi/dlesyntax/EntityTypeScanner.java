@@ -93,6 +93,22 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
     // like any other class use — it marks a pun.
     private final Set<String> explicitRole  = new HashSet<>();
 
+    /**
+     * Names the document uses as annotation properties.
+     *
+     * <p>The third kind had findings but no set, and the sets are what the visitor is handed
+     * — so the annotation kind could produce an error and never a classification, and the
+     * object *default* beat it. {@code Func(x)} beside {@code @ann C x "v"} declared x as
+     * both a functional object property and an annotation property, which OWL 2 DL forbids,
+     * at exit 0.
+     *
+     * <p>Populated from the three positions that name one: {@code @ann}'s property, and the
+     * subjects of {@code domain} and {@code range}, which in DLe are the annotation-property
+     * forms. Cleared of any name with firmer object or data evidence, so a genuine
+     * contradiction is still reported as one rather than resolved here.
+     */
+    private final Set<String> annotationPropertyNames = new LinkedHashSet<>();
+
     // Prefix map, needed only to resolve the kind statements.  Recognising them by
     // spelling is not sound: a document may bind the OWL namespace to some other prefix,
     // in which case the statement is missed, and it may bind `owl:` to some other
@@ -167,6 +183,7 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
     Set<String> getPredicateNames()      { return predicateNames; }
     /** Names the document states are roles, via {@code X ⊑ owl:topObjectProperty}. */
     Set<String> getExplicitRoleNames()   { return explicitRole; }
+    Set<String> getAnnotationPropertyNames() { return annotationPropertyNames; }
     Set<String> getDatatypeNames()       { return datatypeNames; }
 
     /**
@@ -258,23 +275,47 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
 
     @Override
     public Void visitAnnAnnotation(DLESyntaxParser.AnnAnnotationContext ctx) {
-        findings.record(ctx.name(1).getText(), Findings.Kind.ANNOTATION_PROPERTY,
-            Findings.Certainty.POSITIONAL, ctx.start.getLine());
+        markAnnotationProperty(ctx.name(1).getText(), ctx.start.getLine());
         return visitChildren(ctx);
     }
 
     @Override
     public Void visitAnnPropDomainAxiom(DLESyntaxParser.AnnPropDomainAxiomContext ctx) {
-        findings.record(ctx.name(0).getText(), Findings.Kind.ANNOTATION_PROPERTY,
-            Findings.Certainty.POSITIONAL, ctx.start.getLine());
+        markAnnotationProperty(ctx.name(0).getText(), ctx.start.getLine());
         return visitChildren(ctx);
     }
 
     @Override
     public Void visitAnnPropRangeAxiom(DLESyntaxParser.AnnPropRangeAxiomContext ctx) {
-        findings.record(ctx.name(0).getText(), Findings.Kind.ANNOTATION_PROPERTY,
-            Findings.Certainty.POSITIONAL, ctx.start.getLine());
+        markAnnotationProperty(ctx.name(0).getText(), ctx.start.getLine());
         return visitChildren(ctx);
+    }
+
+    /**
+     * The firmest object or data finding for a name that is not merely a guess.
+     *
+     * <p>{@code firmestOf} would hand back the guess, since GUESSED outranks DEFAULTED, and
+     * the guess is the one tier that says nothing about how the name is used.
+     */
+    @Nullable
+    private Findings.Finding roleFindingOtherThanAGuess(String name) {
+        Findings.Finding best = null;
+        for (Findings.Finding f : findings.of(name)) {
+            if (f.kind != Findings.Kind.OBJECT_PROPERTY
+                    && f.kind != Findings.Kind.DATA_PROPERTY) {
+                continue;
+            }
+            if (f.certainty == Findings.Certainty.GUESSED) continue;
+            if (best == null || f.certainty.compareTo(best.certainty) > 0) best = f;
+        }
+        return best;
+    }
+
+    /** Pairs the set with its finding, so the two cannot drift. */
+    private void markAnnotationProperty(String name, int line) {
+        annotationPropertyNames.add(name);
+        findings.record(name, Findings.Kind.ANNOTATION_PROPERTY,
+            Findings.Certainty.POSITIONAL, line);
     }
 
     // ── Textbook role axiom syntax ───────────────────────────────────────────
@@ -1079,6 +1120,25 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
                             && !(mustBeClass.contains(sup) && looksLikeAClass(sub))) {
                         changed |= propagateKind(sup, sub, Findings.Kind.DATA_PROPERTY);
                     }
+                    // Annotation-ness travels the same edges, and for the same reason: OWL
+                    // has SubAnnotationPropertyOf, so `ap ⊑ bp` between two annotation
+                    // properties is an axiom, and DLe writes it exactly as it writes the
+                    // object one. Only one side is ever established by a position — `@ann`,
+                    // `domain` or `range` — so without this the other side stayed a guessed
+                    // object property and the pair punned the name across two kinds.
+                    //
+                    // Blocked by real object or data evidence on either side: that is a
+                    // mixed-hierarchy document, reported as one rather than resolved here.
+                    if (annotationPropertyNames.contains(sub)
+                            && roleFindingOtherThanAGuess(sup) == null
+                            && !mustBeClass.contains(sup)) {
+                        changed |= annotationPropertyNames.add(sup);
+                    }
+                    if (annotationPropertyNames.contains(sup)
+                            && roleFindingOtherThanAGuess(sub) == null
+                            && !mustBeClass.contains(sub)) {
+                        changed |= annotationPropertyNames.add(sub);
+                    }
                     // Object property propagation is blocked at mustBeClass nodes.
                     if (findings.hasEvidenceFor(sub, Findings.Kind.OBJECT_PROPERTY)
                             && !dataPropertyNames.contains(sup)
@@ -1092,6 +1152,44 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
                 }
             }
         }
+        // A name the document uses as an annotation property is not an object or data
+        // property, whatever a default put in those sets. Anything with real object or data
+        // evidence is left alone, so the conflict below still reports it as a contradiction
+        // rather than having it quietly resolved here.
+        for (String name : annotationPropertyNames) {
+            if (findings.hasEvidenceFor(name, Findings.Kind.OBJECT_PROPERTY)
+                    || findings.hasEvidenceFor(name, Findings.Kind.DATA_PROPERTY)) {
+                continue;   // reported as the contradiction it is, by the rule below
+            }
+            // Any role finding at all, not only an evidenced one. `Func(x)` does not pin a
+            // kind — functionality has both forms — so it records DEFAULTED, which is not
+            // evidence and so never conflicted. But an annotation property cannot be
+            // functional in either kind: OWL keeps all three property IRI sets disjoint. The
+            // object *default* was beating the annotation position, and the result was a
+            // document declaring x as a functional object property and an annotation
+            // property together, at exit 0.
+            // Any role finding except a guess. A guess comes from the spelling alone and is
+            // not a use of the name, so `ap \u2291 bp` — where the case convention guesses both
+            // to be roles — must not be read as a contradiction; annotation-ness propagates
+            // along that edge instead, below. What must be caught is a real role position,
+            // including `Func(x)`, which records DEFAULTED because functionality has both
+            // kinds and so pins neither.
+            Findings.Finding role = roleFindingOtherThanAGuess(name);
+            if (role != null) {
+                Findings.Finding annotation =
+                    findings.firmestOf(name, Findings.Kind.ANNOTATION_PROPERTY);
+                throw new DLESemanticException(
+                    name + " is used as an annotation property on line "
+                        + (annotation == null ? 0 : annotation.line)
+                        + " and as " + role.kind.description() + " on line " + role.line
+                        + ". OWL keeps the three kinds of property in separate sets, so one"
+                        + " IRI cannot be more than one of them.",
+                    Math.max(annotation == null ? 0 : annotation.line, role.line), 0);
+            }
+            objectPropertyNames.remove(name);
+            dataPropertyNames.remove(name);
+        }
+
         // And again, now that propagation has run. The first call sees only what the document
         // says directly, which is what lets a diagnostic name a position; but a conflict can
         // also be *reached* — a data property propagated up a chain onto a name an @ann had

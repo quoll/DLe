@@ -56,6 +56,14 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
     /** Names stated to be roles by {@code X ⊑ owl:topObjectProperty}; see visitSubClassAxiom. */
     private final Set<String> explicitRoleNames;
     /**
+     * Names the document uses as annotation properties.
+     *
+     * <p>Lets `ap ⊑ bp` be read as the annotation subsumption it is, when the document has
+     * said elsewhere what `ap` is. Without this the pair went through the object branch and
+     * punned the name across two property kinds.
+     */
+    private final Set<String> annotationPropertyNames;
+    /**
      * Names that are both a role and a class. A name resolves to a single kind, so without
      * this a punned name is a property everywhere and every class position it appears in is
      * rejected — which made stating a pun the thing that broke it.
@@ -112,6 +120,7 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
                           Set<String> dataPropertyNames,
                           Set<String> predicateNames,
                           Set<String> explicitRoleNames,
+                          Set<String> annotationPropertyNames,
                           Set<String> punnedNames,
                           Set<String> datatypeNames,
                           CommonTokenStream tokenStream) {
@@ -121,6 +130,7 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
         this.predicateNames      = predicateNames;
         this.datatypeNames       = datatypeNames;
         this.explicitRoleNames   = explicitRoleNames;
+        this.annotationPropertyNames = annotationPropertyNames;
         this.punnedNames         = punnedNames;
         this.tokenStream         = tokenStream;
     }
@@ -635,6 +645,25 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
                 axioms.add(df.getOWLDataPropertyRangeAxiom(avf.getProperty(), avf.getFiller()));
                 return null;
             }
+        }
+
+        // `ap ⊑ bp` between two annotation properties. DLe writes an annotation subsumption
+        // exactly as it writes an object one, so which it is can only come from what the
+        // document says elsewhere about the names — `@ann`, `domain` or `range`. Without
+        // this the pair went through the object branch below and punned the name across two
+        // property kinds, out of the OWL 2 DL profile.
+        //
+        // Both sides, because one annotation property beneath an object property is not an
+        // axiom OWL has; that stays a mixed-hierarchy error, reported below.
+        String lhsName = loneName(ctx.classExpr(0));
+        String rhsName = loneName(ctx.classExpr(1));
+        if (lhsName != null && rhsName != null
+                && annotationPropertyNames.contains(lhsName)
+                && annotationPropertyNames.contains(rhsName)) {
+            axioms.add(df.getOWLSubAnnotationPropertyOfAxiom(
+                df.getOWLAnnotationProperty(expandNameText(lhsName)),
+                df.getOWLAnnotationProperty(expandNameText(rhsName))));
+            return null;
         }
 
         // Sub-property: p ⊑ q (both sides are property expressions)
