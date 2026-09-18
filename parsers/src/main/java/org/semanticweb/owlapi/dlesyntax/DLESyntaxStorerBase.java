@@ -382,8 +382,19 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
         // the kind. So the two halves stand or fall together.
         boolean punStatements = punned && !dualRoleKinds && punIsFullySpellable(iri);
 
+        // An entity the document only declares appears in no other axiom, so there is
+        // nothing for the reader to classify it from and the convention cannot rescue it
+        // whatever its case. With no statement, nothing about it is written at all and the
+        // declaration is simply lost: of the seven declaration-only shapes only a data
+        // property and a capitalised object property survived, and those two only because
+        // some other rule happened to emit their statement. `Declaration(Class(:Solo))` has a
+        // perfectly good spelling in `Solo ⊑ ⊤`, and a lower-case object property in
+        // `r ⊑ owl:topObjectProperty`.
+        boolean declarationOnly = declaresNothingElse(iri);
+
         boolean wrote = false;
-        if (entity.isOWLClass() && (punStatements || classContradictsCase || classUnderPun)
+        if (entity.isOWLClass()
+                && (punStatements || classContradictsCase || classUnderPun || declarationOnly)
                 && !thingSubsumptionExists(iri)) {
             pendingKindStatements.add(name + " ⊑ ⊤");
             wrote = true;
@@ -392,7 +403,8 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
         // it from the signature meant an IRI that is both an object and a data property had
         // `owl:topDataProperty` written by both passes — twice, with the object statement
         // never written at all, and the result did not parse.
-        if (isPropertyEntity && !dualRoleKinds && (punStatements || propertyContradictsCase)) {
+        if (isPropertyEntity && !dualRoleKinds
+                && (punStatements || propertyContradictsCase || declarationOnly)) {
             boolean data = entity.isOWLDataProperty();
             String top = topPropertyName(data);
             if (top != null && !topSubPropertyExists(iri, data)) {
@@ -401,6 +413,21 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
             }
         }
         return wrote;
+    }
+
+    /**
+     * Whether this IRI appears in no axiom but its own declaration.
+     *
+     * <p>Such an entity has no use to be read from, so nothing the reader does can recover
+     * its kind, and every rule above is about *correcting* a reading rather than supplying
+     * one. Asked of the IRI rather than the entity so that a name declared under two kinds
+     * still counts as used.
+     */
+    private boolean declaresNothingElse(IRI iri) {
+        if (currentOntology == null) return false;
+        return currentOntology.referencingAxioms(iri)
+            .allMatch(axiom -> axiom.getAxiomType() == AxiomType.DECLARATION
+                || axiom.getAxiomType() == AxiomType.ANNOTATION_ASSERTION);
     }
 
     /** The built-in entities whose kind OWL already fixes; never worth a statement. */
@@ -986,7 +1013,23 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
      */
     private void writeAxiomsWithNoBlock(OWLOntology o, PrintWriter writer) {
         if (writtenAxioms == null) return;
-        List<String> lines = o.logicalAxioms()
+        // Logical axioms, plus the annotation-property domain and range — which are not
+        // logical axioms, so this pass never saw them and the renderer's working visit methods
+        // for them were never reached. A document whose only content was an
+        // AnnotationPropertyDomain came out empty, at exit 0.
+        //
+        // SubAnnotationPropertyOf is deliberately not here. Its only DLe spelling is
+        // `ap ⊑ bp`, which is indistinguishable from a sub-property axiom between two object
+        // properties, and that is how it reads back — turning an annotation-property axiom
+        // into an object-property one and punning the name across two property kinds, out of
+        // the OWL 2 DL profile. Dropping it loses an axiom; writing it changes one, and a
+        // changed axiom is the worse outcome. Stating the annotation kind is what would fix
+        // it, and DLe has no form for that yet.
+        List<String> lines = Stream.concat(
+                o.logicalAxioms().map(axiom -> (OWLAxiom) axiom),
+                Stream.of(AxiomType.ANNOTATION_PROPERTY_DOMAIN,
+                          AxiomType.ANNOTATION_PROPERTY_RANGE)
+                    .flatMap(type -> o.axioms(type).map(axiom -> (OWLAxiom) axiom)))
             .filter(axiom -> !writtenAxioms.contains(axiom))
             .map(axiom -> getRendering(null, axiom))
             .filter(text -> text != null && !text.trim().isEmpty())

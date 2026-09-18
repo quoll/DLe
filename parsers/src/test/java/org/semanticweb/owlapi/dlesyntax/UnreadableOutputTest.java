@@ -683,4 +683,62 @@ class UnreadableOutputTest {
         assertTrue(body.contains("@db Thing1\n"),
             () -> "a redundant value is left out:\n" + body);
     }
+
+    /**
+     * An entity the document only declares is still written.
+     *
+     * <p>Such an entity appears in no other axiom, so nothing the reader does can recover its
+     * kind, and every rule that decides whether to state a kind is about correcting a reading
+     * rather than supplying one. With no statement, nothing about it was written at all and
+     * the declaration was lost: of the seven declaration-only shapes only a data property and
+     * a capitalised object property survived, and those two by accident of another rule.
+     *
+     * <p>Three shapes are still lost, and cannot be fixed here: a named individual, an
+     * annotation property and a datatype have no DLe form that states their kind. They are
+     * left out of this test deliberately rather than silently.
+     */
+    @Test
+    void aDeclarationOnlyEntityIsStillWritten() throws Exception {
+        OWLEntity[] declared = {
+            df.getOWLObjectProperty(IRI.create(NS + "Upper")),
+            df.getOWLObjectProperty(IRI.create(NS + "r")),
+            df.getOWLDataProperty(IRI.create(NS + "d")),
+            df.getOWLClass(IRI.create(NS + "Solo")),
+        };
+        for (OWLEntity entity : declared) {
+            OWLOntology o = ontology(df.getOWLDeclarationAxiom(entity));
+            manager.addAxiom(o, df.getOWLSubClassOfAxiom(
+                df.getOWLClass(IRI.create(NS + "A")), df.getOWLClass(IRI.create(NS + "B"))));
+            String written = write(o);
+            OWLOntology back = read(written);
+            assertTrue(back.containsEntityInSignature(entity),
+                () -> entity.getEntityType() + " " + entity.getIRI().getRemainder().orElse("?")
+                    + " was declared and then written nowhere:\n" + written);
+        }
+    }
+
+    /**
+     * An annotation property's domain and range are written, being non-logical axioms.
+     *
+     * <p>{@code writeAxiomsWithNoBlock} filtered {@code logicalAxioms()}, and these are not
+     * logical axioms, so this pass never saw them and the renderer's working visit methods for
+     * them were never reached. A document whose only content was an
+     * {@code AnnotationPropertyDomain} came out empty, at exit 0.
+     */
+    @Test
+    void anAnnotationPropertysDomainAndRangeAreWritten() throws Exception {
+        OWLAnnotationProperty ap = df.getOWLAnnotationProperty(IRI.create(NS + "ap"));
+        OWLClass c = df.getOWLClass(IRI.create(NS + "C"));
+        OWLAxiom[] axioms = {
+            df.getOWLAnnotationPropertyDomainAxiom(ap, c.getIRI()),
+            df.getOWLAnnotationPropertyRangeAxiom(ap, c.getIRI()),
+        };
+        for (OWLAxiom axiom : axioms) {
+            OWLOntology o = ontology(axiom);
+            manager.addAxiom(o, df.getOWLDeclarationAxiom(c));
+            String written = write(o);
+            assertTrue(read(written).containsAxiom(axiom),
+                () -> axiom.getAxiomType() + " did not survive:\n" + written);
+        }
+    }
 }

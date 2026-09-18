@@ -470,6 +470,19 @@ public class DLESyntaxObjectRenderer extends DLSyntaxObjectRenderer {
     /** Implicit, and so never written: a plain string is just a string. */
     private static final String XSD_STRING = "http://www.w3.org/2001/XMLSchema#string";
 
+    /**
+     * Whether a literal is exactly what {@code DefaultLabelAdder} would regenerate.
+     *
+     * <p>Suppressing a label or a {@code @db} value as redundant is safe only when the reader
+     * will put back the same literal, and what it puts back is a plain untagged string. The
+     * tag was guarded; the datatype was not, so {@code rdfs:label :C "C"^^xsd:token} was
+     * dropped and came back as {@code "C"^^xsd:string} — a different literal, and a different
+     * axiom, silently.
+     */
+    private static boolean isPlainString(OWLLiteral lit) {
+        return !lit.hasLang() && XSD_STRING.equals(lit.getDatatype().getIRI().toString());
+    }
+
     private String quoted(OWLLiteral lit) {
         String escaped = lit.getLiteral().replace("\\", "\\\\").replace("\"", "\\\"");
         String text = "\"" + escaped + "\"";
@@ -1103,7 +1116,7 @@ public class DLESyntaxObjectRenderer extends DLSyntaxObjectRenderer {
                 // `rdfs:label :C "C"@en` is not the label that gets regenerated — that one
                 // comes back plain — so suppressing it silently changed the literal, and
                 // with it the axiom.
-                if (axiom.getSubject() instanceof IRI && !((OWLLiteral) value).hasLang()) {
+                if (axiom.getSubject() instanceof IRI && isPlainString((OWLLiteral) value)) {
                     String localName = ((IRI) axiom.getSubject()).getRemainder().orElse(null);
                     if (labelText.equals(localName)) {
                         return;
@@ -1137,7 +1150,7 @@ public class DLESyntaxObjectRenderer extends DLSyntaxObjectRenderer {
             // As with @label: a tagged literal is a different literal, so suppressing it
             // as redundant and letting the reader regenerate it loses the tag.
             OWLLiteral dbValue = (OWLLiteral) value;
-            if (!dbValue.getLiteral().equals(subject) || dbValue.hasLang()) {
+            if (!dbValue.getLiteral().equals(subject) || !isPlainString(dbValue)) {
                 write(" ");
                 write(renderValue(value));
             }
