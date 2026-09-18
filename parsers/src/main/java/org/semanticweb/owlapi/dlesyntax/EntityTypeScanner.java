@@ -93,6 +93,37 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
         put("xml:",  "http://www.w3.org/XML/1998/namespace");
     }};
 
+    /**
+     * The name after {@code ^^} is a datatype, whatever else the document does with it.
+     *
+     * <p>Nothing recorded it, so the grammar's {@code ^^ name} accepted any name at all and
+     * the entity was silently retyped: {@code (a,"x"^^A):d} beside {@code A ⊑ B} declared
+     * {@code A} as a class *and* a datatype, which OWL 2 DL forbids — the two IRI sets are
+     * disjoint — at exit 0 with no sign anything was wrong.
+     *
+     * <p>Recorded for both spellings that take one, so the ordinary literal and an annotation
+     * value cannot disagree.
+     */
+    @Override
+    public Void visitStringLiteral(DLESyntaxParser.StringLiteralContext ctx) {
+        recordDatatypePosition(ctx.name());
+        return visitChildren(ctx);
+    }
+
+    @Override
+    public Void visitAnnotationString(DLESyntaxParser.AnnotationStringContext ctx) {
+        recordDatatypePosition(ctx.name());
+        return visitChildren(ctx);
+    }
+
+    private void recordDatatypePosition(@Nullable DLESyntaxParser.NameContext nameCtx) {
+        if (nameCtx == null) return;
+        String name = nameCtx.getText();
+        datatypeNames.add(name);
+        findings.record(name, Findings.Kind.DATATYPE, Findings.Certainty.POSITIONAL,
+            nameCtx.start.getLine());
+    }
+
     @Override
     public Void visitPrefixDecl(DLESyntaxParser.PrefixDeclContext ctx) {
         String label = ctx.PNAME_NS().getText();
@@ -756,7 +787,57 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
      *       hierarchy at the shared root.</li>
      * </ol>
      */
+    /**
+     * The four OWL properties whose kind is fixed by the specification.
+     *
+     * <p>Their local parts are lower case, so the case convention guessed them to be object
+     * properties like anything else: {@code owl:topDataProperty ⊑ x} produced
+     * {@code Declaration(ObjectProperty(owl:topDataProperty))} — reserved vocabulary used as
+     * the wrong kind of property, out of the OWL 2 DL profile. The marker rules only look at
+     * a top property in the *super* position, so in any other position nothing settled it.
+     */
+    private static Map<String, Boolean> reservedPropertyIsData() {
+        return Map.of(
+            OWL_NS + "topObjectProperty", Boolean.FALSE,
+            OWL_NS + "bottomObjectProperty", Boolean.FALSE,
+            OWL_NS + "topDataProperty", Boolean.TRUE,
+            OWL_NS + "bottomDataProperty", Boolean.TRUE);
+    }
+
+    /** Forces the fixed kind on any reserved property the document mentions. */
+    private void seedReservedPropertyKinds() {
+        Set<String> seen = new LinkedHashSet<>();
+        findings.names().forEach(seen::add);
+        seen.addAll(objectPropertyNames);
+        seen.addAll(dataPropertyNames);
+        for (Map.Entry<String, Set<String>> e : subPropertyPairs.entrySet()) {
+            seen.add(e.getKey());
+            seen.addAll(e.getValue());
+        }
+        Map<String, Boolean> reserved = reservedPropertyIsData();
+        for (String name : seen) {
+            String resolved = resolve(name);
+            // Map.of refuses a null key even for a lookup, and a bare name in a document
+            // with no default prefix resolves to nothing.
+            Boolean isData = resolved == null ? null : reserved.get(resolved);
+            if (isData == null) continue;
+            if (isData) {
+                dataPropertyNames.add(name);
+                objectPropertyNames.remove(name);
+            } else {
+                objectPropertyNames.add(name);
+                dataPropertyNames.remove(name);
+            }
+            // STATED: OWL says what these are, which is firmer than anything a document can
+            // put in a position.
+            findings.record(name,
+                isData ? Findings.Kind.DATA_PROPERTY : Findings.Kind.OBJECT_PROPERTY,
+                Findings.Certainty.STATED, 0);
+        }
+    }
+
     void propagatePropertyTypes() {
+        seedReservedPropertyKinds();
         // Before anything is propagated: a contradiction in the direct evidence has to be
         // reported from the evidence itself, because propagation resolves it silently.
         reportKindConflicts();
