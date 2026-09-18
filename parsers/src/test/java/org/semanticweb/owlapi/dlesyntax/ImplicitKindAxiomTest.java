@@ -188,12 +188,18 @@ class ImplicitKindAxiomTest {
      */
     @Test
     void bothMarkersOnOneNameAreReported() {
-        Throwable t = assertThrows(Throwable.class,
+        // The semantic exception, and both line numbers. `Throwable` is satisfied by any
+        // failure, which made this a weaker duplicate of the refusal test in
+        // KindStatementFidelityTest; what makes the diagnostic useful is that it points at
+        // both of the contradicting lines.
+        DLESemanticException t = assertThrows(DLESemanticException.class,
             () -> read(PREFIX + "P ⊑ owl:topObjectProperty\nP ⊑ owl:topDataProperty\n"),
             "one IRI cannot be both kinds of property");
         String message = String.valueOf(t.getMessage());
         assertTrue(message.contains("object property") && message.contains("data property"),
             () -> "the message must name both: " + message);
+        assertTrue(message.contains("line 2") && message.contains("line 3"),
+            () -> "and both lines: " + message);
     }
 
     /** The evidence still reaches the reader, since the scan sees the statement first. */

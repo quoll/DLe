@@ -48,7 +48,12 @@ class WildlifeReserveIntegrationTest {
         assertNotNull(format, "Parser must return a document format");
         assertInstanceOf(DLESyntaxDocumentFormat.class, format,
             "Returned format must be DLESyntaxDocumentFormat");
-        assertFalse(ontology.isEmpty(), "Parsed ontology must not be empty");
+        // A count, not "not empty": one surviving axiom out of a 240-axiom document
+        // satisfied the old assertion, so almost any loss passed. The number is the
+        // document's, and changing the document is meant to require changing this.
+        assertEquals(242, ontology.getLogicalAxiomCount(),
+            () -> "the whole document must load, not merely part of it: "
+                + ontology.getLogicalAxiomCount() + " logical axioms");
     }
 
     @Test

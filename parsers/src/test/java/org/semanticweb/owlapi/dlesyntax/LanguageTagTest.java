@@ -2,6 +2,7 @@ package org.semanticweb.owlapi.dlesyntax;
 
 import org.junit.jupiter.api.Test;
 import org.semanticweb.owlapi.apibinding.OWLManager;
+import org.semanticweb.owlapi.io.OWLParserException;
 import org.semanticweb.owlapi.formats.DLESyntaxDocumentFormat;
 import org.semanticweb.owlapi.io.StreamDocumentTarget;
 import org.semanticweb.owlapi.io.StringDocumentSource;
@@ -129,8 +130,13 @@ class LanguageTagTest {
             () -> "and neither may have picked up a tag: "
                 + two.getAxioms(AxiomType.ANNOTATION_ASSERTION));
 
-        assertThrows(Throwable.class, () -> parse(PREFIX + "@label A \"x\" @en\n"),
+        // A syntax error specifically. `Throwable` is satisfied by any failure at all,
+        // including an internal one, and the claim here is about what the grammar accepts.
+        OWLParserException detached = assertThrows(OWLParserException.class,
+            () -> parse(PREFIX + "@label A \"x\" @en\n"),
             "a detached tag is not a tag");
+        assertTrue(String.valueOf(detached.getMessage()).startsWith("DLE syntax error"),
+            () -> "the grammar must be what refuses it: " + detached.getMessage());
     }
 
     /** An untagged string is still untagged — the tag is optional, not implied. */
