@@ -2130,9 +2130,16 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
         // object-property restriction whose filler is xsd:integer. The scanner
         // catches the common cases with a specific message; this is the backstop,
         // and it must still read as a diagnostic rather than an internal error.
+        // The advice has to match what was actually found. This sentence was hard-coded, so
+        // a property expression in a class position was explained as though it were a
+        // datatype — misinforming the reader about their own document, and the only guidance
+        // offered for the shape.
+        String advice = obj instanceof OWLPropertyExpression
+            ? " A property expression cannot stand where a class is expected; OWL has no"
+                + " axiom relating a property to a class."
+            : " A datatype can only be the filler of a data property restriction.";
         throw new DLESemanticException(
-            "expected a class expression here, but found " + describe(obj)
-                + ". A datatype can only be the filler of a data property restriction.",
+            "expected a class expression here, but found " + describe(obj) + "." + advice,
             currentLine, 0);
     }
 

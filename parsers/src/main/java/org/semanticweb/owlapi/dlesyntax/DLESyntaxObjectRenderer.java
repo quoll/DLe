@@ -587,12 +587,42 @@ public class DLESyntaxObjectRenderer extends DLSyntaxObjectRenderer {
 
     @Override
     public void visit(OWLObjectPropertyAssertionAxiom axiom) {
-        writeAssertion(axiom.getSubject(), axiom.getObject(), axiom.getProperty(), false);
+        writeObjectAssertion(axiom.getSubject(), axiom.getObject(), axiom.getProperty(),
+            false);
+    }
+
+    /**
+     * An assertion over an inverse property, written the other way round.
+     *
+     * <p>The assertion form has no room for the inverse marker — `(a,b):r` takes a bare name
+     * after the colon — so `(a,b):r⁻` was written and then refused by this reader with
+     * {@code extraneous input '⁻'}. There is nothing to widen the grammar to that would read
+     * better, because the swap says exactly the same thing: ⟨a,b⟩ ∈ r⁻ is ⟨b,a⟩ ∈ r, by
+     * definition. So the pair is reversed and the named property written plainly.
+     *
+     * <p>The axiom comes back in the swapped form rather than the inverse one, which is the
+     * same kind of normalisation as {@code InverseFunctional(r⁻)} returning as
+     * {@code Functional(r)}: the semantics are identical and the spelling is the one DL uses.
+     */
+    private static boolean writeSwapped(OWLObjectPropertyExpression property) {
+        return property.isAnonymous()
+            && !property.getInverseProperty().getSimplified().isAnonymous();
     }
 
     @Override
     public void visit(OWLNegativeObjectPropertyAssertionAxiom axiom) {
-        writeAssertion(axiom.getSubject(), axiom.getObject(), axiom.getProperty(), true);
+        writeObjectAssertion(axiom.getSubject(), axiom.getObject(), axiom.getProperty(), true);
+    }
+
+    /** Writes an object property assertion, reversing the pair if the property is inverted. */
+    private void writeObjectAssertion(OWLIndividual subject, OWLIndividual object,
+                                      OWLObjectPropertyExpression property, boolean negated) {
+        if (writeSwapped(property)) {
+            writeAssertion(object, subject,
+                property.getInverseProperty().getSimplified(), negated);
+        } else {
+            writeAssertion(subject, object, property, negated);
+        }
     }
 
     @Override

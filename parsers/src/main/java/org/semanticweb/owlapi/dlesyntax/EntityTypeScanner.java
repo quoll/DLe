@@ -724,6 +724,15 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
         if (lhs != null && singleInverseAtom(ctx.classExpr(1)) != null) {
             recordObjectOnly(lhs, ctx);
         }
+        // r⁻ ⊑ s — the mirror, which was missing. An inverse on the left is a property
+        // expression, and OWL has no axiom relating one of those to a class, so the right
+        // must be an object property as well. Without it the right-hand name was left
+        // unclassified and defaulted to a class, and the writer's own `r⁻ ⊑ s` came back as
+        // "expected a class expression here, but found ObjectInverseOf(…)" — a document DLe
+        // had written and could not read.
+        if (rhs != null && singleInverseAtom(ctx.classExpr(0)) != null) {
+            recordObjectOnly(rhs, ctx);
+        }
         // A ⊑ (complex) → A is definitively a class; (complex) ⊑ B → B is a class.
         // Exclude inverse-atom RHS/LHS since those are property expressions.
         if (lhs != null && rhs == null && singleInverseAtom(ctx.classExpr(1)) == null)

@@ -196,4 +196,94 @@ class InversePropertyPositionTest {
         assertTrue(o.containsAxiom(df.getOWLTransitiveObjectPropertyAxiom(r)),
             () -> o.getLogicalAxioms().toString());
     }
+
+    /**
+     * An inverse on the left of a subsumption survives as itself.
+     *
+     * <p>The writer emits {@code r⁻ ⊑ s} for this — it has always been able to — and the
+     * reader refused it: "expected a class expression here, but found ObjectInverseOf(…)".
+     * The scanner had the rule for an inverse on the *right* (which forces the left to be a
+     * property) and not its mirror, so the right-hand name was never classified, defaulted to
+     * a class, and the sub-property branch could not match. A document DLe wrote and could
+     * not read.
+     */
+    @Test
+    void anInverseSubPropertySurvives() throws Exception {
+        OWLObjectProperty r = df.getOWLObjectProperty(IRI.create(NS + "r"));
+        OWLObjectProperty t = df.getOWLObjectProperty(IRI.create(NS + "s"));
+        OWLAxiom axiom = df.getOWLSubObjectPropertyOfAxiom(r.getInverseProperty(), t);
+
+        // Read from the bare statement, not from a round trip. A round trip passes either
+        // way: the writer emits `s ⊑ owl:topObjectProperty` beside it, which classifies the
+        // right-hand name by a different route and hides whether this rule exists at all.
+        // Removing the rule left all twelve tests in this file green until this was the
+        // fixture.
+        OWLOntology o = read("@prefix : <" + NS + ">\nr\u207b \u2291 s\n");
+        assertTrue(o.containsAxiom(axiom),
+            () -> "an inverse on the left must survive as itself: " + o.getLogicalAxioms());
+        assertFalse(o.containsClassInSignature(IRI.create(NS + "s")),
+            () -> "and the right-hand name is a property, not a class: "
+                + o.getLogicalAxioms());
+
+        // And the writer's own output still reads, which is the defect this started from.
+        String written = roundTrip(axiom);
+        assertTrue(statements(written).contains("\u207b \u2291"),
+            () -> "expected the inverse to be written on the left:\n" + statements(written));
+    }
+
+    /**
+     * An assertion over an inverse property is written the other way round.
+     *
+     * <p>The assertion form has no room for the marker — `(a,b):r` takes a bare name after the
+     * colon — so `(a,b):r⁻` was written and refused with {@code extraneous input '⁻'}.
+     * Reversing the pair says the same thing by definition: ⟨a,b⟩ ∈ r⁻ is ⟨b,a⟩ ∈ r.
+     *
+     * <p>So the axiom comes back swapped rather than inverted, which is the same
+     * normalisation as {@code InverseFunctional(r⁻)} returning as {@code Functional(r)}.
+     * Asserted as the swapped axiom, because that is what equality will find.
+     */
+    @Test
+    void anAssertionOverAnInverseIsWrittenTheOtherWayRound() throws Exception {
+        OWLObjectProperty r = df.getOWLObjectProperty(IRI.create(NS + "r"));
+        OWLNamedIndividual aa = df.getOWLNamedIndividual(IRI.create(NS + "aa"));
+        OWLNamedIndividual bb = df.getOWLNamedIndividual(IRI.create(NS + "bb"));
+
+        OWLOntology positive = read(write(ontology(
+            df.getOWLObjectPropertyAssertionAxiom(r.getInverseProperty(), aa, bb))));
+        assertTrue(positive.containsAxiom(df.getOWLObjectPropertyAssertionAxiom(r, bb, aa)),
+            () -> "the pair must be reversed and the property named: "
+                + positive.getLogicalAxioms());
+
+        OWLOntology negative = read(write(ontology(
+            df.getOWLNegativeObjectPropertyAssertionAxiom(r.getInverseProperty(), aa, bb))));
+        assertTrue(negative.containsAxiom(
+                df.getOWLNegativeObjectPropertyAssertionAxiom(r, bb, aa)),
+            () -> "and the same for the negative form: " + negative.getLogicalAxioms());
+    }
+
+    /**
+     * A property expression in a class position is explained as one.
+     *
+     * <p>The backstop's advice was hard-coded to talk about datatypes, so it told an author
+     * whose document put a property where a class belongs that "a datatype can only be the
+     * filler of a data property restriction" — the only guidance offered for the shape, and
+     * about the wrong thing entirely.
+     */
+    @Test
+    void aPropertyInAClassPositionIsExplainedAsOne() {
+        DLESemanticException e = assertThrows(DLESemanticException.class,
+            () -> read("@prefix : <" + NS + ">\n\u2203r.C \u2291 \u2203s.\u22a4 \u2293 t\u207b\n"),
+            "a property expression is not a class expression");
+        assertFalse(e.getMessage().contains("datatype"),
+            () -> "the advice must not be about datatypes here: " + e.getMessage());
+    }
+
+    /** The statements, without the header that quotes the syntax it documents. */
+    private static String statements(String document) {
+        StringBuilder out = new StringBuilder();
+        for (String line : document.split("\n", -1)) {
+            if (!line.startsWith("#")) out.append(line).append('\n');
+        }
+        return out.toString();
+    }
 }
