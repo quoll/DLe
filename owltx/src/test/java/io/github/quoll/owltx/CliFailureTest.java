@@ -258,4 +258,43 @@ class CliFailureTest {
             () -> "DLe mints a fresh prefix for the real namespace and keeps this one:\n"
                 + dleText);
     }
+
+    /**
+     * What the writer could not represent reaches the user.
+     *
+     * <p>The library logs through SLF4J and the binding is slf4j-nop, so a warning inside it
+     * goes nowhere; the parser's warnings reach a person only because this command asks for
+     * them. The writer had no equivalent, so an IRI used as both an object and a data
+     * property — which DLe cannot describe, having one kind statement per name — lost its
+     * object side in complete silence.
+     */
+    @Test
+    void whatTheWriterCannotRepresentIsReported(@TempDir Path dir) throws Exception {
+        Path source = dir.resolve("pun.ofn");
+        Files.write(source, ("Prefix(:=<http://example.org/k#>)\n"
+            + "Ontology(<http://example.org/k>\n"
+            + "  Declaration(ObjectProperty(:z))\n"
+            + "  Declaration(DataProperty(:z))\n"
+            + "  SubClassOf(:A ObjectSomeValuesFrom(:z owl:Thing))\n"
+            + "  SubClassOf(:A DataHasValue(:z \"x\"))\n"
+            + ")\n").getBytes(StandardCharsets.UTF_8));
+
+        Result r = run(source.toString(), dir.resolve("out.dle").toString());
+        assertEquals(0, r.status, () -> "a conversion still happens: " + r.everything());
+        assertTrue(r.stderr.contains("warning:"),
+            () -> "the loss must be reported: " + r.everything());
+        assertTrue(r.stderr.contains("http://example.org/k#z"),
+            () -> "and name the IRI: " + r.stderr);
+    }
+
+    /** An ordinary conversion says nothing. */
+    @Test
+    void anOrdinaryConversionIsSilent(@TempDir Path dir) throws Exception {
+        Path source = dir.resolve("plain.dle");
+        Files.write(source, ("@prefix : <http://example.org/k#>\nA \u2291 B\n")
+            .getBytes(StandardCharsets.UTF_8));
+        Result r = run(source.toString(), dir.resolve("out.ofn").toString());
+        assertEquals(0, r.status);
+        assertEquals("", r.stderr, () -> "nothing to report here: " + r.stderr);
+    }
 }

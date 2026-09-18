@@ -1640,6 +1640,27 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
     }
 
     /** Returns the IRI of the first name token in the statement, or null. */
+    /**
+     * The first name written anywhere inside a subtree.
+     *
+     * <p>The same scan as {@link #findFirstNameIRI}, bounded to one expression rather than a
+     * whole statement, so a class expression can be asked what it names first without the
+     * individual to its left getting in the way.
+     */
+    @Nullable
+    private IRI firstNameIn(ParserRuleContext ctx) {
+        if (ctx.stop == null) return null;
+        for (int i = ctx.start.getTokenIndex(); i <= ctx.stop.getTokenIndex(); i++) {
+            Token tok = tokenStream.get(i);
+            int type = tok.getType();
+            if (type == DLESyntaxLexer.NAME || type == DLESyntaxLexer.PREFIXED_NAME
+                    || type == DLESyntaxLexer.DEFAULT_NAME) {
+                return expandNameText(tok.getText());
+            }
+        }
+        return null;
+    }
+
     private IRI findFirstNameIRI(DLESyntaxParser.StatementContext ctx) {
         // An assertion is the exception, because its first name is not what the statement
         // is about. `(bob,ann):knows` opens with an individual, so a comment above it was
@@ -1688,9 +1709,20 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
                 ((DLESyntaxParser.NegativeDataAssertionAxiomContext) axiom).name(1));
         }
         if (axiom instanceof DLESyntaxParser.ClassAssertionAxiomContext) {
-            String cls = loneName(
-                ((DLESyntaxParser.ClassAssertionAxiomContext) axiom).classExpr());
-            return cls == null ? null : expandNameText(cls);
+            DLESyntaxParser.ClassExprContext cls =
+                ((DLESyntaxParser.ClassAssertionAxiomContext) axiom).classExpr();
+            String lone = loneName(cls);
+            if (lone != null) return expandNameText(lone);
+            // A complex class expression used to fall through to the individual, so the two
+            // spellings of one axiom shape disagreed: `bob : Person` put the comment on
+            // Person and `bob : Person ⊓ ¬Keeper` put it on bob. The statement is written in
+            // the class's block either way, so a comment in the individual's block ended up
+            // beneath its own statement, and on the *next* read — with nothing below it — it
+            // stopped being an entity's comment at all and became a document comment.
+            //
+            // The first named class in the expression is where the block is, so it is what a
+            // comment above the line is about.
+            return firstNameIn(cls);
         }
         // The compact spelling of the same axiom. Without this case the comment above
         // `rex:Cat` was discarded in silence, while the one above `rex : Cat` was kept.

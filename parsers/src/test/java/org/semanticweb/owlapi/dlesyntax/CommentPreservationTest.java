@@ -460,4 +460,32 @@ class CommentPreservationTest {
                 + back.axioms(AxiomType.ANNOTATION_ASSERTION).map(Object::toString)
                     .collect(Collectors.toList()));
     }
+
+    /**
+     * Both spellings of a class assertion put the comment in the same place.
+     *
+     * <p>A comment belongs to the entity whose block the statement is written in — that is
+     * why `(bob,ann):knows` attaches to `knows` rather than to `bob`. A class expression that
+     * was a lone name followed that rule and a complex one did not: it fell through to the
+     * individual, so the two spellings of one axiom shape disagreed, and a comment written in
+     * the individual's block ended up beneath its own statement.
+     *
+     * <p>The first named class in the expression is the answer for both.
+     */
+    @Test
+    void bothSpellingsOfAClassAssertionAgreeOnTheCommentsSubject() throws Exception {
+        for (String assertion : new String[] {
+                "bob : Person",
+                "bob : Person \u2293 \u00acKeeper"}) {
+            OWLOntology o = readDocument(PREFIX + "# NOTE\n" + assertion + "\n");
+            assertTrue(o.axioms(AxiomType.ANNOTATION_ASSERTION)
+                    .filter(ax -> DLESyntaxAxiomVisitor.DLE_COMMENT_IRI
+                        .equals(ax.getProperty().getIRI()))
+                    .anyMatch(ax -> ax.getSubject().toString().endsWith("#Person>")
+                        || ax.getSubject().toString().endsWith("#Person")),
+                () -> "the comment above `" + assertion + "` belongs to the class: "
+                    + o.axioms(AxiomType.ANNOTATION_ASSERTION).map(Object::toString)
+                        .collect(Collectors.toList()));
+        }
+    }
 }

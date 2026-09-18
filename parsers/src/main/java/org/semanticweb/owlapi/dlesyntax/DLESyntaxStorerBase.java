@@ -212,6 +212,7 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
         writtenAnnotations = new HashSet<>();
         writtenAxioms = new HashSet<>();
         roleEvidence.clear();
+        ACTIVE_WARNINGS.get().clear();
         currentPrefixes = prefixesFor(o, outputFormat);
         // A label the lexer cannot read is worse than no label: it goes out as
         // `@prefix a.b: <…>`, is refused on the way back in — `mismatched input 'a'
@@ -384,6 +385,16 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
         //
         // OWL 2 DL forbids this punning, so nothing well-formed arrives here.
         boolean dualRoleKinds = isObjectProperty && isDataProperty;
+        // Said out loud rather than dropped. Nothing DLe writes can describe this name, so
+        // the reader will classify it from use and settle on one kind — losing the other
+        // side's axioms, which is the whole of #43. That was silent; it is now reported,
+        // once, from the object-property pass, since the same IRI arrives here twice.
+        if (dualRoleKinds && entity.isOWLObjectProperty()) {
+            warn(iri + " is both an object property and a data property. OWL 2 DL does not"
+                + " allow that, and DLe has one kind statement per name, so neither can be"
+                + " written: reading this document back will give the data property only,"
+                + " and its object property axioms will be missing.");
+        }
 
         // A pun needs BOTH of its statements: the pair is what says it is punned. If the
         // property half cannot be spelled — no declared prefix maps to the OWL namespace,
@@ -439,6 +450,35 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
         return currentOntology.referencingAxioms(iri)
             .allMatch(axiom -> axiom.getAxiomType() == AxiomType.DECLARATION
                 || axiom.getAxiomType() == AxiomType.ANNOTATION_ASSERTION);
+    }
+
+    /**
+     * Where warnings from the store in progress accumulate.
+     *
+     * <p>Thread-local and drained by the caller, mirroring the parser's sink, because the
+     * library logs through SLF4J and the binding here is {@code slf4j-nop} — a
+     * {@code LOGGER.warn} goes nowhere at all. The parser's warnings reach a person only
+     * because the command asks for them explicitly; the writer had no equivalent, so
+     * everything it could not represent was lost in silence.
+     */
+    private static final ThreadLocal<List<String>> ACTIVE_WARNINGS =
+        ThreadLocal.withInitial(java.util.ArrayList::new);
+
+    /** Records something this document could not be written to say. */
+    private static void warn(String message) {
+        ACTIVE_WARNINGS.get().add(message);
+    }
+
+    /**
+     * The warnings from stores on this thread, cleared by the call.
+     *
+     * <p>Cleared when a store begins as well, so an undrained warning from an earlier one
+     * cannot be attributed to this document.
+     */
+    public static List<String> takeWarnings() {
+        List<String> out = List.copyOf(ACTIVE_WARNINGS.get());
+        ACTIVE_WARNINGS.get().clear();
+        return out;
     }
 
     /** The built-in entities whose kind OWL already fixes; never worth a statement. */

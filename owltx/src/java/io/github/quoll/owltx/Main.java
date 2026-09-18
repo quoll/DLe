@@ -289,7 +289,9 @@ public class Main {
                 });
         }
 
-        // Write output
+        // Write output. Anything the writer could not represent is reported afterwards, the
+        // way the parser's warnings are: the library logs through SLF4J and the binding is
+        // slf4j-nop, so a warning inside it reaches nobody unless it is asked for.
         if (outputFile != null) {
             try {
                 writeToFile(manager, ontology, outputFormat, outputFile);
@@ -308,6 +310,8 @@ public class Main {
                 die("writing to standard output: " + describe(e));
             }
         }
+        org.semanticweb.owlapi.dlesyntax.DLESyntaxStorerBase.takeWarnings()
+            .forEach(warning -> System.err.println("warning: " + warning));
     }
 
     /**
