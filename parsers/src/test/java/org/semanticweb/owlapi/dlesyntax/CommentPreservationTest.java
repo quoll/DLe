@@ -6,7 +6,14 @@ import org.semanticweb.owlapi.formats.DLESyntaxDocumentFormat;
 import org.semanticweb.owlapi.io.StreamDocumentSource;
 import org.semanticweb.owlapi.io.StreamDocumentTarget;
 import org.semanticweb.owlapi.io.StringDocumentSource;
+import org.semanticweb.owlapi.model.AddOntologyAnnotation;
+import org.semanticweb.owlapi.model.AxiomType;
+import org.semanticweb.owlapi.model.IRI;
+import org.semanticweb.owlapi.model.OWLDataFactory;
+import org.semanticweb.owlapi.model.OWLDataProperty;
+import org.semanticweb.owlapi.model.OWLDatatype;
 import org.semanticweb.owlapi.model.OWLDocumentFormat;
+import org.semanticweb.owlapi.model.OWLLiteral;
 import org.semanticweb.owlapi.model.OWLOntology;
 import org.semanticweb.owlapi.model.OWLOntologyManager;
 
@@ -15,6 +22,8 @@ import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.stream.Collectors;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -33,6 +42,24 @@ class CommentPreservationTest {
 
     private static final String PREFIX = "@prefix : <http://example.org/t#>\n";
 
+    /** Parses a DLe document into a fresh ontology. */
+    private OWLOntology readDocument(String document) throws Exception {
+        OWLOntologyManager m = OWLManager.createOWLOntologyManager();
+        OWLOntology o = m.createOntology();
+        new DLEOntologyParser().parse(new StringDocumentSource(document), o,
+            m.getOntologyLoaderConfiguration());
+        return o;
+    }
+
+    /** Writes an ontology built through the API, rather than one parsed from text. */
+    private String write(OWLOntology o) throws Exception {
+        DLESyntaxDocumentFormat format = new DLESyntaxDocumentFormat();
+        format.setDefaultPrefix("http://example.org/s#");
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        o.getOWLOntologyManager().saveOntology(o, format, new StreamDocumentTarget(out));
+        return new String(out.toByteArray(), StandardCharsets.UTF_8);
+    }
+
     private String rewrite(String document) throws Exception {
         OWLOntologyManager manager = OWLManager.createOWLOntologyManager();
         OWLOntology ontology = manager.createOntology();
@@ -44,12 +71,22 @@ class CommentPreservationTest {
         return new String(out.toByteArray(), StandardCharsets.UTF_8);
     }
 
-    /** Comment lines in a document, ignoring the leading header block and rule-offs. */
+    /**
+     * Comment lines in a document, ignoring DLe's generated header and rule-offs.
+     *
+     * <p>The header is skipped by recognising its first line, not by position. Skipping any
+     * leading run of {@code #} lines exempted the author's own leading comments from the
+     * comparison — in the *source* as well as the output — so the test named for comment
+     * preservation passed while every leading comment was being destroyed. Three of them
+     * were, in the very document it reads.
+     */
     private List<String> comments(String document) {
         List<String> out = new ArrayList<>();
         String[] lines = document.split("\n", -1);
         int i = 0;
-        while (i < lines.length && lines[i].startsWith("#")) i++;   // skip the header
+        if (lines.length > 0 && lines[0].trim().startsWith("# DLe \u2014 Description Logic")) {
+            while (i < lines.length && lines[i].startsWith("#")) i++;
+        }
         for (; i < lines.length; i++) {
             if (!lines[i].startsWith("#")) continue;
             String text = lines[i].replaceAll("^#+", "").trim();
@@ -151,9 +188,43 @@ class CommentPreservationTest {
         List<String> after = comments(rewrite(source));
 
         assertFalse(before.isEmpty(), "the document should contain comments");
-        List<String> lost = new ArrayList<>(before);
-        lost.removeAll(after);
-        assertTrue(lost.isEmpty(), "comment lines lost when writing: " + lost);
+        // Counted, not just contained. `removeAll` on a List removes every occurrence of a
+        // value, so a document that kept one copy of a repeated comment and dropped the
+        // other passed — as did one that invented comments, since `extra` was never looked
+        // at. Comparing multisets catches both directions.
+        Map<String, Long> beforeCounts = before.stream()
+            .collect(Collectors.groupingBy(c -> c, Collectors.counting()));
+        Map<String, Long> afterCounts = after.stream()
+            .collect(Collectors.groupingBy(c -> c, Collectors.counting()));
+        List<String> lost = new ArrayList<>();
+        beforeCounts.forEach((text, n) -> {
+            long kept = afterCounts.getOrDefault(text, 0L);
+            if (kept < n) lost.add(n + "\u00d7 \"" + text + "\" but " + kept + " written");
+        });
+        assertTrue(lost.isEmpty(), () -> "comment lines lost when writing: " + lost);
+    }
+
+    /**
+     * A comment heading the document survives.
+     *
+     * <p>{@code @prefix} and the other three directives are not statements in the grammar, so
+     * the statement visit never saw a comment above them and nothing else looked. A comment
+     * at the top of the file — the ordinary way to head one — was captured by nothing and
+     * vanished. It now belongs to the document, as a trailing comment does.
+     *
+     * <p>Position is not preserved, and is not asserted: document comments come back
+     * together, and are unordered.
+     */
+    @Test
+    void aCommentAboveThePrefixDeclarationSurvives() throws Exception {
+        String source = "# First heading line\n"
+            + "# Second heading line\n"
+            + "@prefix : <http://example.org/c#>\n"
+            + "\n"
+            + "A \u2291 B\n";
+        List<String> after = comments(rewrite(source));
+        assertTrue(after.contains("First heading line") && after.contains("Second heading line"),
+            () -> "a comment above @prefix must survive: " + after);
     }
 
     /** The document body, with the generated explanatory header stripped. */
@@ -345,5 +416,48 @@ class CommentPreservationTest {
                 () -> "'" + spelling + "' must give it the same subject as the other"
                     + " spelling: " + comments);
         }
+    }
+
+    /**
+     * A document comment stays one: nothing may be written after it.
+     *
+     * <p>Ownership is decided by position on the way back in — a comment belongs to the
+     * statement below it — so a comment with no statement of its own has to be last in the
+     * file. It was written from {@code endWritingOntology}, which is not the end:
+     * {@code writeAxiomsWithNoBlock} runs after it. Any axiom with no entity block of its own
+     * therefore landed beneath the comment, and the comment acquired an owner on the next
+     * read and stopped being a document comment at all.
+     *
+     * <p>The fixture pairs one with a declaration-only datatype, whose kind statement is
+     * written by exactly that pass.
+     */
+    @Test
+    void aDocumentCommentKeepsItsIndependence() throws Exception {
+        OWLOntologyManager m = OWLManager.createOWLOntologyManager();
+        OWLDataFactory f = m.getOWLDataFactory();
+        OWLOntology o = m.createOntology(IRI.create("http://example.org/s"));
+        OWLDatatype t = f.getOWLDatatype(IRI.create("http://example.org/s#T"));
+        OWLDataProperty d = f.getOWLDataProperty(IRI.create("http://example.org/s#d"));
+        m.applyChange(new AddOntologyAnnotation(o,
+            f.getOWLAnnotation(
+                f.getOWLAnnotationProperty(DLESyntaxAxiomVisitor.DLE_COMMENT_IRI),
+                f.getOWLLiteral("A document comment"))));
+        m.addAxiom(o, f.getOWLDeclarationAxiom(t));
+        m.addAxiom(o, f.getOWLDataPropertyRangeAxiom(d, t));
+
+        String written = write(o);
+        OWLOntology back = readDocument(written);
+        assertTrue(back.annotations()
+                .anyMatch(a -> DLESyntaxAxiomVisitor.DLE_COMMENT_IRI
+                        .equals(a.getProperty().getIRI())
+                    && "A document comment".equals(
+                        ((OWLLiteral) a.getValue()).getLiteral())),
+            () -> "it must come back as a document comment, not attached to an entity:\n"
+                + written + "\nannotations: "
+                + back.annotations().map(Object::toString)
+                    .collect(Collectors.toList())
+                + "\nassertions: "
+                + back.axioms(AxiomType.ANNOTATION_ASSERTION).map(Object::toString)
+                    .collect(Collectors.toList()));
     }
 }

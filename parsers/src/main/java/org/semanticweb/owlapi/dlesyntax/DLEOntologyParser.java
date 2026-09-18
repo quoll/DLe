@@ -149,9 +149,11 @@ public class DLEOntologyParser extends AbstractOWLParser {
             DualDeclarationResolver.resolve(ontology, visitor.getStatedKindIRIs());
             DefaultLabelAdder.addDefaultLabels(ontology);
 
-            // A trailing comment belongs to the document, not to an entity, so it is kept
-            // as an ontology annotation and written back at the end.
-            for (String comment : visitor.getTrailingComments()) {
+            // A comment that belongs to no entity belongs to the document, so it is kept as
+            // an ontology annotation and written back at the end. Two kinds: the block after
+            // the last statement, and one above a statement that names nothing — a comment
+            // heading the file, above `@prefix`, which used to be discarded.
+            for (String comment : visitor.getDocumentComments()) {
                 ontology.getOWLOntologyManager().applyChange(new AddOntologyAnnotation(ontology,
                     ontology.getOWLOntologyManager().getOWLDataFactory().getOWLAnnotation(
                         ontology.getOWLOntologyManager().getOWLDataFactory()

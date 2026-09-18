@@ -238,6 +238,9 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
         try {
             super.storeOntology(o, printWriter, outputFormat);
             writeAxiomsWithNoBlock(o, printWriter);
+            // After the orphan pass, so that nothing follows a comment that has no statement
+            // of its own — on the way back in, a comment belongs to the statement below it.
+            writeDocumentComments(o, printWriter);
         } finally {
             currentOntology = null;
             writtenAnnotations = null;
@@ -1313,7 +1316,23 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
                 }
             });
 
-        // And the document's own trailing comment block, which belongs to no entity at all.
+        // The document's own comments — which belong to no entity at all — are NOT written
+        // here. `endWritingOntology` runs before `writeAxiomsWithNoBlock`, so anything that
+        // pass emits would land beneath them, and a comment with a statement below it is read
+        // as that statement's comment: a document comment came back attached to whichever
+        // axiom happened to be written last. See writeDocumentComments, called after.
+    }
+
+    /**
+     * The document's own comments, written last of all.
+     *
+     * <p>Last because position decides ownership on the way back in: a comment is claimed by
+     * the statement below it. These belong to no statement, so nothing may follow them —
+     * and {@code endWritingOntology} is not the end, because
+     * {@link #writeAxiomsWithNoBlock} comes after it. Written from there, a document comment
+     * acquired an owner on the next read and stopped being a document comment at all.
+     */
+    private void writeDocumentComments(OWLOntology ontology, PrintWriter writer) {
         ontology.annotations()
             .filter(a -> DLESyntaxAxiomVisitor.DLE_COMMENT_IRI.equals(a.getProperty().getIRI()))
             .sorted()

@@ -91,8 +91,14 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
     private IRI ontologyIRI = null;
     /** Version IRI from {@code @version}, null if not declared. */
     private IRI versionIRI  = null;
-    /** Comment lines after the last statement, which belong to no entity. */
-    private final List<String> trailingComments = new ArrayList<>();
+    /**
+     * Comments that belong to the document rather than to any entity.
+     *
+     * <p>Two kinds reach here: the block after the last statement, and a block above a
+     * statement that names nothing — `@prefix` and the other header directives — which was
+     * previously dropped outright.
+     */
+    private final List<String> documentComments = new ArrayList<>();
     /** Where @version was declared, so a refusal raised after the parse can point at it. */
     private int versionLine = -1;
     private int versionColumn;
@@ -123,7 +129,7 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
 
     /** Problems that did not stop the parse; see {@link #warnings}. */
     List<String> getWarnings()        { return warnings; }
-    List<String> getTrailingComments() { return trailingComments; }
+    List<String> getDocumentComments() { return documentComments; }
     Map<String, String> getPrefixes() { return prefixes; }
 
     /** IRIs whose kind the document stated; see {@link #statedKindIRIs}. */
@@ -1334,7 +1340,9 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
     @Override
     public OWLObject visitOntology(DLESyntaxParser.OntologyContext ctx) {
         OWLObject result = visitChildren(ctx);
-        if (tokenStream == null || ctx.statement().isEmpty()) return result;
+        if (tokenStream == null) return result;
+        captureDeclarationComments(ctx);
+        if (ctx.statement().isEmpty()) return result;
         DLESyntaxParser.StatementContext last = ctx.statement(ctx.statement().size() - 1);
         if (last.stop == null) return result;
         List<Token> hidden = tokenStream.getHiddenTokensToRight(
@@ -1351,8 +1359,77 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
             if (sb.length() > 0) sb.append('\n');
             sb.append(text);
         }
-        if (sb.length() > 0) trailingComments.add(sb.toString());
+        if (sb.length() > 0) documentComments.add(sb.toString());
         return result;
+    }
+
+    /**
+     * Comments above the header directives, which no statement visit can reach.
+     *
+     * <p>{@code @prefix} and its three companions are not statements in the grammar — the
+     * ontology rule takes them before {@code statement*} — so {@code visitStatement} never
+     * sees them, and {@code getHiddenTokensToLeft} on the first real statement stops at the
+     * last directive. A comment heading the file, which is the ordinary way to head one, was
+     * therefore never captured by anything and vanished without trace.
+     *
+     * <p>They belong to the document, so they are kept the way a trailing comment is. The
+     * generated header is skipped: it documents the syntax rather than the ontology, and
+     * keeping it would grow the file by a copy of itself on every pass.
+     */
+    private void captureDeclarationComments(DLESyntaxParser.OntologyContext ctx) {
+        for (int i = 0; i < ctx.getChildCount(); i++) {
+            org.antlr.v4.runtime.tree.ParseTree child = ctx.getChild(i);
+            if (!(child instanceof DLESyntaxParser.PrefixDeclContext
+                    || child instanceof DLESyntaxParser.OntologyDeclContext
+                    || child instanceof DLESyntaxParser.VersionDeclContext
+                    || child instanceof DLESyntaxParser.ImportDeclContext)) {
+                continue;
+            }
+            ParserRuleContext decl = (ParserRuleContext) child;
+            List<Token> hidden = tokenStream.getHiddenTokensToLeft(
+                decl.start.getTokenIndex(), Token.HIDDEN_CHANNEL);
+            if (hidden == null || hidden.isEmpty()) continue;
+            int from = 0;
+            if (hidden.get(0).getLine() == 1 && isGeneratedHeader(hidden.get(0))) {
+                // The header is one contiguous run from line 1; a blank line ends it, and
+                // shows up as a gap in the line numbers because whitespace is skipped.
+                int previous = 0;
+                while (from < hidden.size()) {
+                    int line = hidden.get(from).getLine();
+                    if (from == 0 || line == previous + 1) {
+                        previous = line;
+                        from++;
+                    } else {
+                        break;
+                    }
+                }
+            }
+            StringBuilder sb = new StringBuilder();
+            for (Token tok : hidden.subList(from, hidden.size())) {
+                String text = tok.getText();
+                if (text.startsWith("#")) text = text.substring(1);
+                if (!text.isEmpty() && text.charAt(0) == ' ') text = text.substring(1);
+                if (sb.length() > 0) sb.append('\n');
+                sb.append(text);
+            }
+            if (sb.length() > 0) documentComments.add(sb.toString());
+        }
+    }
+
+    /** The first line DLe's own generated header always carries. */
+    private static final String GENERATED_HEADER_FIRST_LINE =
+        "# DLe \u2014 Description Logic (Extended)";
+
+    /**
+     * Whether a comment block at the top of the file is the header DLe writes.
+     *
+     * <p>The header has to be dropped on the way in — it documents the syntax rather than the
+     * ontology, and keeping it would grow the document by a copy of itself on every pass. But
+     * the test for it was positional, not textual, so any comment block starting at line 1
+     * was discarded, including one the author wrote.
+     */
+    private static boolean isGeneratedHeader(Token first) {
+        return first.getText().trim().equals(GENERATED_HEADER_FIRST_LINE);
     }
 
     @Override
@@ -1371,8 +1448,14 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
             // Strip the file header: the initial contiguous block of comment lines
             // beginning at line 1. Blank lines appear as gaps in line numbers because
             // WS is skipped and not represented in the token stream.
+            //
+            // Only when it really is the generated header. Stripping any block that begins at
+            // line 1 took the author's own leading comments with it — a comment above
+            // `@prefix` has no statement below it to belong to, so it was simply gone, and
+            // the test named for comment preservation exempted exactly those lines from its
+            // own comparison.
             int realStart = 0;
-            if (hidden.get(0).getLine() == 1) {
+            if (hidden.get(0).getLine() == 1 && isGeneratedHeader(hidden.get(0))) {
                 int prevLine = 0;
                 while (realStart < hidden.size()) {
                     int line = hidden.get(realStart).getLine();
@@ -1399,6 +1482,25 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
             hidden = hidden.subList(afterPrevious, hidden.size());
             if (!hidden.isEmpty()) {
                 subjectIRI = findFirstNameIRI(ctx);
+                if (subjectIRI == null) {
+                    // No name in this statement to hang it on — `@prefix`, `@ontology`,
+                    // `@version` and `@import` have none — so the comment was dropped.
+                    // A comment above the first `@prefix` is the ordinary way to head a
+                    // document, and every line of it was lost in silence.
+                    //
+                    // It belongs to the document, exactly as a trailing comment does, and is
+                    // kept the same way. Position is not preserved: it comes back with the
+                    // other document comments, which are unordered.
+                    StringBuilder orphan = new StringBuilder();
+                    for (Token tok : hidden) {
+                        String text = tok.getText();
+                        if (text.startsWith("#")) text = text.substring(1);
+                        if (!text.isEmpty() && text.charAt(0) == ' ') text = text.substring(1);
+                        if (orphan.length() > 0) orphan.append('\n');
+                        orphan.append(text);
+                    }
+                    if (orphan.length() > 0) documentComments.add(orphan.toString());
+                }
                 if (subjectIRI != null) {
                     // Store the block as a single multi-line literal to preserve order.
                     StringBuilder sb = new StringBuilder();
