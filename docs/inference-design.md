@@ -281,19 +281,49 @@ new annotation form, consumed on read and never an axiom, and it makes §4.4's
 Not done yet, and deliberately not done the cheap way: the naive version was implemented,
 measured, and reverted rather than shipped with the fidelity loss unremarked.
 
-### 6.2 `@convention properties:upper`
+### 6.2 `@convention properties:upper` — declined
 
-Accepted, with the constraint that the header documents it **only when a document uses it**.
-The header is a single static resource today and is emitted wholesale, so that constraint is
-the substantial part of the work rather than an afterthought: it needs the header split into
-an always-part and per-feature parts.
+Declined. It was accepted here on a premise that `Findings`/`Certainty` has since made
+false: that *a vocabulary with PascalCase properties needs a kind statement on every one*.
 
-It also needs to survive a round trip to be worth having — the reader must record that a
-document declared a convention and the writer must re-emit it — which means the declaration
-has to live somewhere, as `@prefix` and `@ontology` already do.
+It does not. Positional evidence outranks the case guess, and a name in a property position
+is in a position only a property can occupy. A vocabulary written entirely in PascalCase,
+properties included —
 
-Sequenced after §4.1, because the convention is one input to the kind decision and is much
-easier to make configurable once that decision is one function over one model.
+```
+Person ⊑ ⊤
+Organisation ⊑ ⊤
+Document ⊑ ⊤
+Employee ≡ Person ⊓ ∃WorksFor.Organisation
+Author ≡ Person ⊓ ∃Wrote.Document
+∃WorksFor.⊤ ⊑ Person
+⊤ ⊑ ∀WorksFor.Organisation
+Manager ⊑ Employee ⊓ ≥1Manages.Employee
+Wrote ⊑ Contributed
+```
+
+— reads with `WorksFor`, `Manages`, `Wrote` and `Contributed` all object properties, no
+convention declared and no markers written. Writing it back costs one line,
+`Contributed ⊑ owl:topObjectProperty`, for the one name that appears only on the right of a
+subsumption and so genuinely has no evidence. That is the document stating the one thing it
+never said, not the price of the convention's absence.
+
+The dependency on evidence is real rather than incidental: drop the `Author` line and
+`Wrote` loses its only property position, so `Wrote ⊑ Contributed` becomes a subsumption
+between classes. That is the rule working. Nothing left in the document says otherwise, and
+a convention declaration would be *overriding* the evidence there, not supplying it.
+
+The mirror case holds too: lower-case *class* names read as classes from `person ⊑ ⊤`,
+because STATED propagates downward.
+
+So the remaining argument is verbosity that is not there, against a real cost: a declaration
+makes a document's meaning depend on its own header, so deleting a line changes what the
+names are. For an interchange syntax that is worse than the per-name markers, which are
+local, explicit and already round-trip. It would also put a global mode into the kind
+subsystem, which is where most of the defects found in review have lived.
+
+The convention now decides only for a name that appears in no structural position at all —
+and for those, a marker is one line and says exactly what is meant.
 
 ### 6.3 A class under a pun
 
@@ -316,9 +346,9 @@ Not deferred again. Staged as below so each step is revertable; tagged
    so an author cannot state it (#32). Options: consume it *and* keep it — it is trivially
    true, so keeping it is harmless; or mark generated statements somehow. The first is
    simpler and loses nothing.
-2. **Does the case convention stay global?** A vocabulary with PascalCase properties needs a
-   kind statement on every one. A per-document declaration — `@convention properties:upper` —
-   would fix that, at the cost of a document whose meaning depends on its own header.
+2. **Does the case convention stay global?** Yes — settled, and nothing to stage. The
+   question assumed a vocabulary with PascalCase properties needs a kind statement on every
+   one; positional evidence already outranks the case guess, so it needs none. See §6.2.
 3. **Should a pun with class children be expressible?** The downward propagation deliberately
    crosses the class barrier, so *every* name below a punned name becomes a role. Right for
    SNOMED CT, wrong in general, and DLe cannot currently say otherwise.
