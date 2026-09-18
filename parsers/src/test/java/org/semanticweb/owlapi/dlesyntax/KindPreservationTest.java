@@ -144,9 +144,15 @@ class KindPreservationTest {
             shape("DisjointDataProperties", DF.getOWLDisjointDataPropertiesAxiom(D, E),
                 DF.getOWLSubClassOfAxiom(A, DF.getOWLDataSomeValuesFrom(D, STRING)),
                 DF.getOWLSubClassOfAxiom(A, DF.getOWLDataSomeValuesFrom(E, STRING))),
-            shape("DataPropertyDomain", DF.getOWLDataPropertyDomainAxiom(D, A)),
+            // With corroborating evidence, which is what the `/alone` suffix contrasts
+            // against. These two were byte-identical to their `/alone` twins — 66 shapes but
+            // 64 distinct axiom sets — so the contrast the naming promises was never made and
+            // six of the parameterised checks were literal repeats.
+            shape("DataPropertyDomain", DF.getOWLDataPropertyDomainAxiom(D, A),
+                DF.getOWLSubClassOfAxiom(A, DF.getOWLDataSomeValuesFrom(D, STRING))),
             shape("DataPropertyRange", DF.getOWLDataPropertyRangeAxiom(D, STRING)),
-            shape("FunctionalDataProperty", DF.getOWLFunctionalDataPropertyAxiom(D)),
+            shape("FunctionalDataProperty", DF.getOWLFunctionalDataPropertyAxiom(D),
+                DF.getOWLSubClassOfAxiom(A, DF.getOWLDataSomeValuesFrom(D, STRING))),
 
             // ── the shapes that say "role" without saying which kind ──
             shape("DataPropertyDomain/alone", DF.getOWLDataPropertyDomainAxiom(D, A)),
@@ -944,5 +950,60 @@ class KindPreservationTest {
         assertDoesNotThrow(() -> read("@prefix : <" + NS + ">\n"
             + "greaterThan(u,v) \u225d u > v\n"
             + "R \u2261 \u2203x.greaterThan\n"));
+    }
+
+    /**
+     * {@code ⊥} used as an ordinary class expression, in the positions that take one.
+     *
+     * <p>Mutating the reader to return {@code owl:Thing} for {@code ⊥} failed one test in the
+     * whole suite, and that one reached it only incidentally through an idiom; the mirror
+     * mutation on {@code ⊤} fails thirty. Every one of the 198 parameterised checks in this
+     * file is blind to it by construction, because {@code owl:Nothing} is deleted from the
+     * kind map before they compare anything — a deliberate exclusion, since the reader
+     * invents {@code owl:Thing} and {@code owl:Nothing} freely, but it means the bottom
+     * concept has nothing watching it.
+     *
+     * <p>{@code A ⊓ B ⊑ ⊥} is deliberately not here: that is the disjointness idiom and is
+     * read as {@code DisjointClasses}, which several tests already cover.
+     */
+    @Test
+    void theBottomConceptSurvivesInEveryOrdinaryPosition() throws Exception {
+        OWLClass a = DF.getOWLClass(IRI.create(NS + "A"));
+        OWLObjectProperty r = DF.getOWLObjectProperty(IRI.create(NS + "r"));
+        OWLAxiom[] axioms = {
+            DF.getOWLSubClassOfAxiom(a, DF.getOWLNothing()),
+            DF.getOWLEquivalentClassesAxiom(a, DF.getOWLNothing()),
+            DF.getOWLSubClassOfAxiom(a, DF.getOWLObjectAllValuesFrom(r, DF.getOWLNothing())),
+            DF.getOWLSubClassOfAxiom(a, DF.getOWLObjectSomeValuesFrom(r, DF.getOWLNothing())),
+        };
+        for (OWLAxiom axiom : axioms) {
+            OWLOntologyManager m = OWLManager.createOWLOntologyManager();
+            OWLOntology o = m.createOntology();
+            m.addAxiom(o, axiom);
+            String written = write(o);
+            assertTrue(read(written).containsAxiom(axiom),
+                () -> axiom + " did not survive:\n" + written);
+            assertFalse(read(written).containsAxiom(replaceBottomWithTop(axiom)),
+                () -> "and must not have become the top concept:\n" + written);
+        }
+    }
+
+    /** The same axiom with owl:Nothing swapped for owl:Thing, for a negative assertion. */
+    private static OWLAxiom replaceBottomWithTop(OWLAxiom axiom) {
+        OWLClass a = DF.getOWLClass(IRI.create(NS + "A"));
+        OWLObjectProperty r = DF.getOWLObjectProperty(IRI.create(NS + "r"));
+        if (axiom instanceof OWLEquivalentClassesAxiom) {
+            return DF.getOWLEquivalentClassesAxiom(a, DF.getOWLThing());
+        }
+        OWLClassExpression sup = ((OWLSubClassOfAxiom) axiom).getSuperClass();
+        if (sup instanceof OWLObjectAllValuesFrom) {
+            return DF.getOWLSubClassOfAxiom(a,
+                DF.getOWLObjectAllValuesFrom(r, DF.getOWLThing()));
+        }
+        if (sup instanceof OWLObjectSomeValuesFrom) {
+            return DF.getOWLSubClassOfAxiom(a,
+                DF.getOWLObjectSomeValuesFrom(r, DF.getOWLThing()));
+        }
+        return DF.getOWLSubClassOfAxiom(a, DF.getOWLThing());
     }
 }

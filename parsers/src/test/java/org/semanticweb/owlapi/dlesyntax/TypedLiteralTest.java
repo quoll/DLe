@@ -199,6 +199,18 @@ class TypedLiteralTest {
             + "A ⊑ ∃d.[xsd:date ⊓ [min \"2024-01-01\"^^xsd:date]]\n");
         assertEquals(1, o.getAxioms(AxiomType.SUBCLASS_OF).size(),
             () -> o.getLogicalAxioms().toString());
+        // The bound's own datatype, which is what this test is named for and never checked:
+        // throwing it away in buildFacetLiteral failed one test in the whole suite, and that
+        // one was in another file. A count cannot see a retyped literal.
+        assertTrue(o.axioms(AxiomType.SUBCLASS_OF)
+                .map(OWLSubClassOfAxiom::getSuperClass)
+                .filter(ce -> ce instanceof OWLDataSomeValuesFrom)
+                .map(ce -> ((OWLDataSomeValuesFrom) ce).getFiller())
+                .filter(r -> r instanceof OWLDatatypeRestriction)
+                .flatMap(r -> ((OWLDatatypeRestriction) r).facetRestrictions())
+                .anyMatch(fr -> (XSD + "date")
+                    .equals(fr.getFacetValue().getDatatype().getIRI().toString())),
+            () -> "the bound must keep xsd:date: " + o.getLogicalAxioms());
 
         Throwable t = assertThrows(Throwable.class, () -> read(PREFIX
             + "A ⊑ ∃d.[xsd:string ⊓ [matches \"[A-Z]{3}\"@en]]\n"));

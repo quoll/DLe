@@ -81,7 +81,8 @@ class KindStatementFidelityTest {
         assertTrue(back.containsObjectPropertyInSignature(sub.getIRI()),
             () -> "ex:rel must come back an object property:\n" + written);
         assertTrue(back.getAxioms(AxiomType.SUB_OBJECT_PROPERTY).stream()
-                .anyMatch(ax -> ax.getSubProperty().equals(sub)),
+                .anyMatch(ax -> ax.getSubProperty().equals(sub)
+                    && ax.getSuperProperty().equals(sup)),
             () -> "the sub-property axiom must survive:\n" + written);
     }
 
@@ -105,7 +106,8 @@ class KindStatementFidelityTest {
         String written = write(o, "http://example.org/d#", "sct:", ns);
         OWLOntology back = parse(written);
         assertTrue(back.getAxioms(AxiomType.SUB_OBJECT_PROPERTY).stream()
-                .anyMatch(ax -> ax.getSubProperty().equals(sub)),
+                .anyMatch(ax -> ax.getSubProperty().equals(sub)
+                    && ax.getSuperProperty().equals(sup)),
             () -> "the sub-property axiom must survive:\n" + written);
     }
 
@@ -125,7 +127,8 @@ class KindStatementFidelityTest {
         assertTrue(back.containsDataPropertyInSignature(sub.getIRI()),
             () -> "ex:code must come back a data property:\n" + written);
         assertTrue(back.getAxioms(AxiomType.SUB_DATA_PROPERTY).stream()
-                .anyMatch(ax -> ax.getSubProperty().equals(sub)),
+                .anyMatch(ax -> ax.getSubProperty().equals(sub)
+                    && ax.getSuperProperty().equals(sup)),
             () -> "the data sub-property axiom must survive:\n" + written);
     }
 

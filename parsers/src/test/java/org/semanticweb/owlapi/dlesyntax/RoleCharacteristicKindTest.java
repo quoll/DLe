@@ -197,4 +197,31 @@ class RoleCharacteristicKindTest {
         assertEquals(1, inverse.getAxioms(AxiomType.INVERSE_OBJECT_PROPERTIES).size(),
             () -> inverse.getLogicalAxioms().toString());
     }
+
+    /**
+     * An object-only characteristic is positional evidence, not a default.
+     *
+     * <p>Nothing pinned the tier: recording it {@code DEFAULTED} instead — which is not
+     * evidence at all — passed the entire suite. The difference shows in which line a
+     * mixed-hierarchy document is blamed for.
+     *
+     * <p>{@code PROPAGATED} still passes, and that is not a gap: it is evidence too, and the
+     * two differ only in provenance, which nothing here reads. The line this finding carries
+     * is passed in rather than taken from a source finding, so there is no observable
+     * difference to assert.
+     *
+     * <p>As evidence, {@code Trans(x)} blocks data from propagating onto {@code x}, so
+     * {@code x ⊑ d} is reported as what it is: a subsumption across the two hierarchies, on
+     * the line the author wrote. As a default it does not block, {@code x} becomes a data
+     * property, and the complaint moves to the {@code Trans} line — true, but two lines away
+     * from the mistake.
+     */
+    @Test
+    void anObjectOnlyCharacteristicIsEvidenceNotADefault() {
+        DLESemanticException error = assertThrows(DLESemanticException.class,
+            () -> parse("Trans(x)\nx \u2291 d\n\u22a4 \u2291 \u2200d.xsd:string\n"));
+        assertTrue(error.getMessage().contains("cannot subsume"),
+            () -> "the subsumption is the line at fault, which needs Trans to count as"
+                + " evidence: " + error.getMessage());
+    }
 }

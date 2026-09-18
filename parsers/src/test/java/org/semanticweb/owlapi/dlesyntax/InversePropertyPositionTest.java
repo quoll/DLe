@@ -143,6 +143,13 @@ class InversePropertyPositionTest {
         OWLOntology o = read(PREFIX + ROLES + "Disj(r, r⁻)\n");
         assertEquals(1, o.getAxioms(AxiomType.DISJOINT_OBJECT_PROPERTIES).size(),
             () -> o.getLogicalAxioms().toString());
+        // The pair itself. A count of one is what `Disj(r, r)` produces too, because the OWL
+        // API collapses the repeat — so dropping the inverse marker left this green and the
+        // first half of the test could not fail for its stated reason.
+        OWLObjectProperty r = df.getOWLObjectProperty(IRI.create(NS + "r"));
+        assertTrue(o.containsAxiom(df.getOWLDisjointObjectPropertiesAxiom(
+                r, r.getInverseProperty())),
+            () -> "r and its inverse are two different properties: " + o.getLogicalAxioms());
         assertTrue(refusal(PREFIX + ROLES + "Disj(r, r)\n")
             .contains("named twice in this disjointness statement"));
     }

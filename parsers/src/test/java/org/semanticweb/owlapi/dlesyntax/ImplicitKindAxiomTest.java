@@ -199,14 +199,20 @@ class ImplicitKindAxiomTest {
     /** The evidence still reaches the reader, since the scan sees the statement first. */
     @Test
     void theKindIsStillKnownAfterRemoval() throws Exception {
-        // Upper breaks the case convention, so only the statement can settle its kind.
-        OWLOntology o = read(PREFIX + "Upper ⊑ owl:topObjectProperty\nA ⊑ ∃Upper.B\n");
-        assertTrue(o.containsAxiom(df.getOWLSubClassOfAxiom(
-                df.getOWLClass(IRI.create(NS + "A")),
-                df.getOWLObjectSomeValuesFrom(
-                    df.getOWLObjectProperty(IRI.create(NS + "Upper")),
-                    df.getOWLClass(IRI.create(NS + "B"))))),
-            () -> "Upper is an object property in the restriction too: "
+        // Paired with a name that has no evidence of its own. The old fixture was
+        // `Upper ⊑ owl:topObjectProperty` beside `A ⊑ ∃Upper.B`, and the restriction is
+        // positional object evidence in its own right — parsing that second line alone gives
+        // the exact axiom the test asserted, so it could not fail if the statement's evidence
+        // stopped arriving altogether.
+        OWLOntology o = read(PREFIX + "Upper ⊑ owl:topObjectProperty\nUpper ⊑ Other\n");
+        assertTrue(o.containsAxiom(df.getOWLSubObjectPropertyOfAxiom(
+                df.getOWLObjectProperty(IRI.create(NS + "Upper")),
+                df.getOWLObjectProperty(IRI.create(NS + "Other")))),
+            () -> "the statement is the only thing saying these are properties: "
                 + o.getLogicalAxioms());
+        assertFalse(o.containsAxiom(df.getOWLSubClassOfAxiom(
+                df.getOWLClass(IRI.create(NS + "Upper")),
+                df.getOWLClass(IRI.create(NS + "Other")))),
+            () -> "and it must not be read as a class subsumption: " + o.getLogicalAxioms());
     }
 }
