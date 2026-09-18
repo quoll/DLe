@@ -373,9 +373,19 @@ class UnreadableOutputTest {
             String body = statementsOnly(written);
             OWLOntology back = assertDoesNotThrow(() -> read(written),
                 () -> property + " with an IRI value must reload:\n" + body);
-            assertTrue(back.axioms(AxiomType.ANNOTATION_ASSERTION)
-                    .anyMatch(ax -> IRI.create(NS + "Elsewhere").equals(ax.getValue())),
-                () -> "and keep the IRI value:\n" + body);
+            // The whole axiom, not just the value. Matching on the value alone said only
+            // that *some* annotation somewhere had the right object: replacing the property
+            // with a constant, or the subject with a constant, left this green — so the
+            // fallback could lose the identity of both and nothing noticed. The three
+            // properties in this loop then collapsed to one assertion repeated three times.
+            OWLAxiom expected = df.getOWLAnnotationAssertionAxiom(
+                df.getOWLAnnotationProperty(IRI.create(property)),
+                IRI.create(NS + "C"), IRI.create(NS + "Elsewhere"));
+            assertTrue(back.containsAxiom(expected),
+                () -> "the annotation must come back with its own property and subject:\n"
+                    + body + "\nback: " + back.axioms(AxiomType.ANNOTATION_ASSERTION)
+                        .map(Object::toString)
+                        .collect(java.util.stream.Collectors.toList()));
         }
     }
 
@@ -832,5 +842,44 @@ class UnreadableOutputTest {
         String written = write(o);
         assertFalse(statementsOnly(written).contains("rdfs:Literal"),
             () -> "the definition is enough on its own:\n" + statementsOnly(written));
+    }
+
+    /**
+     * The orphan pass writes only what has no block of its own.
+     *
+     * <p>{@code writeAxiomsWithNoBlock} exists to catch axioms the entity loop never reached.
+     * Its filter is what keeps it from writing everything a second time, and widening that
+     * filter from {@code logicalAxioms()} to {@code axioms()} passed the whole suite: nothing
+     * asserted that a declaration or an annotation already written in an entity block is not
+     * written again at the end.
+     *
+     * <p>Counted per line, because duplication is invisible to any assertion that only asks
+     * whether something is present.
+     */
+    @Test
+    void theOrphanPassDoesNotRepeatWhatAnEntityBlockWrote() throws Exception {
+        OWLClass c = df.getOWLClass(IRI.create(NS + "C"));
+        OWLOntology o = ontology(df.getOWLSubClassOfAxiom(c,
+            df.getOWLClass(IRI.create(NS + "D"))));
+        manager.addAxiom(o, df.getOWLAnnotationAssertionAxiom(
+            df.getOWLAnnotationProperty(
+                org.semanticweb.owlapi.vocab.OWLRDFVocabulary.RDFS_LABEL.getIRI()),
+            c.getIRI(), df.getOWLLiteral("A label")));
+        manager.addAxiom(o, df.getOWLDeclarationAxiom(c));
+
+        String body = statementsOnly(write(o));
+        assertEquals(1, countLines(body, "@label C"),
+            () -> "the label must be written once, in C's block:\n" + body);
+        assertEquals(1, countLines(body, "C \u2291 D"),
+            () -> "and so must the subsumption:\n" + body);
+    }
+
+    /** How many lines of a document start with the given text. */
+    private static int countLines(String document, String prefix) {
+        int n = 0;
+        for (String line : document.split("\n", -1)) {
+            if (line.trim().startsWith(prefix)) n++;
+        }
+        return n;
     }
 }

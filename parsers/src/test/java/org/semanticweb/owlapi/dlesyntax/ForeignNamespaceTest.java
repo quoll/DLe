@@ -144,9 +144,15 @@ class ForeignNamespaceTest {
             df.getOWLClass(IRI.create(NS + "D"))));
 
         String written = write(o);
-        assertTrue(read(written).axioms(AxiomType.ANNOTATION_ASSERTION)
-                .anyMatch(ax -> IRI.create(OTHER + "Elsewhere").equals(ax.getValue())),
-            () -> "the value must keep its namespace:\n" + bodyOf(written));
+        // The whole axiom. Matching the value alone said only that some annotation had the
+        // right object, so the property and the subject could each be replaced by a constant
+        // with this test still green.
+        OWLAxiom expected = df.getOWLAnnotationAssertionAxiom(
+            df.getOWLAnnotationProperty(IRI.create(NS + "note")),
+            IRI.create(NS + "C"), IRI.create(OTHER + "Elsewhere"));
+        assertTrue(read(written).containsAxiom(expected),
+            () -> "the value must keep its namespace, and the axiom its ends:\n"
+                + bodyOf(written));
     }
 
     /** A minted name must not collide with one the document already uses. */

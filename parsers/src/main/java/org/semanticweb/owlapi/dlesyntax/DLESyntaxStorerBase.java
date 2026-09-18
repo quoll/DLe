@@ -644,6 +644,21 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
     }
 
     /** Whether this property is a direct sub-property of a name that is also a class. */
+    /**
+     * Whether this property's super-property is a punned name.
+     *
+     * <p><b>Unproven.</b> Stubbing this to false changes no observable behaviour in any shape
+     * that has been constructed for it — a capitalised child with its own role evidence under
+     * a marked pun loses the {@code Child ⊑ owl:topObjectProperty} line and still round-trips
+     * with every kind intact, and the whole suite passes. Reviewed independently with the
+     * same result.
+     *
+     * <p>Left in place rather than removed, because the case it is meant to guard — the case
+     * guess crossing a pun downward onto a capitalised child — is the SNOMED CT shape this
+     * area exists for, and not being able to construct it is not the same as it not
+     * existing. What it costs when it fires unnecessarily is one redundant statement, which
+     * the reader removes again. Worth revisiting with a real punned corpus document.
+     */
     private boolean propertySubsumedByAPun(OWLEntity entity) {
         OWLDataFactory df = currentOntology.getOWLOntologyManager().getOWLDataFactory();
         IRI iri = entity.getIRI();

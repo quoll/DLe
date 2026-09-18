@@ -106,6 +106,11 @@ class ChainedEquivalenceTest {
             () -> data.getLogicalAxioms().toString());
         assertEquals(0, data.getAxioms(AxiomType.EQUIVALENT_OBJECT_PROPERTIES).size(),
             () -> "and not the object form: " + data.getLogicalAxioms());
+        // Counted, as the object branch above is. Without this a chain that dropped its last
+        // operand — `d ≡ e ≡ f` read as EquivalentDataProperties(d, e) — satisfied both
+        // assertions, and "both property kinds chain" is exactly this test's claim.
+        assertEquals(3, data.getAxioms(AxiomType.EQUIVALENT_DATA_PROPERTIES).iterator()
+            .next().properties().count(), "all three properties");
     }
 
     /** A complex operand may appear anywhere in the chain. */
