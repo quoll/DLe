@@ -155,7 +155,7 @@ class LanguageTagTest {
     void aTaggedFacetValueIsRefused() {
         Throwable t = assertThrows(Throwable.class, () -> parse(PREFIX
             + "⊤ ⊑ ∀code.[xsd:string ⊓ [matches \"[A-Z]{3}\"@en]]\n"));
-        assertTrue(String.valueOf(t.getMessage()).contains("cannot carry a language tag"),
+        assertTrue(String.valueOf(t.getMessage()).contains("a facet value cannot carry a language tag"),
             () -> "got: " + t.getMessage());
     }
 
@@ -164,7 +164,7 @@ class LanguageTagTest {
     void aTaggedImportReferenceIsRefused() {
         Throwable t = assertThrows(Throwable.class,
             () -> parse(PREFIX + "@import \"vocab.dle\"@en\nA ⊑ B\n"));
-        assertTrue(String.valueOf(t.getMessage()).contains("cannot carry a language tag"),
+        assertTrue(String.valueOf(t.getMessage()).contains("an import reference cannot carry a language tag"),
             () -> "got: " + t.getMessage());
     }
 

@@ -73,10 +73,14 @@ class DigitInitialNameTest {
 
     @Test
     void aDigitInitialNameIsWrittenWithItsPrefix() throws Exception {
+        // Against the statements, not the whole document. The generated header quotes the
+        // syntax it documents, and one of its lines contains `:1` — so this assertion was
+        // satisfied by an ontology with no digit-initial name in it at all.
         String written = write(parse(PREFIX + "Thing2 ⊑ :1\n"));
-        assertTrue(written.contains(":1"), () -> "expected :1 in\n" + written);
-        assertFalse(written.matches("(?s).*⊑\\s+1\\s.*"),
-                    () -> "a bare digit-initial name does not parse:\n" + written);
+        String body = statementsOnly(written);
+        assertTrue(body.contains(":1"), () -> "expected :1 in\n" + body);
+        assertFalse(body.matches("(?s).*⊑\\s+1\\s.*"),
+                    () -> "a bare digit-initial name does not parse:\n" + body);
     }
 
     @Test
@@ -344,5 +348,20 @@ class DigitInitialNameTest {
         OWLOntology o = parse(PREFIX + "Thing2 ⊑ Thing3\n").ontology;
         assertTrue(o.containsClassInSignature(IRI.create(NS + "Thing2")),
                    "the @prefix : declaration must still take effect");
+    }
+
+    /**
+     * The document without its generated header.
+     *
+     * <p>The header quotes every construct it documents, including a digit-initial name, so a
+     * {@code contains} check against the whole document can be satisfied by the explanation
+     * rather than by anything the writer produced.
+     */
+    private static String statementsOnly(String document) {
+        StringBuilder out = new StringBuilder();
+        for (String line : document.split("\n", -1)) {
+            if (!line.startsWith("#")) out.append(line).append('\n');
+        }
+        return out.toString();
     }
 }

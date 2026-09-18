@@ -202,7 +202,7 @@ class TypedLiteralTest {
 
         Throwable t = assertThrows(Throwable.class, () -> read(PREFIX
             + "A ⊑ ∃d.[xsd:string ⊓ [matches \"[A-Z]{3}\"@en]]\n"));
-        assertTrue(String.valueOf(t.getMessage()).contains("cannot carry a language tag"),
+        assertTrue(String.valueOf(t.getMessage()).contains("a facet value cannot carry a language tag"),
             () -> "got: " + t.getMessage());
     }
 

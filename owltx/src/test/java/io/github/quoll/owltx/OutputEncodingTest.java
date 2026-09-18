@@ -101,8 +101,16 @@ class OutputEncodingTest {
         Path nested = dir.resolve("no-such-dir/out.dle");
         DLESyntaxDocumentFormat format = new DLESyntaxDocumentFormat();
         format.setDefaultPrefix(NS);
-        assertThrows(Exception.class, () -> Main.writeToFile(
+        // On the message, and on the path. `writeToFile` goes out of its way to tell "Not a
+        // directory" from "No such file or directory" and to name the file it could not
+        // write; none of that was asserted, and `Exception.class` is satisfied by any failure
+        // at all — collapsing both guards to a bare throw passed the module.
+        Exception thrown = assertThrows(Exception.class, () -> Main.writeToFile(
             o.getOWLOntologyManager(), o, format, nested.toString()));
+        String message = Main.rootMessage(thrown);
+        assertTrue(message.contains("No such file or directory")
+                || message.contains("does not exist"),
+            () -> "the reason must be the missing directory: " + message);
         assertFalse(Files.exists(nested.getParent()),
             "and it must not have created the directory");
     }
@@ -121,10 +129,23 @@ class OutputEncodingTest {
         byte[] bytecode = Files.readAllBytes(
             Path.of(Main.class.getResource("Main.class").toURI()));
         String constants = new String(bytecode, java.nio.charset.StandardCharsets.ISO_8859_1);
+        // More ways of writing than the three this listed. It omitted OutputStreamWriter,
+        // FileOutputStream and Formatter, all default-charset by this test's own reasoning.
+        //
+        // `java/io/PrintStream` is deliberately absent and cannot be added: `System.err` is
+        // one, so every diagnostic in this class puts the name in the constant pool, and
+        // forbidding it fails on legitimate stderr use. That leaves one hole — replacing the
+        // save with `new PrintStream(target)` would pass — which `aWrittenFileIsUtf8` cannot
+        // close either, because this machine's default charset is UTF-8, which is the very
+        // reason this guard exists. Closing it needs the scan to be per method rather than
+        // per class.
         for (String forbidden : new String[] {
                 "org/semanticweb/owlapi/io/FileDocumentTarget",
                 "java/io/FileWriter",
-                "java/io/PrintWriter"}) {
+                "java/io/PrintWriter",
+                "java/io/OutputStreamWriter",
+                "java/io/FileOutputStream",
+                "java/util/Formatter"}) {
             assertFalse(constants.contains(forbidden),
                 () -> forbidden + " encodes with the platform default charset; DLe is UTF-8"
                     + " only, so the write path must not reference it");

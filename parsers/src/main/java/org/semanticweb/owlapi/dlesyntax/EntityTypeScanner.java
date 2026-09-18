@@ -890,6 +890,15 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
 
     void propagatePropertyTypes() {
         seedReservedPropertyKinds();
+        // Before the generic clash, which would otherwise report the same document without
+        // mentioning that an inverse is what forced the object reading.
+        //
+        // Once is enough, and a second call after propagation was tried and removed: a
+        // conflict that only propagation connects travels along a sub-property edge or an
+        // equivalence, and both of those are refused by their own reporters first — naming
+        // the line the author has to change rather than the inverse two lines below it. The
+        // suite is unchanged by removing the later call, which is what says it was dead.
+        reportInvertedDataProperty();
         // Before anything is propagated: a contradiction in the direct evidence has to be
         // reported from the evidence itself, because propagation resolves it silently.
         reportKindConflicts();
@@ -1225,8 +1234,17 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
                 : datatypeFilledInverse.entrySet()) {
             throw inverseOfDataProperty(use.getKey(), use.getValue());
         }
-        // Or the two halves are in different axioms, possibly only connected once
-        // sub-property classifications have propagated.
+    }
+
+    /**
+     * An inverse applied to a name the document uses as a data property.
+     *
+     * <p>Separate from the single-expression case above because the two halves may be in
+     * different axioms, and only connected once sub-property classifications have
+     * propagated — so this has to run after propagation, and before the generic kind clash,
+     * which would otherwise report the same document without mentioning the inverse at all.
+     */
+    private void reportInvertedDataProperty() {
         for (Map.Entry<String, DLESyntaxParser.PropertyExprContext> use
                 : invertedRoleUse.entrySet()) {
             if (dataPropertyNames.contains(use.getKey())) {
