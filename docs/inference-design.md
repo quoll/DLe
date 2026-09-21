@@ -245,41 +245,57 @@ Two additions you asked for:
 | #37 lower-case class as a bare filler is destroyed | the filler gets a `POSITIONAL` CLASS finding, which outranks the case guess |
 | #39 XSD namespace matched wholesale | §4.5 |
 | #40 annotation properties ignored | §4.5 |
-| #32 subproperty-of-top consumed as a marker | needs the marker to be distinguishable from an authored axiom — see §6 |
+| #32 subproperty-of-top consumed as a marker | settled, not fixed: the statement is implicit and is removed, an authored one with it — see §6.1 |
 
 #33 is listed to be explicit that it is *not* part of this: it is about names the syntax
 cannot spell, which is a lexical problem with a lexical fix.
 
 ## 6. Decisions
 
-Recorded 2026-09-16. The questions this section used to pose are answered; the reasoning is
-kept where it affects the work.
+First recorded 2026-09-16, revised 2026-09-21. The questions this section used to pose are
+answered; the reasoning is kept where it affects the work, and a decision that was later
+reversed is rewritten rather than appended to — §6.1 and §6.2 both once proposed the thing
+they now decline, and leaving that standing would have had the next reader build it.
 
-### 6.1 `X ⊑ owl:topObjectProperty` should be writable by an author — but not for free
+### 6.1 `X ⊑ owl:topObjectProperty` is implicit and is removed — settled
 
-Agreed in principle: nothing ever said an author may not write it, and losing it silently is
-#32.
+Settled on #32, against what the rest of this section originally proposed. Recorded here
+because the reasoning matters and the issue is closed.
 
-**Measured cost of the obvious fix.** Keeping the statement as an axiom as well as a marker
-costs fidelity on documents that need a marker, because the writer's own marker then comes
-back as content:
+**The rule.** `X ⊑ owl:topObjectProperty` and `X ⊑ owl:topDataProperty` are read as the
+ordinary sub-property axioms they are and then removed, leaving a declaration. They are
+tautologies — every object property is beneath the top one — so nothing entailed stops being
+entailed. An authored one is therefore dropped, silently, and that is accepted.
+`X ⊑ ⊤` is deliberately **not** removed: `C ⊑ ⊤` is how a class is declared in DL and appears
+throughout real documents.
+
+**What was rejected.** A marker that is not an axiom — a new annotation form, consumed on
+read and never an axiom — was the fix this section used to propose. It was turned down to
+keep DLe close to context-free DL: it would put the kind system into the syntax, which is
+the one thing the notation exists not to do. The measured fidelity cost of the other obvious
+fix, keeping the statement as an axiom *and* as a marker, was:
 
 | document | axioms before | after |
 |---|---|---|
 | `bc-example.dle` | 177 | 182 |
 | `relations.ttl` | 21 | 23 |
 
-Both were byte-exact round trips and stop being so. The added axioms are tautologies — every
-object property is a sub-property of the top one — so no *meaning* changes, but
-`OFN → DLe → OFN` stops being an identity, which is the bar the rest of this work has held.
+Both were byte-exact round trips and stopped being so, because the writer's own marker came
+back as content. The naive version was implemented, measured and reverted rather than
+shipped with that unremarked.
 
-**So the clean fix is to stop overloading the syntax**: give the writer a marker that is not
-an axiom, and let `X ⊑ owl:topObjectProperty` always be the axiom it looks like. That is one
-new annotation form, consumed on read and never an axiom, and it makes §4.4's
-`--explicit-kinds` cheaper too, since explicit kinds then cost no spurious axioms.
+**One correction to the record.** The closing note on #32 said Turtle never writes these.
+It does — `:worksFor rdfs:subPropertyOf owl:topObjectProperty` appears in the Turtle output
+when the axiom is in the model. DLe is the only one of the three formats that drops it:
+`OFN → OFN` and `OFN → TTL` both keep it, `OFN → DLe → OFN` does not. The tautology argument
+stands on its own; the claim that every other format agreed does not, and the decision does
+not rest on it.
 
-Not done yet, and deliberately not done the cheap way: the naive version was implemented,
-measured, and reverted rather than shipped with the fidelity loss unremarked.
+**Where the loss is.** Not in the DLe text, which is faithful and stable —
+`worksFor ⊑ owl:topObjectProperty` is written and survives `DLe → DLe` byte-identically. The
+axiom disappears on the way back out to OWL. Reporting it was considered and declined: the
+reader cannot tell an authored marker from one the writer generated, so a warning would fire
+on every round trip of DLe's own output.
 
 ### 6.2 `@convention properties:upper` — declined
 
@@ -325,15 +341,20 @@ subsystem, which is where most of the defects found in review have lived.
 The convention now decides only for a name that appears in no structural position at all —
 and for those, a marker is one line and says exactly what is meant.
 
-### 6.3 A class under a pun
+### 6.3 A class under a pun — done
 
-Worth attempting, and probably feasible — more so than §3's framing suggested. The obstacle
-is that downward propagation crosses the class barrier unconditionally to serve SNOMED CT,
-where a punned root has only roles beneath it. With `Certainty` in place the case becomes
-expressible: an explicit `X ⊑ ⊤` is `STATED`, which outranks a `PROPAGATED` role, so a class
-under a pun can be said outright even while the default keeps working for SNOMED.
+Done, and by the route this section predicted: an explicit `X ⊑ ⊤` is `STATED`, which
+outranks a `PROPAGATED` role, so the case is expressible without disturbing the default.
+Measured:
 
-To be attempted after §4.1 and dropped only if it needs something unreliable.
+| document | `Child` reads as |
+|---|---|
+| `Root ⊑ owl:topObjectProperty` / `Child ⊑ Root` | object property — the SNOMED default, propagation crossing downward as before |
+| the same, plus `Child ⊑ ⊤` | class, with `Root` punned class-and-property |
+| a punned root with a role child and a class child | each correctly, independently |
+
+So the default that serves SNOMED CT is intact, and a document that means otherwise can now
+say so in one line.
 
 ### 6.4 All of §4.1–§4.3 is in scope
 
@@ -342,16 +363,16 @@ Not deferred again. Staged as below so each step is revertable; tagged
 
 ## 7. Staging
 
-1. **Is `X ⊑ owl:topObjectProperty` an axiom or a marker?** Today it is consumed as a marker,
-   so an author cannot state it (#32). Options: consume it *and* keep it — it is trivially
-   true, so keeping it is harmless; or mark generated statements somehow. The first is
-   simpler and loses nothing.
+1. **Is `X ⊑ owl:topObjectProperty` an axiom or a marker?** Settled, and nothing to stage.
+   It is implicit and is removed, an authored one with it; `X ⊑ ⊤` is kept. Keeping it as an
+   axiom *as well* was measured and does not "lose nothing" — it costs byte-exactness on
+   every document that needs a marker. See §6.1.
 2. **Does the case convention stay global?** Yes — settled, and nothing to stage. The
    question assumed a vocabulary with PascalCase properties needs a kind statement on every
    one; positional evidence already outranks the case guess, so it needs none. See §6.2.
-3. **Should a pun with class children be expressible?** The downward propagation deliberately
-   crosses the class barrier, so *every* name below a punned name becomes a role. Right for
-   SNOMED CT, wrong in general, and DLe cannot currently say otherwise.
+3. **Should a pun with class children be expressible?** Yes, and it now is — an explicit
+   `X ⊑ ⊤` outranks the propagated role. The downward propagation still crosses the class
+   barrier by default, which is what SNOMED CT needs. See §6.3.
 4. **How much of this is release-blocking?** §4.1–§4.3 is a real refactor. §4.4's
    `--explicit-kinds` flag is small and independently useful, and may be enough to unblock a
    release on its own by making fidelity opt-in rather than inferred.
@@ -391,10 +412,13 @@ Each stage is independently verifiable and leaves the tree green.
    difference is that drift between them is now caught by a test rather than left to
    discipline, which makes retiring the sets a mechanical step instead of a risky one.
 
-   One consequence of that: PROPAGATED versus POSITIONAL is not yet observable. Both count as
-   evidence, and nothing compares them in a way that changes an outcome, so a mutation
-   swapping one for the other survives the whole suite. It becomes load-bearing when the
-   sets go and the firmest finding decides.
+   One consequence of that: PROPAGATED versus POSITIONAL is still not load-bearing. A
+   mutation swapping every POSITIONAL for PROPAGATED no longer survives the suite — it is
+   caught by `PropagationEvidenceTest.aClassStatedOutrightIsRecordedAsStated` — but that
+   test asserts the recorded value, not an outcome. Under the swap no reading changes,
+   including for a name carrying a PROPAGATED role finding and a POSITIONAL class finding
+   at once, which is the shape that ought to separate them. The label is pinned; the
+   distinction becomes load-bearing when the sets go and the firmest finding decides.
 
    #27 and #37 did not wait for this; they were the predicate guess, fixed in stage 1.
 5. **The shared `Position` rule** (§4.2). Last, because it is only safe once both sides have a
