@@ -331,14 +331,20 @@ class AssertionSyntaxTest {
             () -> "idempotent from the first pass:\n" + written);
     }
 
-    /** The cardinality operator still works, sharing the `=` token. */
+    /**
+     * The cardinality operator still works, sharing the `=` token.
+     *
+     * <p>Both spellings are exact cardinalities. The bare one abbreviates `⊤ ⊑ …` — it used
+     * to be read as functionality, which loses the `≥1` half of an exactly-one.
+     */
     @Test
     void theCardinalityOperatorIsUnaffected() throws Exception {
         OWLOntology o = parse(PREFIX + "A ⊑ =2 hasPet.Cat\n=1 hasPet.⊤\n");
-        assertTrue(o.getLogicalAxioms().stream().anyMatch(ax -> ax.toString().contains("Exact")),
+        assertEquals(2, o.getLogicalAxioms().stream()
+                .filter(ax -> ax.toString().contains("Exact")).count(),
             () -> o.getLogicalAxioms().toString());
-        assertEquals(1, o.getAxioms(AxiomType.FUNCTIONAL_OBJECT_PROPERTY).size(),
-            () -> o.getLogicalAxioms().toString());
+        assertTrue(o.getAxioms(AxiomType.FUNCTIONAL_OBJECT_PROPERTY).isEmpty(),
+            () -> "an exactly-one is not a functionality axiom: " + o.getLogicalAxioms());
     }
 
     // ── Validation the new forms used to route around ───────────────────────

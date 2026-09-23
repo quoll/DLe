@@ -32,8 +32,10 @@ Depot ⊑ ⊤
 ############################################################
 # Roles and their characteristics
 #
-# The keyword forms below are the textbook spellings. `Func(r)` and `≤1 r.⊤`
-# say the same thing; both are accepted, and the writer emits the keyword.
+# The keyword forms below are the textbook spellings. `Func(r)` and
+# `Functional(r)` are the same token and both name OWL's functionality axiom.
+# `≤1 r.⊤` is the at-most-one cardinality it entails, not the axiom itself, and
+# is read as the subsumption `⊤ ⊑ ≤1 r.⊤` that it abbreviates.
 ############################################################
 
 ∃connectsTo.⊤ ⊑ Station
@@ -125,7 +127,7 @@ connectsTo ∘ (partOfLine)⁻ ⊑ connectsToLineOf
 
 ∃stationCode.⊤ ⊑ Station
 ⊤ ⊑ ∀stationCode.[xsd:string ⊓ [matches "[A-Z]{3}"]]
-≤1 stationCode.⊤
+Functional(stationCode)
 Station ⊑ key(stationCode)
 @db stationCode "station_code"
 @storage stationCode "rail.station.code"
@@ -133,28 +135,28 @@ Station ⊑ key(stationCode)
 
 ∃platformCount.⊤ ⊑ Station
 ⊤ ⊑ ∀platformCount.xsd:integer[≥1 ⊓ ≤40]
-≤1 platformCount.⊤
+Functional(platformCount)
 @db platformCount "platform_count"
 
 ∃openedOn.⊤ ⊑ Station
 ⊤ ⊑ ∀openedOn.xsd:date
-≤1 openedOn.⊤
+Functional(openedOn)
 
 ∃stepFree.⊤ ⊑ Station
 ⊤ ⊑ ∀stepFree.xsd:boolean
-≤1 stepFree.⊤
+Functional(stepFree)
 
 ∃fareZone.⊤ ⊑ Station
 ⊤ ⊑ ∀fareZone.{"1","2","3","4","5","6"}
-≤1 fareZone.⊤
+Functional(fareZone)
 
 ∃servicePattern.⊤ ⊑ Line
 ⊤ ⊑ ∀servicePattern.{"Peak","OffPeak","Night"}
-≤1 servicePattern.⊤
+Functional(servicePattern)
 
 ∃trackGauge.⊤ ⊑ Line
 ⊤ ⊑ ∀trackGauge.xsd:decimal[≥0]
-≤1 trackGauge.⊤
+Functional(trackGauge)
 
 ∃firstTrain.⊤ ⊑ Station
 ⊤ ⊑ ∀firstTrain.xsd:dateTime

@@ -69,6 +69,7 @@ import org.semanticweb.owlapi.model.OWLEquivalentObjectPropertiesAxiom;
 import org.semanticweb.owlapi.model.OWLEquivalentDataPropertiesAxiom;
 import org.semanticweb.owlapi.model.OWLFunctionalDataPropertyAxiom;
 import org.semanticweb.owlapi.model.OWLFunctionalObjectPropertyAxiom;
+import org.semanticweb.owlapi.model.OWLInverseFunctionalObjectPropertyAxiom;
 import org.semanticweb.owlapi.model.OWLIndividual;
 import org.semanticweb.owlapi.model.OWLObjectOneOf;
 import org.semanticweb.owlapi.model.OWLLiteral;
@@ -697,6 +698,20 @@ public class DLESyntaxObjectRenderer extends DLSyntaxObjectRenderer {
     @Override
     public void visit(OWLFunctionalObjectPropertyAxiom axiom) {
         writeUnaryRoleAxiom("Func", axiom.getProperty());
+    }
+
+    /**
+     * Inverse-functionality is {@code Func(r⁻)}.
+     *
+     * <p>Without this the inherited renderer wrote it as {@code ⊤ ⊑ ≤ 1 r⁻}, which is the
+     * same statement but is also how {@code SubClassOf(⊤ ObjectMaxCardinality(1 r⁻))} is
+     * written — two OWL axioms with one spelling, so the reader had to guess and the
+     * subsumption could not survive. The keyword form belongs to the dedicated axiom and
+     * the cardinality form to the cardinality axiom, and neither has to be recognised back.
+     */
+    @Override
+    public void visit(OWLInverseFunctionalObjectPropertyAxiom axiom) {
+        writeUnaryRoleAxiom("Func", axiom.getProperty().getInverseProperty());
     }
 
     /**

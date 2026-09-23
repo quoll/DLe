@@ -107,8 +107,15 @@ class InversePropertyPositionTest {
             .contains("Ref(r⁻)"));
         assertTrue(roundTrip(df.getOWLIrreflexiveObjectPropertyAxiom(inverseOfR()))
             .contains("Irref(r⁻)"));
-        assertTrue(roundTrip(df.getOWLFunctionalObjectPropertyAxiom(inverseOfR()))
-            .contains("Func(r⁻)"));
+        // Functionality of an inverse is the one characteristic OWL has a second axiom for.
+        // `Func(r⁻)` writes both and reads back as the dedicated one, so this is a
+        // normalisation rather than a round trip — equivalent in both directions, and to
+        // the spelling OWL itself prefers.
+        OWLOntology o = ontology(df.getOWLFunctionalObjectPropertyAxiom(inverseOfR()));
+        String body = bodyOf(write(o));
+        assertTrue(body.contains("Func(r⁻)"), () -> "written with the inverse:\n" + body);
+        assertTrue(read(write(o)).containsAxiom(df.getOWLInverseFunctionalObjectPropertyAxiom(r)),
+            () -> "and normalised to InverseFunctional:\n" + body);
     }
 
     // ── Disjointness, a key, and a chain's super-property ───────────────────

@@ -589,38 +589,13 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
             return null;
         }
 
-        // Inverse functional: ⊤ ⊑ ≤ 1 r⁻ , and functional: ⊤ ⊑ ≤ 1 r
-        //
-        // Read back as the axiom they came from, rather than as the subsumption of owl:Thing
-        // they are written as. This is the same recognition the domain, range, reflexivity
-        // and irreflexivity idioms below and above already do: DL has one way to say these
-        // things and OWL has a dedicated axiom for each, so without it
-        // `InverseFunctionalObjectProperty(:r)` came back as
-        // `SubClassOf(owl:Thing ObjectMaxCardinality(1 ObjectInverseOf(:r)))` — the axiom
-        // type gone and owl:Thing added to the signature for good measure.
-        //
-        // The general subsumption is still expressible: any filler, or any cardinality other
-        // than one, falls through to it, as does a bound on anything but ⊤.
-        if (isOWLThing(lhs) && rhs instanceof OWLObjectMaxCardinality) {
-            OWLObjectMaxCardinality max = (OWLObjectMaxCardinality) rhs;
-            if (max.getCardinality() == 1 && max.getFiller().isOWLThing()) {
-                OWLObjectPropertyExpression property = max.getProperty();
-                if (property.isAnonymous()) {
-                    axioms.add(df.getOWLInverseFunctionalObjectPropertyAxiom(
-                        property.getInverseProperty().getSimplified()));
-                } else {
-                    axioms.add(df.getOWLFunctionalObjectPropertyAxiom(property));
-                }
-                return null;
-            }
-        }
-        if (isOWLThing(lhs) && rhs instanceof OWLDataMaxCardinality) {
-            OWLDataMaxCardinality max = (OWLDataMaxCardinality) rhs;
-            if (max.getCardinality() == 1 && max.getFiller().isTopDatatype()) {
-                axioms.add(df.getOWLFunctionalDataPropertyAxiom(max.getProperty()));
-                return null;
-            }
-        }
+        // No functional/inverse-functional recognition here any more. It used to turn
+        // `⊤ ⊑ ≤1 r` into `FunctionalObjectProperty(r)`, which is a true equivalence but a
+        // lossy one in practice: `FunctionalObjectProperty(r)` and `SubClassOf(⊤ ≤1 r)` are
+        // two OWL axioms, the writer spells them differently, and reading both as the first
+        // meant the second could not survive a round trip. Each axiom now has one spelling —
+        // `Func(r)`, `Func(d)` and `Func(r⁻)` for the three dedicated ones, the cardinality
+        // syntax for the cardinality ones — so nothing has to be recognised back.
 
         // Domain: ∃r.⊤ ⊑ C
         if (lhs instanceof OWLObjectSomeValuesFrom) {
@@ -886,14 +861,16 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
 
     @Override
     public OWLObject visitFunctionalPropertyAxiom(DLESyntaxParser.FunctionalPropertyAxiomContext ctx) {
-        String propName = propName(ctx.propertyExpr());
-        if (dataPropertyNames.contains(propName)) {
-            axioms.add(df.getOWLFunctionalDataPropertyAxiom(
-                df.getOWLDataProperty(expandName(propCtxName(ctx.propertyExpr())))));
-        } else {
-            OWLObjectPropertyExpression prop = buildObjectProp(ctx.propertyExpr());
-            axioms.add(df.getOWLFunctionalObjectPropertyAxiom(prop));
-        }
+        // A bare cardinality statement abbreviates `⊤ ⊑ <expr>`, and is read as exactly that.
+        //
+        // It used to build `FunctionalObjectProperty` from the property alone, discarding the
+        // symbol, the number and the filler — so `≤1 r.C`, `≤3 r.⊤` and `≥5 r.C` all came out
+        // as functionality, the last of them asserting something its own document contradicts.
+        // Only `≤1 r.⊤` was ever right, and that one still reads as at-most-one because that
+        // is what it says.
+        axioms.add(df.getOWLSubClassOfAxiom(df.getOWLThing(),
+            cardinalityRestriction(ctx.cardSymbol(), ctx.NUMBER().getText(),
+                ctx.propertyExpr(), visit(ctx.classExpr()))));
         return null;
     }
 
@@ -961,8 +938,17 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
             axioms.add(df.getOWLFunctionalDataPropertyAxiom(
                 df.getOWLDataProperty(expandName(PropertyExprs.coreName(ctx.propertyExpr())))));
         } else {
-            axioms.add(df.getOWLFunctionalObjectPropertyAxiom(
-                buildObjectProp(ctx.propertyExpr())));
+            // `Func(r⁻)` is OWL's InverseFunctionalObjectProperty, which is the axiom the
+            // writer now emits it for. Built as FunctionalObjectProperty(ObjectInverseOf(r))
+            // it says the same thing in a shape OWL has a dedicated axiom for, and the round
+            // trip changed the axiom type every pass.
+            OWLObjectPropertyExpression property = buildObjectProp(ctx.propertyExpr());
+            if (property.isAnonymous()) {
+                axioms.add(df.getOWLInverseFunctionalObjectPropertyAxiom(
+                    property.getInverseProperty().getSimplified()));
+            } else {
+                axioms.add(df.getOWLFunctionalObjectPropertyAxiom(property));
+            }
         }
         return null;
     }
@@ -1303,21 +1289,33 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
 
     @Override
     public OWLObject visitCardinalityRestriction(DLESyntaxParser.CardinalityRestrictionContext ctx) {
-        int n = (int) Double.parseDouble(ctx.NUMBER().getText());
-        String pName = propName(ctx.propertyExpr());
-        OWLObject filler = visit(ctx.primary());
-        boolean isMin  = ctx.cardSymbol().MIN()   != null;
-        boolean isMax  = ctx.cardSymbol().MAX()   != null;
+        return cardinalityRestriction(ctx.cardSymbol(), ctx.NUMBER().getText(),
+            ctx.propertyExpr(), visit(ctx.primary()));
+    }
 
-        if (dataPropertyNames.contains(pName)) {
+    /**
+     * One cardinality restriction, from the four parts every spelling of one supplies.
+     *
+     * <p>Shared because the same restriction appears in two grammar rules — inside a class
+     * expression, and as a statement of its own abbreviating `⊤ ⊑ …` — and the statement
+     * form used to build something else entirely.
+     */
+    private OWLClassExpression cardinalityRestriction(
+            DLESyntaxParser.CardSymbolContext symbol, String number,
+            DLESyntaxParser.PropertyExprContext propertyExpr, OWLObject filler) {
+        int n = (int) Double.parseDouble(number);
+        boolean isMin = symbol.MIN() != null;
+        boolean isMax = symbol.MAX() != null;
+
+        if (dataPropertyNames.contains(propName(propertyExpr))) {
             OWLDataPropertyExpression prop = df.getOWLDataProperty(
-                expandName(propCtxName(ctx.propertyExpr())));
+                expandName(propCtxName(propertyExpr)));
             OWLDataRange range = asDataRange(filler);
             if (isMin)       return df.getOWLDataMinCardinality(n, prop, range);
             else if (isMax)  return df.getOWLDataMaxCardinality(n, prop, range);
             else             return df.getOWLDataExactCardinality(n, prop, range);
         } else {
-            OWLObjectPropertyExpression prop = buildObjectProp(ctx.propertyExpr());
+            OWLObjectPropertyExpression prop = buildObjectProp(propertyExpr);
             OWLClassExpression fce = asClass(filler);
             if (isMin)       return df.getOWLObjectMinCardinality(n, prop, fce);
             else if (isMax)  return df.getOWLObjectMaxCardinality(n, prop, fce);

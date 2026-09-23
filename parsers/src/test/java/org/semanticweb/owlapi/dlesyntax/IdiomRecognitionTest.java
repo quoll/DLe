@@ -15,20 +15,25 @@ import static org.junit.jupiter.api.Assertions.*;
 /**
  * DL writes one thing where OWL has a dedicated axiom, and the reader puts it back.
  *
- * <p>Description logic has no separate notation for functionality or a domain — they are
- * said with a subsumption — so the writer has to spell them that way. Reading the
- * subsumption literally meant the axiom type was lost on every round trip:
- * {@code InverseFunctionalObjectProperty(:r)} came back as
- * {@code SubClassOf(owl:Thing ObjectMaxCardinality(1 ObjectInverseOf(:r)))}, with
- * {@code owl:Thing} added to the signature for good measure. Equivalent, and unpleasant to
- * read as OWL.
+ * <p>Description logic has no separate notation for a domain or a range — they are said with
+ * a subsumption — so the writer spells them that way and the reader recognises the shape.
+ * Without that, {@code ObjectPropertyDomain} came back as the subsumption it was written as,
+ * with {@code owl:Thing} added to the signature for good measure.
  *
- * <p>Recognising the shape on the way in is what the domain, range, reflexivity and
- * irreflexivity idioms already did; these are the same technique applied to the rest.
+ * <p><b>Functionality is no longer one of these.</b> It used to be: {@code ⊤ ⊑ ≤1 r} was read
+ * as {@code FunctionalObjectProperty(r)}. The two are equivalent, so the recognition was
+ * sound in itself, but it was one-to-many in the wrong direction — the writer has two
+ * spellings and the reader had one meaning — so {@code SubClassOf(⊤ ObjectMaxCardinality(1
+ * r))} could not survive a round trip at all. Each axiom now has one spelling:
+ * {@code Func(r)}, {@code Func(d)} and {@code Func(r⁻)} for the three dedicated axioms, the
+ * cardinality syntax for the cardinality axioms, and nothing to recognise back.
  *
- * <p>The general form stays reachable, which is what keeps this a recognition rather than a
- * restriction: any cardinality other than one, any filler, or a subject other than
- * {@code ⊤} falls through to the subsumption it is.
+ * <p>One normalisation remains, and it is a normalisation rather than a recognition:
+ * {@code FunctionalObjectProperty(ObjectInverseOf(r))} and
+ * {@code InverseFunctionalObjectProperty(r)} are the same statement, OWL has a dedicated
+ * axiom for it, and both are written {@code Func(r⁻)}, so both come back as the dedicated
+ * one. Equivalent in both directions, which is the line: normalise across an equivalence,
+ * never across a one-way entailment.
  */
 class IdiomRecognitionTest {
 
@@ -75,14 +80,21 @@ class IdiomRecognitionTest {
         return out.toString();
     }
 
-    /** The axiom this issue was raised about. */
+    /**
+     * The axiom this issue was raised about, now carried by the keyword form.
+     *
+     * <p>It was written {@code ⊤ ⊑ ≤ 1 r⁻}, which is also how
+     * {@code SubClassOf(⊤ ObjectMaxCardinality(1 r⁻))} is written — so one of the two had to
+     * lose. {@code Func(r⁻)} belongs to the dedicated axiom and the cardinality form to the
+     * cardinality axiom, and both survive.
+     */
     @Test
     void inverseFunctionalityComesBackAsItself() throws Exception {
         OWLAxiom axiom = df.getOWLInverseFunctionalObjectPropertyAxiom(r);
         OWLOntology o = ontology(axiom);
         String written = write(o);
-        assertTrue(bodyOf(written).contains("⊤ ⊑ ≤ 1 r⁻"),
-            () -> "written as the DL idiom:\n" + bodyOf(written));
+        assertTrue(bodyOf(written).contains("Func(r⁻)"),
+            () -> "written with the keyword form:\n" + bodyOf(written));
 
         OWLOntology back = read(written);
         assertTrue(back.containsAxiom(axiom),
@@ -92,16 +104,39 @@ class IdiomRecognitionTest {
             () -> "with no owl:Thing subsumption left over: " + back.getLogicalAxioms());
     }
 
-    /** The bare cardinality spelling of functionality, which a person may well write. */
+    /**
+     * The cardinality spelling is the cardinality axiom, and keeps its own identity.
+     *
+     * <p>The inverse of what this test used to assert. `⊤ ⊑ ≤1 r` was read as functionality,
+     * which is an equivalent statement but not the same axiom, so an ontology holding both
+     * came back holding one. Both survive now, because each has its own spelling.
+     */
     @Test
-    void theCardinalitySpellingOfFunctionalityIsRecognised() throws Exception {
+    void theCardinalitySpellingIsNotFunctionality() throws Exception {
         OWLOntology objects = read("@prefix : <" + NS + ">\nA ⊑ ∃r.B\n⊤ ⊑ ≤1 r\n");
+        assertTrue(objects.containsAxiom(df.getOWLSubClassOfAxiom(df.getOWLThing(),
+                df.getOWLObjectMaxCardinality(1, r, df.getOWLThing()))),
+            () -> objects.getLogicalAxioms().toString());
+        assertTrue(objects.getAxioms(AxiomType.FUNCTIONAL_OBJECT_PROPERTY).isEmpty(),
+            () -> "and is not also asserted functional: " + objects.getLogicalAxioms());
+
+        OWLOntology both = read("@prefix : <" + NS + ">\nA ⊑ ∃r.B\n⊤ ⊑ ≤1 r\nFunc(r)\n");
+        assertEquals(1, both.getAxioms(AxiomType.FUNCTIONAL_OBJECT_PROPERTY).size(),
+            () -> "both axioms survive together: " + both.getLogicalAxioms());
+        assertEquals(2, both.getAxioms(AxiomType.SUBCLASS_OF).size(),
+            () -> "both axioms survive together: " + both.getLogicalAxioms());
+    }
+
+    /** And the keyword form still carries functionality, for both kinds of property. */
+    @Test
+    void theKeywordFormIsFunctionality() throws Exception {
+        OWLOntology objects = read("@prefix : <" + NS + ">\nA ⊑ ∃r.B\nFunc(r)\n");
         assertTrue(objects.containsAxiom(df.getOWLFunctionalObjectPropertyAxiom(r)),
             () -> objects.getLogicalAxioms().toString());
 
-        OWLOntology data = read("@prefix : <" + NS + ">\n∃d.xsd:string ⊑ A\n⊤ ⊑ ≤1 d\n");
+        OWLOntology data = read("@prefix : <" + NS + ">\n∃d.xsd:string ⊑ A\nFunctional(d)\n");
         assertTrue(data.containsAxiom(df.getOWLFunctionalDataPropertyAxiom(d)),
-            () -> data.getLogicalAxioms().toString());
+            () -> "the long spelling too: " + data.getLogicalAxioms());
     }
 
     /** Inverse functionality on an inverse is functionality, which is worth keeping right. */
