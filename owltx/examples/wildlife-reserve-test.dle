@@ -480,6 +480,20 @@ CommonSpecies ≡ Species ⊓ ∃populationEstimate.xsd:integer[≥10000]
 HighQualityHabitat ≡ Habitat ⊓ ∃habitatQuality.xsd:decimal[≥4 ⊓ ≤5]
 LowQualityHabitat ≡ Habitat ⊓ ∃habitatQuality.xsd:decimal[≥1 ⊓ <3]
 
+# Counting relationships rather than testing a value. `≥ ≤ =` each take a
+# qualified form naming what is counted, and an unqualified form counting
+# successors of any kind.
+WidespreadSpecies ≡ Species ⊓ ≥3 locatedIn.Habitat
+EndemicSpecies ≡ Species ⊓ =1 locatedIn.Habitat
+SparseHabitat ≡ Habitat ⊓ ≤2 contains
+WellStudiedSpecies ≡ Species ⊓ ≥5 observedSpecies⁻.Observation
+
+# A bound on every individual, not on the members of one class. `⊤ ⊑ ≤1 r.C`
+# and the bare `≤1 r.C` are the same statement — the bare form abbreviates it —
+# and both are the at-most-one cardinality, which is a different axiom from
+# `Functional(r)` even though the two entail each other.
+⊤ ⊑ ≤1 partOfTaxon.Taxon
+
 ############################################################
 # Calculated category definitions
 ############################################################

@@ -158,10 +158,53 @@ Functional(servicePattern)
 ⊤ ⊑ ∀trackGauge.xsd:decimal[≥0]
 Functional(trackGauge)
 
+∃altName.⊤ ⊑ Station
+⊤ ⊑ ∀altName.xsd:string
+@doc altName "An alternative name. Not functional: a station may have several."
+
 ∃firstTrain.⊤ ⊑ Station
 ⊤ ⊑ ∀firstTrain.xsd:dateTime
 ∃lastTrain.⊤ ⊑ Station
 ⊤ ⊑ ∀lastTrain.xsd:dateTime
+
+############################################################
+# Cardinality
+#
+# Three operators — ≥ ≤ = — each with a qualified form naming what is counted
+# and an unqualified form counting successors of any kind. A cardinality is a
+# class expression, so it goes wherever one can.
+############################################################
+
+# Qualified: the filler says what is being counted.
+Hub ≡ Station ⊓ ≥4 connectsTo.Station
+Siding ≡ Station ⊓ ≤1 connectsTo.Station
+SingleLineStation ≡ Station ⊓ =1 partOfLine.Line
+
+# Unqualified: no filler, so every successor counts.
+WellConnected ≡ Station ⊓ ≥4 connectsTo
+Stub ≡ Station ⊓ ≤2 connectsTo
+
+# On a data property, values are counted rather than individuals.
+Renamed ≡ Station ⊓ ≥2 altName
+SingleGauge ≡ Line ⊓ =1 trackGauge.xsd:decimal
+
+# On the right of a subsumption, bounding the class on the left.
+Depot ⊑ ≤1 maintainedBy.Depot
+
+# Standing alone, a cardinality is a statement about ⊤ — every individual,
+# not the members of any one class. The two below say the same kind of thing,
+# the second abbreviating the `⊤ ⊑` of the first.
+⊤ ⊑ ≤2 maintainedBy.Depot
+≤1 terminusOf.Line
+
+# `Functional(r)` is OWL's functionality axiom, and `≤1 r.⊤` is the
+# at-most-one that functionality entails. They are the same statement but not
+# the same axiom, so each keeps its own spelling and both survive a round
+# trip. Use the keyword when functionality is what is meant.
+⊤ ⊑ ≤1 precedes.⊤
+
+# `Func` of an inverse is inverse-functionality: at most one predecessor.
+Func(precedes⁻)
 
 ############################################################
 # Enumerations over individuals, numbers and booleans
