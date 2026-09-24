@@ -48,7 +48,7 @@ Animal ⊑ ⊤
 Keeper ⊑ Person
 ∃hasPet.⊤ ⊑ Person
 ⊤ ⊑ ∀hasPet.Animal
-∃age.⊤ ⊑ Animal
+(≥1 age) ⊑ Animal
 ⊤ ⊑ ∀age.xsd:integer
 ⊤ ⊑ ∀nickname.xsd:string
 ⊤ ⊑ ∀weight.xsd:double

@@ -561,11 +561,32 @@ public class DLESyntaxObjectRenderer extends DLSyntaxObjectRenderer {
         }
     }
 
+    /**
+     * A domain, as {@code ∃r.⊤ ⊑ C} for an object property and {@code (≥1 d) ⊑ C} for a data
+     * property.
+     *
+     * <p>Not one form for both. {@code ⊤} is the top *concept*, and OWL keeps the object and
+     * data universes disjoint, so {@code ∃d.⊤} puts a concept where a data range belongs —
+     * it says `d` is an object property, which is the opposite of what a data property
+     * domain means. The textbook writes the data case with the unqualified minimum for
+     * exactly this reason: it names no filler, so it need not say which universe the filler
+     * is in.
+     *
+     * <p>Both spellings read for both kinds, so nothing already written stops loading.
+     */
     private void writeDomainAxiom(OWLPropertyDomainAxiom<?> axiom) {
-        write(DLSyntax.EXISTS);
-        axiom.getProperty().accept(this);
-        write(".");
-        write(DLSyntax.TOP);
+        if (axiom.getProperty() instanceof OWLDataPropertyExpression) {
+            write("(");
+            write(DLSyntax.MIN);
+            write("1 ");
+            axiom.getProperty().accept(this);
+            write(")");
+        } else {
+            write(DLSyntax.EXISTS);
+            axiom.getProperty().accept(this);
+            write(".");
+            write(DLSyntax.TOP);
+        }
         write(" ");
         write(DLSyntax.SUBCLASS);
         write(" ");

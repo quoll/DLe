@@ -54,7 +54,7 @@ SurveyRoute ⊑ WildlifeConcept
 @label relationship "Relationship"
 @doc relationship "Generic relationship between modeled wildlife concepts or domains; specialized by domain-specific relationship types."
 
-∃attribute.⊤ ⊑ WildlifeConcept ⊔ RelationshipStatement
+(≥1 attribute) ⊑ WildlifeConcept ⊔ RelationshipStatement
 ⊤ ⊑ ∀attribute.(xsd:boolean ⊔ xsd:integer ⊔ xsd:decimal ⊔ xsd:string ⊔ xsd:dateTime ⊔ xsd:date)
 @doc attribute "A scalar attribute belonging to a wildlife concept or to an asserted relationship."
 
@@ -228,7 +228,7 @@ Irref(neighboringPlace)
 # Basic attributes and identifiers
 ############################################################
 
-∃name.⊤ ⊑ WildlifeConcept
+(≥1 name) ⊑ WildlifeConcept
 ⊤ ⊑ ∀name.xsd:string
 WildlifeConcept ⊑ ∃name.xsd:string
 Functional(name)
@@ -237,7 +237,7 @@ Functional(name)
 @doc name "Unique display name for a wildlife concept."
 
 # `matches` references the OWL xsd:pattern facet. `key()` references owl:hasKey.
-∃id.⊤ ⊑ WildlifeConcept
+(≥1 id) ⊑ WildlifeConcept
 ⊤ ⊑ ∀id.[xsd:string ⊓ [matches "[A-Z]{3}-[0-9]{6}"]]
 WildlifeConcept ⊑ (=1 id.xsd:string)
 Functional(id)
@@ -247,7 +247,7 @@ WildlifeConcept ⊑ key(id)
 @doc id "Opaque unique identifier for a modeled wildlife concept."
 
 tagId ⊑ attribute
-∃tagId.⊤ ⊑ Animal
+(≥1 tagId) ⊑ Animal
 ⊤ ⊑ ∀tagId.xsd:string
 Functional(tagId)
 Animal ⊑ key(tagId)
@@ -257,7 +257,7 @@ Animal ⊑ key(tagId)
 @doc tagId "Field tag or tracking device identifier."
 
 description ⊑ attribute
-∃description.⊤ ⊑ WildlifeConcept
+(≥1 description) ⊑ WildlifeConcept
 ⊤ ⊑ ∀description.xsd:string
 Functional(description)
 @db description
@@ -269,7 +269,7 @@ Functional(description)
 ############################################################
 
 lifeStage ⊑ attribute
-∃lifeStage.⊤ ⊑ Animal
+(≥1 lifeStage) ⊑ Animal
 ⊤ ⊑ ∀lifeStage.{"Juvenile","Subadult","Adult","Unknown"}
 Functional(lifeStage)
 @db lifeStage "life_stage"
@@ -277,7 +277,7 @@ Functional(lifeStage)
 @doc lifeStage "Observed maturity stage of an animal."
 
 healthScore ⊑ attribute
-∃healthScore.⊤ ⊑ Animal
+(≥1 healthScore) ⊑ Animal
 ⊤ ⊑ ∀healthScore.{"1", "2", "3", "4", "5"}
 Functional(healthScore)
 @db healthScore "health_score"
@@ -285,7 +285,7 @@ Functional(healthScore)
 @doc healthScore "Ordinal health score, 1..5."
 
 conservationStatus ⊑ calculatedList
-∃conservationStatus.⊤ ⊑ Species
+(≥1 conservationStatus) ⊑ Species
 ⊤ ⊑ ∀conservationStatus.{"Least Concern","Vulnerable","Endangered","Critical"}
 Functional(conservationStatus)
 @db conservationStatus "conservation_status"
@@ -293,7 +293,7 @@ Functional(conservationStatus)
 @doc conservationStatus "Calculated conservation category selected from a model-defined list of terms."
 
 surveyPriority ⊑ calculatedList
-∃surveyPriority.⊤ ⊑ Habitat ⊔ Species
+(≥1 surveyPriority) ⊑ Habitat ⊔ Species
 ⊤ ⊑ ∀surveyPriority.{"Low","Medium","High","Urgent"}
 Functional(surveyPriority)
 @db surveyPriority "survey_priority"
@@ -305,7 +305,7 @@ Functional(surveyPriority)
 ############################################################
 
 populationEstimate ⊑ attribute
-∃populationEstimate.⊤ ⊑ Species
+(≥1 populationEstimate) ⊑ Species
 ⊤ ⊑ ∀populationEstimate.xsd:integer[≥0]
 Functional(populationEstimate)
 @db populationEstimate "population_estimate"
@@ -313,7 +313,7 @@ Functional(populationEstimate)
 @doc populationEstimate "Estimated population count for a species."
 
 previousPopulationEstimate ⊑ attribute
-∃previousPopulationEstimate.⊤ ⊑ Species
+(≥1 previousPopulationEstimate) ⊑ Species
 ⊤ ⊑ ∀previousPopulationEstimate.xsd:integer[≥0]
 Functional(previousPopulationEstimate)
 @db previousPopulationEstimate "previous_population_estimate"
@@ -321,7 +321,7 @@ Functional(previousPopulationEstimate)
 @doc previousPopulationEstimate "Earlier estimated population count for a species."
 
 habitatQuality ⊑ attribute
-∃habitatQuality.⊤ ⊑ Habitat
+(≥1 habitatQuality) ⊑ Habitat
 ⊤ ⊑ ∀habitatQuality.xsd:decimal[≥1 ⊓ ≤5]
 Functional(habitatQuality)
 @db habitatQuality "habitat_quality"
@@ -329,7 +329,7 @@ Functional(habitatQuality)
 @doc habitatQuality "Ordinal habitat quality score from 1 to 5."
 
 lastObservedAt ⊑ attribute
-∃lastObservedAt.⊤ ⊑ Animal
+(≥1 lastObservedAt) ⊑ Animal
 ⊤ ⊑ ∀lastObservedAt.xsd:dateTime
 Functional(lastObservedAt)
 @db lastObservedAt "last_observed_at"
@@ -337,7 +337,7 @@ Functional(lastObservedAt)
 @doc lastObservedAt "Date and time when an animal was last observed."
 
 migrationDate ⊑ attribute
-∃migrationDate.⊤ ⊑ Animal
+(≥1 migrationDate) ⊑ Animal
 ⊤ ⊑ ∀migrationDate.xsd:date
 Functional(migrationDate)
 @db migrationDate "migration_date"
@@ -345,7 +345,7 @@ Functional(migrationDate)
 @doc migrationDate "Expected or observed migration date."
 
 reviewDate ⊑ attribute
-∃reviewDate.⊤ ⊑ WildlifeConcept
+(≥1 reviewDate) ⊑ WildlifeConcept
 ⊤ ⊑ ∀reviewDate.xsd:dateTime
 Functional(reviewDate)
 @db reviewDate "review_date"
@@ -353,7 +353,7 @@ Functional(reviewDate)
 @doc reviewDate "Date at which a modeled concept was last reviewed."
 
 verified ⊑ attribute
-∃verified.⊤ ⊑ Observation
+(≥1 verified) ⊑ Observation
 ⊤ ⊑ ∀verified.xsd:boolean
 Functional(verified)
 @db verified
@@ -364,7 +364,7 @@ Functional(verified)
 # Numeric equivalents of enumerated scores
 ############################################################
 
-∃healthScoreValue.⊤ ⊑ Animal
+(≥1 healthScoreValue) ⊑ Animal
 ⊤ ⊑ ∀healthScoreValue.xsd:decimal
 Functional(healthScoreValue)
 @doc healthScoreValue "Numeric equivalent to the healthScore attribute."
@@ -379,7 +379,7 @@ Functional(healthScoreValue)
 ############################################################
 
 populationRisk ⊑ calculatedNumber
-∃populationRisk.⊤ ⊑ Species
+(≥1 populationRisk) ⊑ Species
 ⊤ ⊑ ∀populationRisk.xsd:decimal
 Functional(populationRisk)
 @db populationRisk "population_risk"
@@ -387,7 +387,7 @@ Functional(populationRisk)
 @doc populationRisk "Calculated population risk score derived from population estimate and trend."
 
 habitatRisk ⊑ calculatedNumber
-∃habitatRisk.⊤ ⊑ Habitat
+(≥1 habitatRisk) ⊑ Habitat
 ⊤ ⊑ ∀habitatRisk.xsd:decimal
 Functional(habitatRisk)
 @db habitatRisk "habitat_risk"
@@ -402,7 +402,7 @@ studiesStatement ⊑ RelationshipStatement
 studiesStatement ⊑ ∃statementRelationship.{studies}
 
 confidenceLevel ⊑ attribute
-∃confidenceLevel.⊤ ⊑ studiesStatement
+(≥1 confidenceLevel) ⊑ studiesStatement
 ⊤ ⊑ ∀confidenceLevel.{"Low","Medium","High"}
 Functional(confidenceLevel)
 @db confidenceLevel "confidence_level"
@@ -410,7 +410,7 @@ Functional(confidenceLevel)
 @doc confidenceLevel "Attribute on a Studies relationship indicating confidence in the relationship."
 
 observationMethod ⊑ attribute
-∃observationMethod.⊤ ⊑ recordsAnimalStatement
+(≥1 observationMethod) ⊑ recordsAnimalStatement
 ⊤ ⊑ ∀observationMethod.{"Camera Trap","Direct Sight","Track","Audio"}
 Functional(observationMethod)
 @db observationMethod "observation_method"
@@ -425,7 +425,7 @@ recordsAnimalStatement ⊑ ∃statementRelationship.{recordsAnimal}
 ############################################################
 
 recordCurationState ⊑ calculatedList
-∃recordCurationState.⊤ ⊑ Animal
+(≥1 recordCurationState) ⊑ Animal
 ⊤ ⊑ ∀recordCurationState.{"Unassigned","Nominated","Curated","Maintained"}
 Functional(recordCurationState)
 @db recordCurationState "record_curation_state"
@@ -433,7 +433,7 @@ Functional(recordCurationState)
 @doc recordCurationState "Calculated curation state for an animal record based on responsible researcher assignment, acceptance, health score, and review freshness."
 
 curationAccepted ⊑ attribute
-∃curationAccepted.⊤ ⊑ Animal
+(≥1 curationAccepted) ⊑ Animal
 ⊤ ⊑ ∀curationAccepted.{"No","Yes"}
 Functional(curationAccepted)
 @db curationAccepted "curation_accepted"
@@ -533,14 +533,14 @@ MigrationSoon ≡ ∃migrationDate.withinNextYear
 ############################################################
 
 surveyStart ⊑ attribute
-∃surveyStart.⊤ ⊑ SurveyRoute
+(≥1 surveyStart) ⊑ SurveyRoute
 ⊤ ⊑ ∀surveyStart.xsd:dateTime
 Functional(surveyStart)
 @db surveyStart "survey_start"
 @label surveyStart "Survey Start"
 
 surveyEnd ⊑ attribute
-∃surveyEnd.⊤ ⊑ SurveyRoute
+(≥1 surveyEnd) ⊑ SurveyRoute
 ⊤ ⊑ ∀surveyEnd.xsd:dateTime
 Functional(surveyEnd)
 @db surveyEnd "survey_end"

@@ -612,6 +612,29 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
                 return null;
             }
         }
+        // Domain, the textbook's spelling: `(≥1 p) ⊑ C`.
+        //
+        // The one form that works for both kinds, because it names no filler and so does not
+        // have to say which universe the filler lives in. That is why the textbook writes a
+        // data property domain this way: `∃d.⊤ ⊑ C` would put the top *concept* where a data
+        // range belongs, and OWL keeps the two universes disjoint.
+        //
+        // Only a minimum of one. `≥2 p ⊑ C` says something else and stays the subsumption it
+        // is, as does any bound with a filler narrower than the top of its universe.
+        if (lhs instanceof OWLObjectMinCardinality) {
+            OWLObjectMinCardinality min = (OWLObjectMinCardinality) lhs;
+            if (min.getCardinality() == 1 && min.getFiller().isOWLThing()) {
+                axioms.add(df.getOWLObjectPropertyDomainAxiom(min.getProperty(), asClass(rhs)));
+                return null;
+            }
+        }
+        if (lhs instanceof OWLDataMinCardinality) {
+            OWLDataMinCardinality min = (OWLDataMinCardinality) lhs;
+            if (min.getCardinality() == 1 && min.getFiller().isTopDatatype()) {
+                axioms.add(df.getOWLDataPropertyDomainAxiom(min.getProperty(), asClass(rhs)));
+                return null;
+            }
+        }
 
         // Range: ⊤ ⊑ ∀r.C
         if (isOWLThing(lhs)) {
