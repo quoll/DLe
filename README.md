@@ -105,7 +105,9 @@ These are designed to feel like natural continuations of DL, rather than a separ
 
 ## Extension Example
  - ● standard Description Logic
+ - ○ non-standard syntax
  - 🦉 supported in OWL
+ - ✖ outside of OWL
 ```
 @label Project "Project"                                ○🦉
 @db dependsOn "DEPENDS_ON"                              ○🦉
