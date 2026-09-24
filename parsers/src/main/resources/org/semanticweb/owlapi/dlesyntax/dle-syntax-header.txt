@@ -93,7 +93,13 @@
 # Inverses:
 # - r⁻ is the inverse of r, and is accepted wherever OWL allows a role expression: in a
 #   restriction, on either side of ⊑ or ≡, in a chain, and as the argument of a keyword —
-#   Trans(r⁻), Func(r⁻), Disj(r, r⁻), key(r⁻)
+#   Trans(r⁻), Functional(r⁻), Disj(r, r⁻), key(r⁻). Functional(r⁻) is OWL's
+#   inverse-functionality: at most one r reaches each individual
+# - `Func` and `Functional` are the same keyword, as are `Trans`/`Transitive`,
+#   `Ref`/`Reflexive`, `Irref`/`Irreflexive`, `Sym`/`Symmetric` and `Asym`/`Asymmetric`.
+#   Both spellings read; the written-out one is what is emitted
+# - Functional(r) is the functionality axiom. `≤1 r.⊤` is the at-most-one cardinality it
+#   entails — the same statement, a different axiom — and is read as the cardinality
 # - A doubled ⁻ cancels: r⁻⁻ is r
 # - An assertion has no room for the marker, so (a,b):r⁻ is written the other way round as
 #   (b,a):r, which says the same thing

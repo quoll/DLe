@@ -113,7 +113,7 @@ class InversePropertyPositionTest {
         // the spelling OWL itself prefers.
         OWLOntology o = ontology(df.getOWLFunctionalObjectPropertyAxiom(inverseOfR()));
         String body = bodyOf(write(o));
-        assertTrue(body.contains("Func(r⁻)"), () -> "written with the inverse:\n" + body);
+        assertTrue(body.contains("Functional(r⁻)"), () -> "written with the inverse:\n" + body);
         assertTrue(read(write(o)).containsAxiom(df.getOWLInverseFunctionalObjectPropertyAxiom(r)),
             () -> "and normalised to InverseFunctional:\n" + body);
     }

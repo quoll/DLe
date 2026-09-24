@@ -692,26 +692,30 @@ public class DLESyntaxObjectRenderer extends DLSyntaxObjectRenderer {
 
     @Override
     public void visit(OWLFunctionalDataPropertyAxiom axiom) {
-        writeUnaryRoleAxiom("Func", axiom.getProperty());
+        writeUnaryRoleAxiom("Functional", axiom.getProperty());
     }
 
     @Override
     public void visit(OWLFunctionalObjectPropertyAxiom axiom) {
-        writeUnaryRoleAxiom("Func", axiom.getProperty());
+        writeUnaryRoleAxiom("Functional", axiom.getProperty());
     }
 
     /**
-     * Inverse-functionality is {@code Func(r⁻)}.
+     * Inverse-functionality is {@code Functional(r⁻)}.
      *
      * <p>Without this the inherited renderer wrote it as {@code ⊤ ⊑ ≤ 1 r⁻}, which is the
      * same statement but is also how {@code SubClassOf(⊤ ObjectMaxCardinality(1 r⁻))} is
      * written — two OWL axioms with one spelling, so the reader had to guess and the
      * subsumption could not survive. The keyword form belongs to the dedicated axiom and
      * the cardinality form to the cardinality axiom, and neither has to be recognised back.
+     *
+     * <p>{@code Functional} rather than the textbook's {@code Func}: they are one token and
+     * both read, and the written-out word asks less of anything reading the document that
+     * has not been told what the abbreviation means.
      */
     @Override
     public void visit(OWLInverseFunctionalObjectPropertyAxiom axiom) {
-        writeUnaryRoleAxiom("Func", axiom.getProperty().getInverseProperty());
+        writeUnaryRoleAxiom("Functional", axiom.getProperty().getInverseProperty());
     }
 
     /**

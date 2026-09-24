@@ -93,7 +93,7 @@ class IdiomRecognitionTest {
         OWLAxiom axiom = df.getOWLInverseFunctionalObjectPropertyAxiom(r);
         OWLOntology o = ontology(axiom);
         String written = write(o);
-        assertTrue(bodyOf(written).contains("Func(r⁻)"),
+        assertTrue(bodyOf(written).contains("Functional(r⁻)"),
             () -> "written with the keyword form:\n" + bodyOf(written));
 
         OWLOntology back = read(written);
@@ -149,12 +149,21 @@ class IdiomRecognitionTest {
             () -> "inverse-functional on r⁻ is functional on r: " + back.getLogicalAxioms());
     }
 
-    /** Func(p) must still be the spelling the writer chooses for plain functionality. */
+    /**
+     * The keyword is what the writer chooses for plain functionality.
+     *
+     * <p>Written out rather than the textbook's {@code Func}. They are one token and both
+     * read; the long spelling asks less of a reader that has not been told what the
+     * abbreviation stands for.
+     */
     @Test
     void plainFunctionalityStillUsesTheKeyword() throws Exception {
         String body = bodyOf(write(ontology(df.getOWLFunctionalObjectPropertyAxiom(r))));
-        assertTrue(body.contains("Func(r)"),
-            () -> "the keyword is shorter and is what DLe writes:\n" + body);
+        assertTrue(body.contains("Functional(r)"),
+            () -> "the keyword form is what DLe writes:\n" + body);
+        OWLOntology shortSpelling = read("@prefix : <" + NS + ">\nA ⊑ ∃r.B\nFunc(r)\n");
+        assertTrue(shortSpelling.containsAxiom(df.getOWLFunctionalObjectPropertyAxiom(r)),
+            () -> "and the short spelling still reads: " + shortSpelling.getLogicalAxioms());
     }
 
     // ── The general form has to stay reachable ──────────────────────────────
