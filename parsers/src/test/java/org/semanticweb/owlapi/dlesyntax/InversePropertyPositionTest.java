@@ -97,16 +97,18 @@ class InversePropertyPositionTest {
 
     @Test
     void everyCharacteristicAcceptsAnInverse() throws Exception {
+        // The written-out spellings, which are what the writer emits; the short ones still
+        // read, which `bothSpellingsOfEveryKeywordRead` covers.
         assertTrue(roundTrip(df.getOWLTransitiveObjectPropertyAxiom(inverseOfR()))
-            .contains("Trans(r⁻)"));
+            .contains("Transitive(r⁻)"));
         assertTrue(roundTrip(df.getOWLSymmetricObjectPropertyAxiom(inverseOfR()))
-            .contains("Sym(r⁻)"));
+            .contains("Symmetric(r⁻)"));
         assertTrue(roundTrip(df.getOWLAsymmetricObjectPropertyAxiom(inverseOfR()))
-            .contains("Asym(r⁻)"));
+            .contains("Asymmetric(r⁻)"));
         assertTrue(roundTrip(df.getOWLReflexiveObjectPropertyAxiom(inverseOfR()))
-            .contains("Ref(r⁻)"));
+            .contains("Reflexive(r⁻)"));
         assertTrue(roundTrip(df.getOWLIrreflexiveObjectPropertyAxiom(inverseOfR()))
-            .contains("Irref(r⁻)"));
+            .contains("Irreflexive(r⁻)"));
         // Functionality of an inverse is the one characteristic OWL has a second axiom for.
         // `Func(r⁻)` writes both and reads back as the dedicated one, so this is a
         // normalisation rather than a round trip — equivalent in both directions, and to

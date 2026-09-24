@@ -224,4 +224,53 @@ class RoleCharacteristicKindTest {
             () -> "the subsumption is the line at fault, which needs Trans to count as"
                 + " evidence: " + error.getMessage());
     }
+
+    /**
+     * Both spellings of every keyword read, and mean the same axiom.
+     *
+     * <p>The writer emits the written-out one, so the abbreviations are only ever an input
+     * form — which is exactly how a spelling stops being exercised and quietly breaks. The
+     * textbook uses them, and documents in the wild are written from the textbook.
+     */
+    @Test
+    void bothSpellingsOfEveryKeywordRead() throws Exception {
+        String[][] pairs = {
+            {"Trans", "Transitive"}, {"Func", "Functional"}, {"Ref", "Reflexive"},
+            {"Irref", "Irreflexive"}, {"Sym", "Symmetric"}, {"Asym", "Asymmetric"},
+        };
+        for (String[] pair : pairs) {
+            OWLOntology shortForm = parse(PREFIX + "A ⊑ ∃p.B\n" + pair[0] + "(p)\n");
+            OWLOntology longForm  = parse(PREFIX + "A ⊑ ∃p.B\n" + pair[1] + "(p)\n");
+            assertEquals(shortForm.getLogicalAxioms(), longForm.getLogicalAxioms(),
+                () -> pair[0] + " and " + pair[1] + " are one keyword: "
+                    + shortForm.getLogicalAxioms() + " vs " + longForm.getLogicalAxioms());
+            assertEquals(2, longForm.getLogicalAxioms().size(),
+                () -> pair[1] + " must produce its axiom: " + longForm.getLogicalAxioms());
+        }
+    }
+
+    /** And the written-out spelling is the one written back. */
+    @Test
+    void theWrittenOutSpellingIsWhatIsEmitted() throws Exception {
+        String[][] pairs = {
+            {"Trans", "Transitive"}, {"Func", "Functional"}, {"Ref", "Reflexive"},
+            {"Irref", "Irreflexive"}, {"Sym", "Symmetric"}, {"Asym", "Asymmetric"},
+        };
+        for (String[] pair : pairs) {
+            String written = write(parse(PREFIX + "A ⊑ ∃p.B\n" + pair[0] + "(p)\n"));
+            assertTrue(written.contains(pair[1] + "(p)"),
+                () -> "the short input must come back written out:\n" + written);
+        }
+    }
+
+    /** Writes an ontology back as DLe. */
+    private String write(OWLOntology o) throws Exception {
+        org.semanticweb.owlapi.formats.DLESyntaxDocumentFormat format =
+            new org.semanticweb.owlapi.formats.DLESyntaxDocumentFormat();
+        format.setDefaultPrefix("http://example.org/t#");
+        java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+        o.getOWLOntologyManager().saveOntology(o, format,
+            new org.semanticweb.owlapi.io.StreamDocumentTarget(out));
+        return new String(out.toByteArray(), java.nio.charset.StandardCharsets.UTF_8);
+    }
 }

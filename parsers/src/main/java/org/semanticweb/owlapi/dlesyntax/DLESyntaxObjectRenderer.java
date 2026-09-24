@@ -910,29 +910,38 @@ public class DLESyntaxObjectRenderer extends DLSyntaxObjectRenderer {
 
     @Override
     public void visit(OWLIrreflexiveObjectPropertyAxiom axiom) {
-        writeUnaryRoleAxiom("Irref", axiom.getProperty());
+        writeUnaryRoleAxiom("Irreflexive", axiom.getProperty());
     }
 
     @Override
     public void visit(OWLReflexiveObjectPropertyAxiom axiom) {
-        writeUnaryRoleAxiom("Ref", axiom.getProperty());
+        writeUnaryRoleAxiom("Reflexive", axiom.getProperty());
     }
 
     @Override
     public void visit(OWLTransitiveObjectPropertyAxiom axiom) {
-        writeUnaryRoleAxiom("Trans", axiom.getProperty());
+        writeUnaryRoleAxiom("Transitive", axiom.getProperty());
     }
 
     @Override
     public void visit(OWLSymmetricObjectPropertyAxiom axiom) {
-        writeUnaryRoleAxiom("Sym", axiom.getProperty());
+        writeUnaryRoleAxiom("Symmetric", axiom.getProperty());
     }
 
     @Override
     public void visit(OWLAsymmetricObjectPropertyAxiom axiom) {
-        writeUnaryRoleAxiom("Asym", axiom.getProperty());
+        writeUnaryRoleAxiom("Asymmetric", axiom.getProperty());
     }
 
+    /**
+     * A unary role axiom, as in {@code Transitive(r)}.
+     *
+     * <p>Every one of these keywords has two spellings — {@code Trans} and
+     * {@code Transitive}, {@code Func} and {@code Functional}, and so on — and both read.
+     * The written-out one is written, because a document is read by people and by things
+     * that have not been told what the abbreviation stands for, and the four characters
+     * saved are worth less than not having to know.
+     */
     private void writeUnaryRoleAxiom(String keyword, OWLPropertyExpression prop) {
         write(keyword);
         write("(");
