@@ -61,6 +61,22 @@
 #   import defines as a concept, used here only in a subsumption pair, is read by the rules
 #   above and can come out a role. State its kind in this document to settle it.
 #
+# Two universes, and their tops:
+# - OWL keeps individuals and literals apart. `⊤` is the top of the individuals — every
+#   individual, and no literal — and `rdfs:Literal` is the top of the values. Neither
+#   contains the other, so a filler says which universe a role's values live in: `∃r.⊤`
+#   makes r an object property, `∃d.rdfs:Literal` makes d a data property.
+# - `⊤` is read as an alias for `rdfs:Literal` where a data range is expected and the
+#   property is already known to be a data property — `∃d.⊤` is a common and readable way
+#   to say "has some value". It is an input convenience only: `rdfs:Literal` is what is
+#   written, because `⊤` on its own would leave the kind unsaid and the name would come
+#   back an object property.
+# - A domain is therefore written differently for each kind. An object property's domain is
+#   `∃r.⊤ ⊑ C`. A data property's is `(≥1 d) ⊑ C`, which names no filler and so need not
+#   say which universe it is in; `∃d.rdfs:Literal ⊑ C` says the same thing. All of these
+#   are read, for both kinds, including the parenthesis-free `≥1 d ⊑ C`.
+# - The empty data range is `¬rdfs:Literal`.
+#
 # Typed literals:
 # - A value may carry its datatype, as Turtle spells it: "2024-01-01"^^xsd:date
 # - The datatype must follow the closing quote with nothing between them

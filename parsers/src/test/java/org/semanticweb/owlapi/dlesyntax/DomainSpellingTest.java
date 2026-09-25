@@ -56,6 +56,15 @@ class DomainSpellingTest {
         return new String(out.toByteArray(), StandardCharsets.UTF_8);
     }
 
+    /** The document with its explanatory `#` header removed. */
+    private static String statementsOnly(String document) {
+        StringBuilder out = new StringBuilder();
+        for (String line : document.split("\n", -1)) {
+            if (!line.trim().startsWith("#")) out.append(line).append('\n');
+        }
+        return out.toString();
+    }
+
     /** The textbook spelling is read as a domain, for both kinds of property. */
     @Test
     void theUnqualifiedMinimumIsADomain() throws Exception {
@@ -97,13 +106,16 @@ class DomainSpellingTest {
     /** Each kind is written in the form its universe allows. */
     @Test
     void eachKindIsWrittenInItsOwnForm() throws Exception {
-        String data = write(df.getOWLDataPropertyDomainAxiom(d, c));
+        // statementsOnly, not the whole document: the generated header documents `∃d.⊤` as
+        // an accepted input spelling, so a search over the whole text finds its own
+        // explanation and the assertion passes for the wrong reason — or fails for one.
+        String data = statementsOnly(write(df.getOWLDataPropertyDomainAxiom(d, c)));
         assertTrue(data.contains("(≥1 d) ⊑ C"),
             () -> "a data domain names no filler:\n" + data);
         assertFalse(data.contains("∃d.⊤"),
             () -> "and never puts the top concept in a data range position:\n" + data);
 
-        String object = write(df.getOWLObjectPropertyDomainAxiom(r, c));
+        String object = statementsOnly(write(df.getOWLObjectPropertyDomainAxiom(r, c)));
         assertTrue(object.contains("∃r.⊤ ⊑ C"),
             () -> "an object domain keeps the existential, where ⊤ is correct:\n" + object);
     }
