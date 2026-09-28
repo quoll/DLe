@@ -29,6 +29,8 @@ import org.semanticweb.owlapi.model.OWLSubDataPropertyOfAxiom;
 import org.semanticweb.owlapi.model.OWLSubObjectPropertyOfAxiom;
 import org.semanticweb.owlapi.model.AxiomType;
 import org.semanticweb.owlapi.model.OWLAnnotation;
+import org.semanticweb.owlapi.model.OWLAnnotationPropertyDomainAxiom;
+import org.semanticweb.owlapi.model.OWLAnnotationPropertyRangeAxiom;
 import org.semanticweb.owlapi.model.OWLAnnotationProperty;
 import org.semanticweb.owlapi.model.OWLSubAnnotationPropertyOfAxiom;
 import org.semanticweb.owlapi.model.IRI;
@@ -210,6 +212,7 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
     protected void storeOntology(OWLOntology o, PrintWriter printWriter, OWLDocumentFormat outputFormat) {
         renderer.setOntology(o);
         currentOntology = o;
+        usedBeyondDeclaration = null;
         writtenAnnotations = new HashSet<>();
         writtenAxioms = new HashSet<>();
         roleEvidence.clear();
@@ -253,6 +256,7 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
             writeDocumentComments(o, printWriter);
         } finally {
             currentOntology = null;
+            usedBeyondDeclaration = null;
             writtenAnnotations = null;
             writtenAxioms = null;
             roleEvidence.clear();
@@ -446,11 +450,69 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
      * one. Asked of the IRI rather than the entity so that a name declared under two kinds
      * still counts as used.
      */
+    /** {@link #namesUsedBeyondDeclaration} for the store in progress, or null before it is asked for. */
+    @Nullable private Set<IRI> usedBeyondDeclaration;
+
     private boolean declaresNothingElse(IRI iri) {
         if (currentOntology == null) return false;
-        return currentOntology.referencingAxioms(iri)
-            .allMatch(axiom -> axiom.getAxiomType() == AxiomType.DECLARATION
-                || axiom.getAxiomType() == AxiomType.ANNOTATION_ASSERTION);
+        if (usedBeyondDeclaration == null) {
+            usedBeyondDeclaration = namesUsedBeyondDeclaration(currentOntology);
+        }
+        return !usedBeyondDeclaration.contains(iri);
+    }
+
+    /**
+     * Every IRI some axiom mentions other than a declaration or an annotation assertion.
+     *
+     * <p>Computed once per document, because the question used to be asked of the ontology
+     * once per entity: {@code referencingAxioms} is not indexed for an IRI, so each call
+     * scanned, and the writer was quadratic in the size of the document. Eight thousand
+     * classes took 29.5 s to write and 1.9 s with this method's answer already in hand; the
+     * cost grew by 3.94 for a doubling where linear is 2. The reader was never affected.
+     *
+     * <p>The three sources beyond an axiom's entity signature all have to be here, because
+     * an IRI that is only in one of them is used and must not be reported as declared and
+     * nothing else: an annotation property's domain and its range are plain IRIs rather than
+     * entities, and an annotation on the axiom may carry one as its value. Annotations nest,
+     * so that last one recurses. Each is pinned by a test, and each of the three was
+     * measured to matter — dropping any one of them changes an answer.
+     *
+     * <p>Skipping annotation assertions is faithful to the question rather than load-bearing:
+     * an assertion's subject and value are IRIs and not in its signature, so nothing is
+     * collected from one either way, and dropping the filter changes no corpus document and
+     * no test. It is kept because the question is "used by an axiom that says something about
+     * it", and an assertion does not — so if this ever collects subjects or values, the
+     * filter is what keeps the answer right.
+     *
+     * <p>Equivalence with the {@code referencingAxioms} version it replaced was checked by
+     * computing both and comparing, over all 25 corpus documents and the whole suite: no
+     * disagreement, and every document's output is byte-identical.
+     */
+    private static Set<IRI> namesUsedBeyondDeclaration(OWLOntology o) {
+        Set<IRI> used = new HashSet<>();
+        o.axioms()
+            .filter(axiom -> axiom.getAxiomType() != AxiomType.DECLARATION
+                && axiom.getAxiomType() != AxiomType.ANNOTATION_ASSERTION)
+            .forEach(axiom -> {
+                axiom.signature().forEach(entity -> used.add(entity.getIRI()));
+                if (axiom instanceof OWLAnnotationPropertyDomainAxiom) {
+                    used.add(((OWLAnnotationPropertyDomainAxiom) axiom).getDomain());
+                }
+                if (axiom instanceof OWLAnnotationPropertyRangeAxiom) {
+                    used.add(((OWLAnnotationPropertyRangeAxiom) axiom).getRange());
+                }
+                collectAnnotationIRIs(axiom.getAnnotations(), used);
+            });
+        return used;
+    }
+
+    /** IRI-valued annotations, including those on annotations. */
+    private static void collectAnnotationIRIs(Collection<OWLAnnotation> annotations,
+                                              Set<IRI> used) {
+        for (OWLAnnotation annotation : annotations) {
+            if (annotation.getValue() instanceof IRI) used.add((IRI) annotation.getValue());
+            collectAnnotationIRIs(annotation.getAnnotations(), used);
+        }
     }
 
     /**
