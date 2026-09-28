@@ -2503,6 +2503,13 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
         if (obj instanceof OWLDataRange) return (OWLDataRange) obj;
         // ⊤ in data context → top data type
         if (obj instanceof OWLClass && ((OWLClass) obj).isOWLThing()) return df.getTopDatatype();
+        // and ⊥ → the empty data range, which is how OWL spells it. Without this,
+        // `⊤ ⊑ ∀d.⊥` — "d has no values", a real thing to state — was refused: ⊥ made d an
+        // object property, contradicting whatever had said it was a data one. Both tops are
+        // forgiving here or an author has to know which of the pair is.
+        if (obj instanceof OWLClass && ((OWLClass) obj).isOWLNothing()) {
+            return df.getOWLDataComplementOf(df.getTopDatatype());
+        }
         // A named class whose IRI is an XSD/RDF datatype → treat as OWLDatatype
         if (obj instanceof OWLClass) {
             IRI iri = ((OWLClass) obj).getIRI();

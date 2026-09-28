@@ -136,8 +136,9 @@ class ChainedEquivalenceTest {
     @Test
     void aChainMixingPropertyKindsIsRefused() {
         String message = refusal(PREFIX + "(a,\"5\"):d\nA ⊑ ∃r.B\nd ≡ r ≡ e\n");
-        assertTrue(message.contains("Equivalence holds between properties of one kind"),
-            () -> "got: " + message);
+        assertTrue(message.contains("this equivalence relates")
+                && message.contains("It holds between properties of one kind"),
+            () -> "the message must name the construct that ties the kinds: " + message);
         assertTrue(message.contains("line 2") && message.contains("line 3"),
             () -> "both lines must be named: " + message);
     }

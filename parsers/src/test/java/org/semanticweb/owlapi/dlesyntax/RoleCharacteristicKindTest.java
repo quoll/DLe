@@ -158,12 +158,43 @@ class RoleCharacteristicKindTest {
         }
     }
 
-    /** Disjointness holds within one kind, so a mixture is a contradiction, not a choice. */
+    /**
+     * Disjointness holds within one kind, so a mixture is a contradiction, not a choice.
+     *
+     * <p>Reported from the evidence now rather than from the statement, which is what lets
+     * the message name both properties and both lines. It is the same report an equivalence
+     * gets, because the two constructs constrain a kind the same way — and naming which of
+     * them it was is why the group carries its construct.
+     */
     @Test
     void disjointnessMixingKindsIsRefused() {
         String message = refusal(PREFIX + "∃m.xsd:integer ⊑ Device\nA ⊑ ∃n.B\nDisj(m, n)\n");
-        assertTrue(message.contains("mixes a data property with an object property"),
+        assertTrue(message.contains("this disjointness relates")
+                && message.contains("It holds between properties of one kind"),
             () -> "got: " + message);
+        assertTrue(message.contains("line 2") && message.contains("line 3"),
+            () -> "both lines must be named: " + message);
+    }
+
+    /**
+     * Disjointness carries the kind, rather than refusing a document that states one.
+     *
+     * <p>`Disj(d, e)` with `e` a stated data property was refused: `d` fell to the object
+     * default and then clashed with its own partner, so a sound document was rejected and
+     * the message blamed the line that was right. OWL has no disjointness that mixes the
+     * kinds, so evidence on any member settles them all — exactly as for an equivalence.
+     */
+    @Test
+    void disjointnessTakesTheKindFromItsPartner() throws Exception {
+        for (String spelling : new String[] {"Disj(q, p)", "Disj(p, q)", "p ⊓ q ⊑ ⊥"}) {
+            OWLOntology data = parse(PREFIX + DATA_P + spelling + "\n");
+            assertEquals(1, data.getAxioms(AxiomType.DISJOINT_DATA_PROPERTIES).size(),
+                () -> spelling + " with a data partner: " + data.getLogicalAxioms());
+
+            OWLOntology objects = parse(PREFIX + "A ⊑ ∃p.B\n" + spelling + "\n");
+            assertEquals(1, objects.getAxioms(AxiomType.DISJOINT_OBJECT_PROPERTIES).size(),
+                () -> spelling + " with an object partner: " + objects.getLogicalAxioms());
+        }
     }
 
     /**

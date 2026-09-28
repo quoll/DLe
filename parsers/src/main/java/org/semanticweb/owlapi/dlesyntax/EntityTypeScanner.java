@@ -3,6 +3,8 @@ package org.semanticweb.owlapi.dlesyntax;
 import javax.annotation.Nullable;
 
 import java.util.ArrayList;
+import java.util.Collection;
+import java.util.stream.Collectors;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.HashSet;
@@ -54,7 +56,24 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
      * document — including below the equivalence. Classifying on sight would make the answer
      * depend on statement order, which is the defect filed as #27.
      */
-    private final List<Set<String>> equivalenceGroups = new ArrayList<>();
+    private final List<KindGroup> sameKindGroups = new ArrayList<>();
+
+    /**
+     * Names that must all be the same kind of role, and the construct that says so.
+     *
+     * <p>Two constructs tie a kind together: an equivalence, and a disjointness. The label
+     * is carried because the diagnostic names it, and a disjointness reported as "this
+     * equivalence" sends the author to the wrong rule.
+     */
+    private static final class KindGroup {
+        private final String construct;
+        private final Set<String> names;
+
+        KindGroup(String construct, Collection<String> names) {
+            this.construct = construct;
+            this.names = new LinkedHashSet<>(names);
+        }
+    }
     /**
      * What the document says about each name's kind, and how firmly.
      *
@@ -329,8 +348,21 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
     @Override public Void visitIrreflexiveRoleAxiom(DLESyntaxParser.IrreflexiveRoleAxiomContext ctx) { objectOnlyCharacteristic("Irref", ctx.propertyExpr(), ctx.start.getLine()); return visitChildren(ctx); }
     @Override public Void visitSymmetricRoleAxiom(DLESyntaxParser.SymmetricRoleAxiomContext ctx)     { objectOnlyCharacteristic("Sym", ctx.propertyExpr(), ctx.start.getLine()); return visitChildren(ctx); }
     @Override public Void visitAsymmetricRoleAxiom(DLESyntaxParser.AsymmetricRoleAxiomContext ctx)   { objectOnlyCharacteristic("Asym", ctx.propertyExpr(), ctx.start.getLine()); return visitChildren(ctx); }
+    /**
+     * Disjointness says "roles", and says they are all the same kind of role.
+     *
+     * <p>OWL has {@code DisjointObjectProperties} and {@code DisjointDataProperties} and
+     * nothing that mixes them, so evidence on any member settles every member — exactly as
+     * for an equivalence. Without the group, `Disj(d, e)` with `e` a stated data property was
+     * *refused*: `d` fell to the object default and then clashed with its own partner, so a
+     * sound document was rejected and the message blamed the line that was right.
+     */
     @Override public Void visitDisjointRoleAxiom(DLESyntaxParser.DisjointRoleAxiomContext ctx) {
-        ctx.propertyExpr().forEach(p -> classifyUnknownRole(PropertyExprs.coreNameText(p)));
+        List<String> members = ctx.propertyExpr().stream()
+            .map(PropertyExprs::coreNameText)
+            .collect(Collectors.toList());
+        members.forEach(this::classifyUnknownRole);
+        if (members.size() > 1) sameKindGroups.add(new KindGroup("disjointness", members));
         return visitChildren(ctx);
     }
 
@@ -338,13 +370,22 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
     // Func(p) and Disj(p,q) are syntactically ambiguous — they apply to both data
     // and object properties.  This avoids overwriting a definitive data classification.
     /**
-     * Whether a filler is {@code ⊤}, which belongs to both hierarchies and so pins neither.
+     * Whether a filler is {@code ⊤} or {@code ⊥}, which name a top or bottom in both
+     * universes and so pin neither kind.
      *
-     * <p>{@code ∃p.⊤ ⊑ C} is how DLe writes a domain, for a data property as much as an
-     * object one, so the filler there is no evidence of kind at all.
+     * <p>Strictly {@code ⊤} is the top *concept* and {@code rdfs:Literal} the top data range,
+     * and DLe is forgiving about that on input: {@code ∃d.⊤} is a common and readable way to
+     * say "has some value", so the filler is read as whichever top the property's kind calls
+     * for and is evidence of neither.
+     *
+     * <p>{@code ⊥} goes with it. It was object-only, so {@code ⊤ ⊑ ∀d.⊥} — "d has no values",
+     * which is a real thing to state — was refused with a kind conflict against the very
+     * document that said `d` was a data property. The two tops behave alike or an author has
+     * to know which of the pair is the forgiving one.
      */
     private static boolean isTopFiller(@Nullable DLESyntaxParser.AtomContext atom) {
-        return atom instanceof DLESyntaxParser.TopAtomContext;
+        return atom instanceof DLESyntaxParser.TopAtomContext
+            || atom instanceof DLESyntaxParser.BottomAtomContext;
     }
 
     // ── Assertions about individuals ────────────────────────────────────────
@@ -685,7 +726,7 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
         // Tied together whatever their spelling, so evidence on any one of them reaches the
         // rest. Only groups that are entirely bare names can be properties at all.
         if (allBare && bare.size() > 1) {
-            equivalenceGroups.add(new java.util.LinkedHashSet<>(bare));
+            sameKindGroups.add(new KindGroup("equivalence", bare));
         }
 
         // A ≡ (complex) → A is a class. An inverse atom is a property expression, not a
@@ -814,6 +855,13 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
                 // while `Disj(EX:p, EX:q)` — the same axiom — read as properties.
                 && intersected.stream().allMatch(this::caseSuggestsRole)) {
             intersected.forEach(this::classifyUnknownRole);
+            // The same group as `Disj(p, q)`, because it is the same axiom. Without it the
+            // two spellings disagreed again: `Disj(d, e)` took the kind from its partner
+            // while `d ⊓ e ⊑ ⊥` left one member at the object default, and the visitor then
+            // refused the whole statement for mixing kinds.
+            if (intersected.size() > 1) {
+                sameKindGroups.add(new KindGroup("disjointness", intersected));
+            }
         }
 
         String lhs = singleBareName(ctx.classExpr(0));
@@ -1110,7 +1158,8 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
         boolean settled = true;
         while (settled) {
             settled = false;
-            for (Set<String> group : equivalenceGroups) {
+            for (KindGroup kindGroup : sameKindGroups) {
+                Set<String> group = kindGroup.names;
                 String dataMember = null;
                 String objectMember = null;
                 Findings.Finding dataFound = null;
@@ -1131,14 +1180,13 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
                 }
                 if (dataFound != null && objectFound != null) {
                     throw new DLESemanticException(
-                        "this equivalence makes " + objectMember + ", an object property on"
-                            + " line " + objectFound.line + ", equivalent to "
-                            + dataMember + ", a data property on line "
-                            + dataFound.line + ". Equivalence holds between"
-                            + " properties of one kind.",
+                        "this " + kindGroup.construct + " relates " + objectMember
+                            + ", an object property on line " + objectFound.line + ", to "
+                            + dataMember + ", a data property on line " + dataFound.line
+                            + ". It holds between properties of one kind.",
                         Math.max(objectFound.line, dataFound.line), 0);
                 }
-                // Nothing in the group is a property, so it is a class equivalence.
+                // Nothing in the group is a property, so it is about classes.
                 if (dataFound == null && objectFound == null) continue;
                 boolean isData = dataFound != null;
                 int line = isData ? dataFound.line : objectFound.line;
@@ -1152,7 +1200,7 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
                     } else {
                         settled |= objectPropertyNames.add(name);
                     }
-                    // Reached across an equivalence, so it is propagation rather than a
+                    // Reached across the group, so it is propagation rather than a
                     // position of its own — which is what keeps it from being read later as
                     // firm evidence that could contradict something.
                     if (!findings.hasEvidenceFor(name, reached)) {
