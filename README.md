@@ -113,7 +113,7 @@ These are designed to feel like natural continuations of DL, rather than a separ
 ∃dependsOn.⊤ ⊑ Project                                  ●🦉
 ⊤ ⊑ ∀dependsOn.Project                                  ●🦉
 
-LargeProject ≡ Project ⊓ ∃teamSize.[≥10]                ●🦉
+LargeProject ≡ Project ⊓ ∃teamSize.xsd:integer[≥10]     ●🦉
 InvalidProjectDates ≡ ∃startDate,endDate.greaterThan    ●✖
 
 greaterThan(x,y) ≝ x > y                                ○✖
@@ -122,7 +122,8 @@ This states:
  * The label of `Project` is "Project".
  * `dependsOn` appears in a database as `"DEPENDS_ON"`. (property annotation)
  * The next two lines declare the domain and range of `dependsOn` as `Project`.
- * `LargeProject` is a `Project` with `teamSize ≥ 10`.
+ * `LargeProject` is a `Project` with an integer `teamSize` of at least 10. A facet
+   bracket narrows a datatype, so the datatype it narrows comes first.
  * `InvalidProjectDates` uses a predicate restriction over `startDate` and `endDate`.
  * `greaterThan` defines the predicate used above (outside DL).
 
@@ -139,6 +140,27 @@ DLe follows a small set of constraints:
    DLe can be mapped to and from OWL using OWLAPI, preserving core semantics.
  * **LLM-first readability**  
    The syntax is chosen to be interpretable without prior explanation.
+
+## Limitations
+
+DLe is DL, so it says what DL says. Where OWL says more, some things do not survive the trip:
+
+* **SWRL rules are out of scope.** They are a 2004 W3C Member Submission rather than part of
+  OWL 2, and DL has no notation for them.
+* **Almost every OWL 2 axiom type round-trips as the same axiom.** Three do not:
+  * `DisjointUnion(A B C)` is written as its definition, `A ≡ B ⊔ C` with `B ⊑ ¬C`. DL has no
+    single notation for it. Equivalent, but two axioms come back rather than one.
+  * A bare `Declaration` becomes a kind statement — `Declaration(Class(:X))` is written
+    `X ⊑ ⊤`. The entity survives; the axiom type does not, because DL does not declare.
+  * `SubAnnotationPropertyOf` needs the document to identify one of its two names as an
+    annotation property somewhere else — through `@ann`, a domain or a range. `n ⊑ o` is
+    otherwise indistinguishable from a subsumption between classes, and the axiom is dropped
+    rather than read as the wrong thing.
+* **Converting to a third format is limited by that format, not by DLe.** Manchester syntax
+  cannot express every axiom and silently drops what it cannot. RDF/XML cannot write a name
+  that begins with a digit where the serialisation needs it as an XML element name, which
+  DLe and Turtle both can. These are OWL API's serialisers — the same losses occur with DLe
+  absent from the path.
 
 ## Status
 This is an experimental language and tooling layer, evolving through practical use with LLMs.

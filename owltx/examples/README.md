@@ -1,8 +1,18 @@
 # Example documents
 
 Sample ontologies for trying out `owltx` and for exercising the parser and
-writer. Every file here converts cleanly, and every `.dle` file round-trips
-through `owltx` without losing logical axioms.
+writer. Every `.dle` file here round-trips through `owltx` without losing a
+logical axiom, and every file converts to DLe, OWL functional syntax, Turtle
+and OWL/XML.
+
+Two of the other formats are narrower than DLe rather than the reverse.
+Manchester syntax converts every file here without complaint but cannot express
+every axiom, so it drops some silently — `wildlife-reserve-test.dle` comes back
+13 logical axioms short. RDF/XML refuses `abox-forms.dle` outright, because
+that document's names are needed as XML element names and begin with digits
+(`bc-example.dle` also has digit-initial local names and does convert, so it is
+the position that decides, not the name). Both are OWL API's serialisers: the
+same losses occur with DLe absent from the path.
 
 ```bash
 owltx examples/syntax-coverage.dle                      # DLe → DLe, canonically formatted
@@ -18,6 +28,7 @@ owltx examples/w.ttl out.dle                            # Turtle → DLe
 | `bc-example.dle` | A breast-cancer concept extract, derived from SNOMED CT. Exercises prefixed names whose local part is numeric (`sct:116676008`) and heavy `@ann` use. |
 | `bc-example.ttl`, `breast-cancer-example.ttl` | The same content in Turtle. |
 | `relations.ttl` | A small set of SNOMED CT relationship concepts. |
+| `abox-forms.dle` | Assertions about individuals, in every spelling DLe accepts for the ABox. Deliberately uses several spellings of one axiom shape, so it does not round-trip byte for byte — what must survive is the set of axioms. Its names begin with digits, which is what RDF/XML cannot write. |
 
 ## What is not here
 

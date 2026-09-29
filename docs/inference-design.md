@@ -54,8 +54,13 @@ the syntax cannot express. Nothing may override them.
 - an annotation statement — `@ann A p "v"` — makes `p` an annotation property;
 - a class filler that is not `⊤` — `∃r.B` — makes `r` an object property.
 
-`⊤` is the exception and the reason level 2 is not simply "appears in a role position":
-`∃r.⊤ ⊑ C` is the domain idiom and says only that `r` is a role, not which kind.
+`⊤` is the exception and the reason level 2 is not simply "appears in a role position". It is
+the top *concept* and `rdfs:Literal` the top data range — two disjoint universes — so strictly
+`∃d.⊤` is a concept where a data range belongs. DLe is forgiving about that on input, because
+`∃d.⊤` is a common and readable way to say "has some value", and reads it as whichever top the
+property's kind calls for. `⊥` behaves the same way. So neither is evidence of a kind, and the
+domain idiom is written differently for each: `∃r.⊤ ⊑ C` for an object property, `(≥1 d) ⊑ C`
+for a data one, which names no filler at all.
 
 **3. A datatype the document declares.** A name used in a datatype position — the base of a
 `[… ⊓ [facet …]]`, or the range of a data property — is a datatype whether or not it is in
@@ -104,9 +109,9 @@ entries long:
 
 | excluded for a data property | added because |
 |---|---|
-| `FunctionalDataProperty` | `Func(p)` is spelled identically for both kinds |
+| `FunctionalDataProperty` | `Functional(p)` is spelled identically for both kinds |
 | `DisjointDataProperties` | so is `Disj(p, q)` |
-| `DataPropertyDomain` | so is `∃p.⊤ ⊑ C` |
+| `DataPropertyDomain` | so is the domain form — `(≥1 p) ⊑ C` for a data property, `∃p.⊤ ⊑ C` for an object one, and neither names a filler that says which |
 | `HasKey` | so is `key(p)` |
 | unqualified data cardinality | so is `≥2 p` |
 
