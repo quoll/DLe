@@ -68,21 +68,6 @@ jobs:
       - name: Package
         run: mvn -B -ntp clean package -DskipTests
 
-      # The release profile is what publishing runs, and until now nothing
-      # exercised it: javadoc ran only there, nobody read its output, and
-      # fourteen missing @param/@return/comment warnings had accumulated
-      # unnoticed until a deploy log was read. `failOnWarnings` now makes those
-      # a build failure, so this step is what keeps the count at zero.
-      #
-      # `clean` is load-bearing. Javadoc caches its output, so without it the
-      # goal reports success over a stale run and the guard never fires — which
-      # it did not, the first two times this was tested.
-      #
-      # `javadoc:javadoc` is a direct goal rather than a lifecycle phase, so the
-      # profile's gpg signing does not run and no key is needed here.
-      - name: Javadoc is clean under the release profile
-        run: mvn -B -ntp -P release clean javadoc:javadoc
-
       - name: Every example converts, and every document round-trips
         run: |
           # Deliberately fail-soft: every document is checked even if an earlier
@@ -262,6 +247,25 @@ jobs:
   # be entirely correct — that is what a parser fix looks like — so a red X here
   # would cry wolf. `continue-on-error` makes that explicit rather than relying on
   # every command happening to succeed.
+      # Last in this job on purpose: the `clean` below deletes target/, and every step
+      # above needs the shaded jar that `Package` put there. Putting it directly after
+      # Package removed the jar before the conversion checks ran, and CI caught it.
+      #
+      # The release profile is what publishing runs, and until now nothing
+      # exercised it: javadoc ran only there, nobody read its output, and
+      # fourteen missing @param/@return/comment warnings had accumulated
+      # unnoticed until a deploy log was read. `failOnWarnings` now makes those
+      # a build failure, so this step is what keeps the count at zero.
+      #
+      # `clean` is load-bearing. Javadoc caches its output, so without it the
+      # goal reports success over a stale run and the guard never fires — which
+      # it did not, the first two times this was tested.
+      #
+      # `javadoc:javadoc` is a direct goal rather than a lifecycle phase, so the
+      # profile's gpg signing does not run and no key is needed here.
+      - name: Javadoc is clean under the release profile
+        run: mvn -B -ntp -P release clean javadoc:javadoc
+
   regression:
     if: github.event_name == 'pull_request'
     continue-on-error: true
