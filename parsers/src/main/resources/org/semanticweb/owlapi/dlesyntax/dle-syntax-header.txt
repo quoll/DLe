@@ -2,161 +2,26 @@
 # This document uses standard Description Logic (DL) syntax for ontology axioms, with the following extensions:
 #
 # Annotations (lines beginning with @):
-# In the six forms below, <name> is a name — bare, prefixed, or :digit-initial — not an
-# IRI in angle brackets. Only @prefix, @import, @ontology and @version take <IRI>.
-# @label <name> "text"  — display name of the resource
-# @doc <name> "text"  — description of the resource
-# @db <name>  — resource appears explicitly in the database using its own identifier
-# @db <name> "identifier"  — resource appears explicitly in the database and is queried using this identifier
-# @storage <name> "text"  — describes database storage details
-# @ann <name> <annotation-property> value  — annotation using the given property; the
-#   value may be a quoted string or a name
+# @label <IRI> "text"  — display name of the resource
+# @doc <IRI> "text"  — description of the resource
+# @db <IRI>  — resource appears explicitly in the database using its own identifier
+# @db <IRI> "identifier"  — resource appears explicitly in the database and is queried using this identifier
+# @storage <IRI> "text"  — describes database storage details
+# @ann <IRI> <annotation-property> "text"  — annotation using the given property
 # @prefix <prefix>: <namespace>  — declares a prefix
 # @import <IRI>  — imports another ontology
-# @import "path"  — imports a file, resolved relative to this document
-# @ontology <IRI>  — declares the ontology IRI. A document without one is anonymous.
-#   Must be an IRI, not a name: a name would be expanded through the prefix map, making the
-#   document's identity depend on its own @prefix lines
-# @version <IRI>  — declares the version IRI. Requires @ontology, since a version
-#   identifies a version of a named ontology. Both IRIs must be absolute
-# All four of these take the IRI in angle brackets or in double quotes — <http://x/> and
-#   "http://x/" are the same namespace, the same import and the same identity. Only an
-#   @import may be relative; an identity and a namespace must be absolute
+# @ontology <IRI>  — declares the ontology IRI
 #
 # Naming conventions:
-# - An entity with no @label is given one equal to its local name. A name whose local
-#   part begins with a digit gets none, so SNOMED CT-style identifiers keep whatever
-#   @label the document states and nothing more
-# - Unprefixed names (e.g., Application) are in the default namespace. They are written
-#   bare: the `:Application` spelling is not legal DLe
-# - A name whose local part begins with a digit keeps the colon — :762705008 — because
-#   the bare form would read as a number. Every other default-namespace name is bare
+# - Every entity has an implicit label equal to its identifier unless @label is declared
+# - Unprefixed names (e.g., Application) are in the default namespace (:Application)
 # - Prefixed names use declared prefixes (e.g., xsd:string) 
-# - These prefixes are always available without declaring them: owl, rdf, rdfs, xsd,
-#   xml, dle. Any other prefix, skos and dcterms included, must be declared with @prefix
+# - All standard prefixes are implicitly declared: owl, rdfs, rdf, xsd, skos, dcterms
 # - Concept/class identifiers conventionally begin with an upper-case letter
 # - Role/reference/field identifiers conventionally begin with a lower-case letter
-# - The convention is read from the local part, so ex:hasPart names a role as plainly as
-#   hasPart does. Datatypes are the exception: everything in xsd:, and rdf:PlainLiteral,
-#   rdf:langString, rdf:dirLangString, rdf:HTML, rdf:XMLLiteral, rdf:JSON, rdfs:Literal,
-#   owl:rational and owl:real, are datatypes despite the lower case
-#
-# Kind statements:
-# - `X ⊑ ⊤` states that X is a concept. `X ⊑ owl:topObjectProperty` states that X is an
-#   object property, and `X ⊑ owl:topDataProperty` that it is a data property — a name
-#   cannot be both, and stating both is an error. `X ⊑ rdfs:Literal` states that X is a
-#   datatype. All four are ordinary subsumptions that are always true, so they add no
-#   information beyond the kind itself.
-# - They are written only where the text would otherwise be ambiguous: a name the reader's
-#   conventions cannot classify — one beginning with a digit or a capital — used where only
-#   a subsumption pair says it is a role; a data property, since the convention can only
-#   offer an object property; a lower-case concept, for the same reason; or a name used as
-#   BOTH a concept and a role.
-# - A name carrying both a concept and a role statement is punned — it is both, and the pair
-#   is what says so. The two lines may be far apart, since each is written with its own kind.
-# - A role statement, and a concept statement on a punned name, are read as declarations
-#   rather than kept as subsumptions; they are the marker, not content. A bare `X ⊑ ⊤` on a
-#   name with no role statement is an ordinary axiom and is kept.
-# - Kinds are worked out from this document alone, not from what it imports. A name an
-#   import defines as a concept, used here only in a subsumption pair, is read by the rules
-#   above and can come out a role. State its kind in this document to settle it.
-#
-# Two universes, and their tops:
-# - OWL keeps individuals and literals apart. `⊤` is the top of the individuals — every
-#   individual, and no literal — and `rdfs:Literal` is the top of the values. Neither
-#   contains the other, so a filler says which universe a role's values live in: `∃r.⊤`
-#   makes r an object property, `∃d.rdfs:Literal` makes d a data property.
-# - `⊤` is read as an alias for `rdfs:Literal` where a data range is expected and the
-#   property is already known to be a data property — `∃d.⊤` is a common and readable way
-#   to say "has some value". It is an input convenience only: `rdfs:Literal` is what is
-#   written, because `⊤` on its own would leave the kind unsaid and the name would come
-#   back an object property.
-# - A domain is therefore written differently for each kind. An object property's domain is
-#   `∃r.⊤ ⊑ C`. A data property's is `(≥1 d) ⊑ C`, which names no filler and so need not
-#   say which universe it is in; `∃d.rdfs:Literal ⊑ C` says the same thing. All of these
-#   are read, for both kinds, including the parenthesis-free `≥1 d ⊑ C`.
-# - The empty data range is `¬rdfs:Literal`.
-#
-# Typed literals:
-# - A value may carry its datatype, as Turtle spells it: "2024-01-01"^^xsd:date
-# - The datatype must follow the closing quote with nothing between them
-# - xsd:string is what a bare string already means, so it is never written; it is accepted
-#   when spelled out
-# - A datatype and a language tag are mutually exclusive: a tagged string is
-#   rdf:langString by definition, so a datatype beside the tag either repeats or contradicts
-#   it
-# - A number or a boolean needs no quotes — 7, 1.5, true — but only where the spelling
-#   rebuilds the value exactly: 007 keeps its quotes and its datatype, because bare it would
-#   come back as 7
-#
-# Language tags:
-# - A string may carry one, as Turtle spells it: @label A "Neoplasm"@en
-# - The tag must follow the closing quote with nothing between them. A tag on its own,
-#   separated by a space, is not a tag
-# - Any BCP 47 tag works, subtags included — @en, @pt-BR, @zh-Hant — and so does one that
-#   happens to spell an annotation keyword, since @doc and @ann are real language codes
-# - Not allowed where it could not mean anything: on a facet value, which compares against
-#   a typed value, or on an @import reference, which names a document rather than text
-#
-# Enumerations:
-# - {a, b, c} is the concept of exactly those individuals, and {"x", "y"} the data range of
-#   exactly those values
-#
-# Chains:
-# - ≡ takes any number of operands: A ≡ B ≡ C says all three are equivalent, and the same
-#   holds for roles and for data properties
-#
-# Inverses:
-# - r⁻ is the inverse of r, and is accepted wherever OWL allows a role expression: in a
-#   restriction, on either side of ⊑ or ≡, in a chain, and as the argument of a keyword —
-#   Trans(r⁻), Functional(r⁻), Disj(r, r⁻), key(r⁻). Functional(r⁻) is OWL's
-#   inverse-functionality: at most one r reaches each individual
-# - `Func` and `Functional` are the same keyword, as are `Trans`/`Transitive`,
-#   `Ref`/`Reflexive`, `Irref`/`Irreflexive`, `Sym`/`Symmetric` and `Asym`/`Asymmetric`.
-#   Both spellings read; the written-out one is what is emitted
-# - Functional(r) is the functionality axiom. `≤1 r.⊤` is the at-most-one cardinality it
-#   entails — the same statement, a different axiom — and is read as the cardinality
-# - A doubled ⁻ cancels: r⁻⁻ is r
-# - An assertion has no room for the marker, so (a,b):r⁻ is written the other way round as
-#   (b,a):r, which says the same thing
-#
-# Assertions about individuals:
-# - a : C          a is a C. C may be any concept expression, e.g. a : Cat ⊓ Pet
-# - (a,b):r        a is related to b by the role r
-# - ¬(a,b):r       a is not related to b by r
-# - (a,v):d        a's data property d has the value v, e.g. (bob,7):age
-# - ¬(a,v):d       a's d does not have the value v
-# - The colon in a class assertion is a separator, not part of a name. `a:C` without the
-#   space is the same sequence of characters as a prefixed name, so it is read as an
-#   assertion only when `a:` is not a declared prefix. Written output always spaces it.
-# - a = b          a and b are the same individual
-# - a ≠ b          a and b are different individuals
-# - Both chain, since OWL takes any number: a = b = c, and a ≠ b ≠ c means all three
-#   are pairwise distinct
-# - A digit-initial property is spelled with its own colon, so the statement carries two:
-#   (a,b)::116676008. A digit-initial class likewise needs the space: a : :116676008
-# - An individual may be anonymous, written as a blank node: _:b1 : C, (_:b1,b):r. The
-#   label identifies it within one document and carries no meaning beyond that
 #
 # Database convention:
 # - Resources only appear explicitly in the database if they have an @db annotation
-#
-# Datatype facets:
-# A datatype may be narrowed by facets, each in its own brackets:
-#   [xsd:string ⊓ [minLength 2] ⊓ [maxLength 8]]
-# The value may be written with or without parentheses — `matches "[A-Z]{3}"` and
-# `matches("[A-Z]{3}")` are the same facet.
-# Numeric bounds have a compact form needing no keyword: xsd:integer[≥1 ⊓ ≤40]
-#   ≥ ≤ are inclusive, > < are exclusive
-# Facet keywords, and the OWL facet each one means:
-#   matches         → xsd:pattern          length          → xsd:length
-#   minLength       → xsd:minLength        maxLength       → xsd:maxLength
-#   min             → xsd:minInclusive     max             → xsd:maxInclusive
-#   minExclusive    → xsd:minExclusive     maxExclusive    → xsd:maxExclusive
-#   totalDigits     → xsd:totalDigits      fractionDigits  → xsd:fractionDigits
-#   langRange       → rdf:langRange
-# The IRI on the right may be used in place of its keyword, e.g. xsd:minLength for
-# minLength. Note langRange is in the rdf: namespace, not xsd:.
 #
 # DLe extensions:
 # ≝  — defines a symbol or predicate; right-hand side is not DL and is not required to be valid OWL
