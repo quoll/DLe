@@ -1,6 +1,7 @@
 package org.semanticweb.owlapi.dlesyntax;
 
 import java.util.Iterator;
+import java.util.regex.Pattern;
 import java.util.List;
 import java.util.Map;
 
@@ -9,9 +10,12 @@ import javax.annotation.Nullable;
 import org.semanticweb.owlapi.dlsyntax.renderer.DLSyntaxObjectRenderer;
 import org.semanticweb.owlapi.dlsyntax.renderer.DLSyntax;
 import org.semanticweb.owlapi.model.AxiomType;
+import org.semanticweb.owlapi.model.OWLDatatypeDefinitionAxiom;
 import org.semanticweb.owlapi.model.OWLDatatypeRestriction;
 import org.semanticweb.owlapi.model.OWLFacetRestriction;
 import org.semanticweb.owlapi.model.OWLAsymmetricObjectPropertyAxiom;
+import org.semanticweb.owlapi.model.OWLDisjointClassesAxiom;
+import org.semanticweb.owlapi.model.OWLDisjointUnionAxiom;
 import org.semanticweb.owlapi.model.OWLDisjointDataPropertiesAxiom;
 import org.semanticweb.owlapi.model.OWLDisjointObjectPropertiesAxiom;
 import org.semanticweb.owlapi.model.OWLIrreflexiveObjectPropertyAxiom;
@@ -27,6 +31,12 @@ import org.semanticweb.owlapi.model.OWLSubObjectPropertyOfAxiom;
 import org.semanticweb.owlapi.model.OWLSubPropertyChainOfAxiom;
 import org.semanticweb.owlapi.model.OWLTransitiveObjectPropertyAxiom;
 import org.semanticweb.owlapi.model.IRI;
+import org.semanticweb.owlapi.model.OWLClassAssertionAxiom;
+import org.semanticweb.owlapi.model.OWLDataPropertyAssertionAxiom;
+import org.semanticweb.owlapi.model.OWLNegativeDataPropertyAssertionAxiom;
+import org.semanticweb.owlapi.model.OWLNegativeObjectPropertyAssertionAxiom;
+import org.semanticweb.owlapi.model.OWLObject;
+import org.semanticweb.owlapi.model.OWLObjectPropertyAssertionAxiom;
 import org.semanticweb.owlapi.vocab.OWLFacet;
 import org.semanticweb.owlapi.model.OWLAnnotation;
 import org.semanticweb.owlapi.model.OWLHasKeyAxiom;
@@ -42,6 +52,9 @@ import org.semanticweb.owlapi.model.OWLClass;
 import org.semanticweb.owlapi.model.OWLClassExpression;
 import org.semanticweb.owlapi.model.OWLDataAllValuesFrom;
 import org.semanticweb.owlapi.model.OWLDataOneOf;
+import org.semanticweb.owlapi.model.OWLDataComplementOf;
+import org.semanticweb.owlapi.model.OWLDataUnionOf;
+import org.semanticweb.owlapi.model.OWLDataIntersectionOf;
 import org.semanticweb.owlapi.model.OWLDataCardinalityRestriction;
 import org.semanticweb.owlapi.model.OWLDataExactCardinality;
 import org.semanticweb.owlapi.model.OWLDataMaxCardinality;
@@ -51,8 +64,14 @@ import org.semanticweb.owlapi.model.OWLDataPropertyExpression;
 import org.semanticweb.owlapi.model.OWLDataPropertyRangeAxiom;
 import org.semanticweb.owlapi.model.OWLDataRange;
 import org.semanticweb.owlapi.model.OWLDataSomeValuesFrom;
+import org.semanticweb.owlapi.model.OWLEquivalentClassesAxiom;
+import org.semanticweb.owlapi.model.OWLEquivalentObjectPropertiesAxiom;
+import org.semanticweb.owlapi.model.OWLEquivalentDataPropertiesAxiom;
 import org.semanticweb.owlapi.model.OWLFunctionalDataPropertyAxiom;
 import org.semanticweb.owlapi.model.OWLFunctionalObjectPropertyAxiom;
+import org.semanticweb.owlapi.model.OWLInverseFunctionalObjectPropertyAxiom;
+import org.semanticweb.owlapi.model.OWLIndividual;
+import org.semanticweb.owlapi.model.OWLObjectOneOf;
 import org.semanticweb.owlapi.model.OWLLiteral;
 import org.semanticweb.owlapi.model.OWLObjectAllValuesFrom;
 import org.semanticweb.owlapi.model.OWLObjectCardinalityRestriction;
@@ -115,24 +134,6 @@ public class DLESyntaxObjectRenderer extends DLSyntaxObjectRenderer {
         super.visit(ce);
     }
 
-    @Nullable
-    private OWLDataRange dataPropertyRange(OWLDataPropertyExpression property) {
-        if (ontology == null) return null;
-        return ontology.axioms(AxiomType.DATA_PROPERTY_RANGE)
-            .filter(ax -> ax.getProperty().equals(property))
-            .map(ax -> ax.getRange())
-            .findFirst().orElse(null);
-    }
-
-    @Nullable
-    private OWLClassExpression objectPropertyRange(OWLObjectPropertyExpression property) {
-        if (ontology == null) return null;
-        return ontology.axioms(AxiomType.OBJECT_PROPERTY_RANGE)
-            .filter(ax -> ax.getProperty().equals(property))
-            .map(ax -> ax.getRange())
-            .findFirst().orElse(null);
-    }
-
     /**
      * Sets the prefix manager used to produce short-form IRIs.
      * Also updates the parent's ShortFormProvider so entity rendering is consistent.
@@ -142,13 +143,128 @@ public class DLESyntaxObjectRenderer extends DLSyntaxObjectRenderer {
     public void setPrefixManager(@Nullable PrefixManager pm) {
         prefixManager = pm;
         if (pm != null) {
+            // Through the same method the rest of the writer uses. This lambda repeated the
+            // logic, and the repetition is where the check that a spelling can be lexed went
+            // missing: entities are rendered through the ShortFormProvider, so a name in the
+            // default namespace went out bare as `A.B` even with a prefix declared that could
+            // spell it. Two copies of a decision, one of which was wrong.
             setShortFormProvider(entity -> {
-                String curie = pm.getPrefixIRI(entity.getIRI());
-                if (curie == null) curie = computeCurie(pm, entity.getIRI().toString());
-                return curie != null ? stripDefaultPrefix(curie)
+                String spelling = shortFormOrNull(entity.getIRI());
+                return spelling != null ? spelling
                     : entity.getIRI().getRemainder().orElse(entity.getIRI().toString());
             });
         }
+    }
+
+    /**
+     * Words the grammar keeps for itself, which therefore cannot be written bare.
+     *
+     * <p>{@code Self} is the {@code ObjectHasSelf} filler, {@code true} and {@code false}
+     * are the boolean literals, and {@code key} opens a key expression. An entity named for
+     * one of them produced a document that would not reload — or, in the worst case, one
+     * that reloaded and meant something else: a class {@code :Self} as the filler of a
+     * restriction was written {@code A ⊑ ∃r.Self} and came back {@code ObjectHasSelf(:r)},
+     * with the class gone and the axiom changed.
+     *
+     * <p>They are only a problem bare. Prefixed, they are ordinary names — {@code ex:Self}
+     * lexes as one token — so the fix is to write the prefix rather than to refuse.
+     */
+    private static final java.util.Set<String> RESERVED_LOCAL_NAMES =
+        java.util.Collections.unmodifiableSet(new java.util.HashSet<>(
+            java.util.Arrays.asList("Self", "true", "false", "key")));
+
+    /**
+     * Whether a local part can be written after a prefix and read back unchanged.
+     *
+     * <p>Mirrors the lexer's {@code PREFIXED_NAME} rule — {@code NameStart NameChar* ':'
+     * (NameStart | [0-9]) NameChar*} — so a name is only called spellable if the grammar
+     * really accepts it. {@code NameChar} is {@code NameStart | [0-9] | '-'}: a dot, a colon,
+     * a percent, a slash, a plus and a tilde are all outside it, and U+207B is excluded from
+     * {@code NameStart} because that is the inverse operator.
+     *
+     * <p>Nothing consulted the grammar before, so the writer emitted local parts the reader
+     * cannot lex. A dot was the common case: {@code ns1:A.B} reads as a restriction over
+     * {@code ns1:A}, turning one class into an existential — silently. Being told which local
+     * parts are legal is what lets the minted namespace be chosen so that the tail is one.
+     */
+    static boolean isSpellableLocalName(String local) {
+        if (local.isEmpty()) return false;
+        int first = local.codePointAt(0);
+        if (!isNameStart(first) && !(first >= '0' && first <= '9')) return false;
+        for (int i = Character.charCount(first); i < local.length(); i++) {
+            if (!isNameChar(local.charAt(i))) return false;
+        }
+        return true;
+    }
+
+    /** The lexer's {@code NameStart}, U+207B excluded as the inverse operator. */
+    private static boolean isNameStart(int cp) {
+        return (cp >= 'a' && cp <= 'z') || (cp >= 'A' && cp <= 'Z') || cp == '_'
+            || (cp >= 0x00C0 && cp <= 0x02FF)
+            || (cp >= 0x0370 && cp <= 0x037D)
+            || (cp >= 0x037F && cp <= 0x1FFF)
+            || (cp >= 0x200C && cp <= 0x200D)
+            || (cp >= 0x2070 && cp <= 0x207A)
+            || (cp >= 0x207C && cp <= 0x218F)
+            || (cp >= 0x2C00 && cp <= 0x2FEF)
+            || (cp >= 0x3001 && cp <= 0xD7FF)
+            || (cp >= 0xF900 && cp <= 0xFDCF)
+            || (cp >= 0xFDF0 && cp <= 0xFFFD);
+    }
+
+    /**
+     * Whether a prefix label can be written and read back.
+     *
+     * <p>{@code PNAME_NS} is {@code NameChar* ':'}, and a dot is not a {@code NameChar}. A
+     * document declaring {@code a.b:} had {@code @prefix a.b: <…>} written straight out and
+     * refused by this same reader with {@code mismatched input 'a' expecting PNAME_NS} —
+     * along with every name that used it.
+     *
+     * <p>Unlike a local part there is nothing to salvage by splitting: the label is the
+     * author's choice of abbreviation and carries no meaning. So an unusable one is dropped
+     * and the namespace left for minting, which produces a label that works.
+     */
+    static boolean isSpellablePrefixLabel(String label) {
+        if (!label.endsWith(":")) return false;
+        String name = label.substring(0, label.length() - 1);
+        for (int i = 0; i < name.length(); i++) {
+            if (!isNameChar(name.charAt(i))) return false;
+        }
+        return true;
+    }
+
+    static boolean isReservedLocalName(String local) {
+        return RESERVED_LOCAL_NAMES.contains(local);
+    }
+
+    /**
+     * Whether a spelling this writer is about to emit is one the lexer accepts.
+     *
+     * <p>Three token shapes can name something: a bare {@code NAME}, a {@code DEFAULT_NAME}
+     * ({@code :} then a digit), and a {@code PREFIXED_NAME}. Anything else is a document the
+     * reader will refuse, or worse re-lex as something different — {@code A.B} becomes a
+     * restriction over {@code A}.
+     *
+     * <p>Nothing checked this. The prefix manager's job is to abbreviate an IRI, not to know
+     * DLe's grammar, so its answer was written out whatever it was.
+     */
+    private static boolean isLexableName(String spelling) {
+        int colon = spelling.indexOf(':');
+        if (colon < 0) {
+            // A bare NAME: NameStart NameChar*
+            return !spelling.isEmpty() && isNameStart(spelling.codePointAt(0))
+                && isSpellableLocalName(spelling);
+        }
+        if (colon == 0) {
+            // A DEFAULT_NAME: ':' [0-9] NameChar*
+            String local = spelling.substring(1);
+            return local.length() >= 1 && local.charAt(0) >= '0' && local.charAt(0) <= '9'
+                && isSpellableLocalName(local);
+        }
+        for (int i = 0; i < colon; i++) {
+            if (!isNameChar(spelling.charAt(i))) return false;
+        }
+        return isSpellableLocalName(spelling.substring(colon + 1));
     }
 
     /**
@@ -161,10 +277,38 @@ public class DLESyntaxObjectRenderer extends DLSyntaxObjectRenderer {
      * would lex as a number and the document would not parse. {@code :762705008} is
      * the {@code DEFAULT_NAME} form and reads back to the same IRI.
      */
-    private static String stripDefaultPrefix(String curie) {
+    private String stripDefaultPrefix(String curie) {
         if (!curie.startsWith(":")) return curie;
         String local = curie.substring(1);
-        return spellableOnlyWithPrefix(local) ? curie : local;
+        if (spellableOnlyWithPrefix(local)) return curie;
+        if (isReservedLocalName(local)) {
+            // Bare, this would be the keyword. Any other prefix on the same namespace
+            // names the same entity and reads back as a name; the storer makes sure one
+            // exists.
+            String prefixed = alternativePrefixFor(local);
+            if (prefixed != null) return prefixed;
+        }
+        return local;
+    }
+
+    /**
+     * The same local name under a prefix other than the default, if one is declared.
+     *
+     * <p>Only the default prefix forces a bare name, so any other prefix bound to the same
+     * namespace is a spelling that works.
+     */
+    @Nullable
+    private String alternativePrefixFor(String local) {
+        if (prefixManager == null) return null;
+        String defaultNamespace = prefixManager.getPrefixName2PrefixMap().get(":");
+        if (defaultNamespace == null) return null;
+        for (Map.Entry<String, String> entry
+                : prefixManager.getPrefixName2PrefixMap().entrySet()) {
+            if (!":".equals(entry.getKey()) && defaultNamespace.equals(entry.getValue())) {
+                return entry.getKey() + local;
+            }
+        }
+        return null;
     }
 
     /**
@@ -227,13 +371,36 @@ public class DLESyntaxObjectRenderer extends DLSyntaxObjectRenderer {
      * XML NCNames, e.g. numeric SNOMED-CT codes), then to the IRI remainder.
      */
     private String shortFormIRI(IRI iri) {
-        if (prefixManager != null) {
-            String curie = prefixManager.getPrefixIRI(iri);
-            if (curie == null) curie = computeCurie(prefixManager, iri.toString());
-            if (curie != null) return stripDefaultPrefix(curie);
-        }
+        String spelling = shortFormOrNull(iri);
+        if (spelling != null) return spelling;
         return iri.getRemainder().orElseThrow(() ->
             new IllegalStateException("No prefix/namespace found for IRI: " + iri));
+    }
+
+    /**
+     * The spelling to write for an IRI, or null when no declared prefix covers it.
+     *
+     * <p>The prefix manager abbreviates against XML's rules rather than DLe's, so its answer
+     * can be a spelling this reader cannot lex — {@code A.B} for a name in the default
+     * namespace, which reads back as a restriction over {@code A}, silently turning one class
+     * into an existential. Where that happens the longest declared namespace is tried
+     * instead: the storer mints one whose tail is a legal local part precisely so that there
+     * is something to fall back to.
+     */
+    @Nullable
+    private String shortFormOrNull(IRI iri) {
+        if (prefixManager == null) return null;
+        String curie = prefixManager.getPrefixIRI(iri);
+        if (curie == null) curie = computeCurie(prefixManager, iri.toString());
+        if (curie == null) return null;
+        String spelling = stripDefaultPrefix(curie);
+        if (isLexableName(spelling)) return spelling;
+        String longest = computeCurie(prefixManager, iri.toString());
+        if (longest != null) {
+            String alternative = stripDefaultPrefix(longest);
+            if (isLexableName(alternative)) return alternative;
+        }
+        return spelling;
     }
 
     /** Package-private: used by {@link DLESyntaxStorerBase} to render IRIs consistently. */
@@ -241,12 +408,96 @@ public class DLESyntaxObjectRenderer extends DLSyntaxObjectRenderer {
         return shortFormIRI(iri);
     }
 
-    /** Renders an OWLLiteral as a DLE literal token: NUMBER/BOOL unquoted, strings quoted. */
+    /**
+     * Writes a literal, wherever the visitor reaches one.
+     *
+     * <p>Without this override, {@code accept(this)} on a literal fell through to the
+     * inherited DL renderer, which writes the bare lexical form: no quotes, no language tag,
+     * no escaping. The new assertion forms render their value that way, so
+     * {@code DataPropertyAssertion(:p :bob "Robert")} was written {@code (bob,Robert):p} and
+     * read back as an <em>object</em> property assertion with an invented individual — and
+     * a value containing a space produced a document that would not load at all. Integers
+     * and booleans were the only kinds that survived, which is what a test using
+     * {@code getOWLLiteral(7)} could not see.
+     *
+     * <p>Every literal now goes through {@link #renderLiteral}, so a new call site cannot
+     * reintroduce this by forgetting to ask.
+     */
+    @Override
+    public void visit(OWLLiteral node) {
+        write(renderLiteral(node));
+    }
+
+    /**
+     * The grammar's {@code NUMBER} token, which is the only bare form a value may take.
+     *
+     * <p>Not every numeric literal can be spelled that way. {@code xsd:double} admits
+     * {@code NaN}, {@code INF} and exponents, and {@code xsd:integer} is unbounded, so
+     * testing the datatype is not enough — the lexical form has to be tested too.
+     */
+    private static final Pattern NUMBER = Pattern.compile("-?[0-9]+(\\.[0-9]+)?");
+
+    /**
+     * A literal in the form the reader will give back.
+     *
+     * <p>Numbers and booleans are written bare, everything else quoted. The bare form is
+     * conditional on the spelling and not just on the datatype: {@code "NaN"^^xsd:double}
+     * wrote {@code (a,NaN):d}, which came back an <em>object</em> property assertion against
+     * an invented individual {@code :NaN} — silently, with the document still loading. That
+     * is the same corruption as an unquoted string, and it survived the fix for the string
+     * case because this branch was never guarded.
+     */
     private String renderLiteral(OWLLiteral lit) {
-        if (lit.isInteger() || lit.isDouble() || lit.isFloat()) return lit.getLiteral();
         if (lit.isBoolean()) return lit.getLiteral();
+        // Ask the one method that knows what a bare spelling comes back as, rather than
+        // restating the rule. Restating it included xsd:float, which does not survive: the
+        // reader types a bare decimal as xsd:double, so every ordinary float value was
+        // silently retyped, a mixed DataOneOf lost members to the collision, and a float
+        // facet bound produced DatatypeRestriction(xsd:float ... "1.5"^^xsd:double). It also
+        // let a dotless xsd:double through as a bare integer.
+        if (NUMBER.matcher(lit.getLiteral()).matches()
+                && reconstructsFromSpellingAlone(lit)) {
+            return lit.getLiteral();
+        }
+        return quoted(lit);
+    }
+
+    /** Implicit, and so never written: a plain string is just a string. */
+    private static final String XSD_STRING = "http://www.w3.org/2001/XMLSchema#string";
+
+    /**
+     * Whether a literal is exactly what {@code DefaultLabelAdder} would regenerate.
+     *
+     * <p>Suppressing a label or a {@code @db} value as redundant is safe only when the reader
+     * will put back the same literal, and what it puts back is a plain untagged string. The
+     * tag was guarded; the datatype was not, so {@code rdfs:label :C "C"^^xsd:token} was
+     * dropped and came back as {@code "C"^^xsd:string} — a different literal, and a different
+     * axiom, silently.
+     */
+    private static boolean isPlainString(OWLLiteral lit) {
+        return !lit.hasLang() && XSD_STRING.equals(lit.getDatatype().getIRI().toString());
+    }
+
+    /**
+     * A string literal, with its language tag when it has one.
+     *
+     * <p>The tag used to be dropped, silently and everywhere: 177 of the 292 annotation
+     * assertions in one corpus document are tagged, and every one came back as a plain
+     * string — a different literal, and a different axiom. Any multilingual vocabulary lost
+     * every language it had.
+     */
+    private String quoted(OWLLiteral lit) {
         String escaped = lit.getLiteral().replace("\\", "\\\\").replace("\"", "\\\"");
-        return "\"" + escaped + "\"";
+        String text = "\"" + escaped + "\"";
+        if (lit.hasLang()) {
+            return text + "@" + lit.getLang();
+        }
+        // A tag and a datatype are mutually exclusive, so at most one of these appears.
+        // xsd:string is left off: it is what a bare string already means, and writing it
+        // would change every existing document for no gain.
+        String datatype = lit.getDatatype().getIRI().toString();
+        return XSD_STRING.equals(datatype) ? text
+            : text + "^^" + shortFormIRI(lit.getDatatype().getIRI());
     }
 
     private String renderSubject(OWLAnnotationSubject subject) {
@@ -259,10 +510,7 @@ public class DLESyntaxObjectRenderer extends DLSyntaxObjectRenderer {
 
     private String renderValue(OWLAnnotationValue value) {
         if (value instanceof OWLLiteral) {
-            String escaped = ((OWLLiteral) value).getLiteral()
-                .replace("\\", "\\\\")
-                .replace("\"", "\\\"");
-            return "\"" + escaped + "\"";
+            return quoted((OWLLiteral) value);
         }
         if (value instanceof IRI) {
             return shortFormIRI((IRI) value);
@@ -313,11 +561,32 @@ public class DLESyntaxObjectRenderer extends DLSyntaxObjectRenderer {
         }
     }
 
+    /**
+     * A domain, as {@code ∃r.⊤ ⊑ C} for an object property and {@code (≥1 d) ⊑ C} for a data
+     * property.
+     *
+     * <p>Not one form for both. {@code ⊤} is the top *concept*, and OWL keeps the object and
+     * data universes disjoint, so {@code ∃d.⊤} puts a concept where a data range belongs —
+     * it says `d` is an object property, which is the opposite of what a data property
+     * domain means. The textbook writes the data case with the unqualified minimum for
+     * exactly this reason: it names no filler, so it need not say which universe the filler
+     * is in.
+     *
+     * <p>Both spellings read for both kinds, so nothing already written stops loading.
+     */
     private void writeDomainAxiom(OWLPropertyDomainAxiom<?> axiom) {
-        write(DLSyntax.EXISTS);
-        axiom.getProperty().accept(this);
-        write(".");
-        write(DLSyntax.TOP);
+        if (axiom.getProperty() instanceof OWLDataPropertyExpression) {
+            write("(");
+            write(DLSyntax.MIN);
+            write("1 ");
+            axiom.getProperty().accept(this);
+            write(")");
+        } else {
+            write(DLSyntax.EXISTS);
+            axiom.getProperty().accept(this);
+            write(".");
+            write(DLSyntax.TOP);
+        }
         write(" ");
         write(DLSyntax.SUBCLASS);
         write(" ");
@@ -333,6 +602,92 @@ public class DLESyntaxObjectRenderer extends DLSyntaxObjectRenderer {
         axiom.getProperty().accept(this);
         write(".");
         writeNested(axiom.getRange());
+    }
+
+    // ── Assertions about individuals ────────────────────────────────────────
+    //
+    // The textbook spelling, from Introduction to Description Logic: `a:C`, `(a,b):r`,
+    // `¬(a,b):r`, and the data forms. The inherited renderer writes the functional-ish
+    // `C(a)` and `r(a,b)`, which DLe's grammar cannot read at all — `Animal(bob)` is the
+    // head of a predicate definition and fails asking for `≝`.
+    //
+    // The class assertion is always written spaced. `a:C` is the same sequence of
+    // characters as a prefixed name, and the reader resolves it from the declared
+    // prefixes — but it can only do so when the individual's name is not itself a declared
+    // prefix. Writing the space means the output never depends on that.
+    //
+    // Writing these also removes the doubled negation the inherited renderer produces:
+    // its visit method writes ¬ and then calls writePropertyAssertion, which tests the
+    // axiom type and writes ¬ again. Two signs for one negation reads as no negation at
+    // all, so every negative assertion it emitted meant the opposite of the axiom.
+
+    @Override
+    public void visit(OWLClassAssertionAxiom axiom) {
+        axiom.getIndividual().accept(this);
+        write(" : ");
+        writeNested(axiom.getClassExpression());
+    }
+
+    @Override
+    public void visit(OWLObjectPropertyAssertionAxiom axiom) {
+        writeObjectAssertion(axiom.getSubject(), axiom.getObject(), axiom.getProperty(),
+            false);
+    }
+
+    /**
+     * An assertion over an inverse property, written the other way round.
+     *
+     * <p>The assertion form has no room for the inverse marker — `(a,b):r` takes a bare name
+     * after the colon — so `(a,b):r⁻` was written and then refused by this reader with
+     * {@code extraneous input '⁻'}. There is nothing to widen the grammar to that would read
+     * better, because the swap says exactly the same thing: ⟨a,b⟩ ∈ r⁻ is ⟨b,a⟩ ∈ r, by
+     * definition. So the pair is reversed and the named property written plainly.
+     *
+     * <p>The axiom comes back in the swapped form rather than the inverse one, which is the
+     * same kind of normalisation as {@code InverseFunctional(r⁻)} returning as
+     * {@code Functional(r)}: the semantics are identical and the spelling is the one DL uses.
+     */
+    private static boolean writeSwapped(OWLObjectPropertyExpression property) {
+        return property.isAnonymous()
+            && !property.getInverseProperty().getSimplified().isAnonymous();
+    }
+
+    @Override
+    public void visit(OWLNegativeObjectPropertyAssertionAxiom axiom) {
+        writeObjectAssertion(axiom.getSubject(), axiom.getObject(), axiom.getProperty(), true);
+    }
+
+    /** Writes an object property assertion, reversing the pair if the property is inverted. */
+    private void writeObjectAssertion(OWLIndividual subject, OWLIndividual object,
+                                      OWLObjectPropertyExpression property, boolean negated) {
+        if (writeSwapped(property)) {
+            writeAssertion(object, subject,
+                property.getInverseProperty().getSimplified(), negated);
+        } else {
+            writeAssertion(subject, object, property, negated);
+        }
+    }
+
+    @Override
+    public void visit(OWLDataPropertyAssertionAxiom axiom) {
+        writeAssertion(axiom.getSubject(), axiom.getObject(), axiom.getProperty(), false);
+    }
+
+    @Override
+    public void visit(OWLNegativeDataPropertyAssertionAxiom axiom) {
+        writeAssertion(axiom.getSubject(), axiom.getObject(), axiom.getProperty(), true);
+    }
+
+    /** Writes {@code (subject,object):property}, negated or not. */
+    private void writeAssertion(OWLObject subject, OWLObject object, OWLObject property,
+                                boolean negated) {
+        if (negated) write(DLSyntax.NOT);
+        write("(");
+        subject.accept(this);
+        write(",");
+        object.accept(this);
+        write("):");
+        property.accept(this);
     }
 
     // -----------------------------------------------------------------------
@@ -358,12 +713,135 @@ public class DLESyntaxObjectRenderer extends DLSyntaxObjectRenderer {
 
     @Override
     public void visit(OWLFunctionalDataPropertyAxiom axiom) {
-        writeUnaryRoleAxiom("Func", axiom.getProperty());
+        writeUnaryRoleAxiom("Functional", axiom.getProperty());
     }
 
     @Override
     public void visit(OWLFunctionalObjectPropertyAxiom axiom) {
-        writeUnaryRoleAxiom("Func", axiom.getProperty());
+        writeUnaryRoleAxiom("Functional", axiom.getProperty());
+    }
+
+    /**
+     * Inverse-functionality is {@code Functional(r⁻)}.
+     *
+     * <p>Without this the inherited renderer wrote it as {@code ⊤ ⊑ ≤ 1 r⁻}, which is the
+     * same statement but is also how {@code SubClassOf(⊤ ObjectMaxCardinality(1 r⁻))} is
+     * written — two OWL axioms with one spelling, so the reader had to guess and the
+     * subsumption could not survive. The keyword form belongs to the dedicated axiom and
+     * the cardinality form to the cardinality axiom, and neither has to be recognised back.
+     *
+     * <p>{@code Functional} rather than the textbook's {@code Func}: they are one token and
+     * both read, and the written-out word asks less of anything reading the document that
+     * has not been told what the abbreviation means.
+     */
+    @Override
+    public void visit(OWLInverseFunctionalObjectPropertyAxiom axiom) {
+        writeUnaryRoleAxiom("Functional", axiom.getProperty().getInverseProperty());
+    }
+
+    /**
+     * An equivalence of one operand is not written, because a lone name is not a statement.
+     *
+     * <p>{@code EquivalentClasses(:A :A)} is vacuous and OWL API collapses it to a single
+     * operand, whereupon the inherited renderer wrote a bare {@code A} on its own line and
+     * the document stopped loading — the same shape of defect as the one-property
+     * {@code Disj(p)}, from the same cause. Two or more operands delegate unchanged, so the
+     * chained form {@code A \u2261 B \u2261 C} is untouched.
+     */
+    @Override
+    public void visit(OWLEquivalentClassesAxiom axiom) {
+        if (axiom.classExpressions().limit(2).count() < 2) return;
+        super.visit(axiom);
+    }
+
+    @Override
+    public void visit(OWLEquivalentObjectPropertiesAxiom axiom) {
+        if (axiom.properties().limit(2).count() < 2) return;
+        super.visit(axiom);
+    }
+
+    @Override
+    public void visit(OWLEquivalentDataPropertiesAxiom axiom) {
+        if (axiom.properties().limit(2).count() < 2) return;
+        super.visit(axiom);
+    }
+
+    /**
+     * A datatype definition, written as the equivalence it is.
+     *
+     * <p>Nothing was written for one at all, so the axiom and the datatype both disappeared.
+     * DL has no separate notation, but a definition *is* an equivalence and a data range on
+     * one side makes it unambiguous — a class equivalence cannot have one.
+     */
+    @Override
+    public void visit(OWLDatatypeDefinitionAxiom axiom) {
+        write(shortFormIRI(axiom.getDatatype().getIRI()));
+        write(" ");
+        write(DLSyntax.EQUIVALENT_TO);
+        write(" ");
+        writeNested(axiom.getDataRange());
+    }
+
+    /**
+     * A disjoint union, written as the two things it says.
+     *
+     * <p>DL has no notation for it, and the inherited renderer reached for {@code =} —
+     * producing <code>A=B &sqcup; C</code>, where {@code =} is the cardinality and identity
+     * operator and the line is not a statement at all. The document would not load.
+     *
+     * <p>{@code DisjointUnion(A, B, C)} says two things: A is the union of B and C, and B
+     * and C are disjoint. Both have notation, so both are written, and the pair reads back
+     * as the pair. That is two axioms where there was one — equivalent, and the only
+     * alternative would be inventing a symbol for a construct DL does not have.
+     */
+    @Override
+    public void visit(OWLDisjointUnionAxiom axiom) {
+        visit(axiom.getOWLEquivalentClassesAxiom());
+        write("\n");
+        visit(axiom.getOWLDisjointClassesAxiom());
+    }
+
+    /**
+     * Class disjointness, written pairwise as {@code X \u2291 \u00ac Y}.
+     *
+     * <p>The inherited renderer had two faults here, and each produced a document that said
+     * the wrong thing or nothing at all.
+     *
+     * <p>It wrote the complemented operand without nesting it, so a complex one lost its
+     * parentheses and changed meaning completely:
+     * {@code DisjointClasses(ObjectIntersectionOf(:A :B) :C)} became
+     * <code>C &sqsube; &not; A &sqcap; B</code>, which reads as
+     * <code>C &sqsube; (&not;A) &sqcap; B</code> — C is a B that is not an A, rather than C
+     * being disjoint from A-and-B. Exit 0, document loads, different axiom. The direct
+     * {@code SubClassOf(:C ObjectComplementOf(ObjectIntersectionOf(:A :B)))} was written
+     * correctly as <code>C &sqsube; &not;(A &sqcap; B)</code>, which is where the shape for
+     * this came from.
+     *
+     * <p>And it joined the pairs with commas on one line —
+     * <code>A &sqsube; &not; B, A &sqsube; &not; C, B &sqsube; &not; C</code> — which is not
+     * a statement DLe has, so a three-way disjointness stopped the document loading. One
+     * statement per line reads back as the pairwise axioms, which is what a disjointness of
+     * three or more means.
+     */
+    @Override
+    public void visit(OWLDisjointClassesAxiom axiom) {
+        List<OWLClassExpression> operands =
+            axiom.classExpressions().collect(java.util.stream.Collectors.toList());
+        // Vacuous, and `A` alone is not a statement; see visit(OWLEquivalentClassesAxiom).
+        if (operands.size() < 2) return;
+        boolean firstPair = true;
+        for (int i = 0; i < operands.size(); i++) {
+            for (int j = i + 1; j < operands.size(); j++) {
+                if (!firstPair) write("\n");
+                firstPair = false;
+                writeNested(operands.get(i));
+                write(" ");
+                write(DLSyntax.SUBCLASS);
+                write(" ");
+                write(DLSyntax.NOT);
+                writeNested(operands.get(j));
+            }
+        }
     }
 
     @Override
@@ -402,6 +880,29 @@ public class DLESyntaxObjectRenderer extends DLSyntaxObjectRenderer {
         }
     }
 
+    /**
+     * A complemented data range, with the parentheses its operand needs.
+     *
+     * <p>The class side has always bracketed a connective under {@code \u00ac} — {@code A \u2291
+     * \u2203r.(\u00ac(B \u2294 C))} comes back as itself. The data side did not, so
+     * {@code \u00ac(xsd:integer \u2294 xsd:string)} was written {@code \u00acxsd:integer \u2294
+     * xsd:string} and read back as {@code (\u00acxsd:integer) \u2294 xsd:string}: a different data
+     * range, silently, and reachable from a hand-written document in one pass because the
+     * reader parses the bracketed form correctly. It affected every data-range position.
+     *
+     * <p>{@code DataOneOf} and {@code DatatypeRestriction} need no brackets: {@code {...}} and
+     * {@code [...]} delimit themselves, and {@code \u00ac{"a"}} reads back as it was written.
+     */
+    @Override
+    public void visit(OWLDataComplementOf node) {
+        write(DLSyntax.NOT);
+        OWLDataRange inner = node.getDataRange();
+        boolean bracket = inner instanceof OWLDataUnionOf || inner instanceof OWLDataIntersectionOf;
+        if (bracket) write("(");
+        inner.accept(this);
+        if (bracket) write(")");
+    }
+
     @Override
     public void visit(OWLDataHasValue ce) {
         write(DLSyntax.EXISTS);
@@ -430,29 +931,38 @@ public class DLESyntaxObjectRenderer extends DLSyntaxObjectRenderer {
 
     @Override
     public void visit(OWLIrreflexiveObjectPropertyAxiom axiom) {
-        writeUnaryRoleAxiom("Irref", axiom.getProperty());
+        writeUnaryRoleAxiom("Irreflexive", axiom.getProperty());
     }
 
     @Override
     public void visit(OWLReflexiveObjectPropertyAxiom axiom) {
-        writeUnaryRoleAxiom("Ref", axiom.getProperty());
+        writeUnaryRoleAxiom("Reflexive", axiom.getProperty());
     }
 
     @Override
     public void visit(OWLTransitiveObjectPropertyAxiom axiom) {
-        writeUnaryRoleAxiom("Trans", axiom.getProperty());
+        writeUnaryRoleAxiom("Transitive", axiom.getProperty());
     }
 
     @Override
     public void visit(OWLSymmetricObjectPropertyAxiom axiom) {
-        writeUnaryRoleAxiom("Sym", axiom.getProperty());
+        writeUnaryRoleAxiom("Symmetric", axiom.getProperty());
     }
 
     @Override
     public void visit(OWLAsymmetricObjectPropertyAxiom axiom) {
-        writeUnaryRoleAxiom("Asym", axiom.getProperty());
+        writeUnaryRoleAxiom("Asymmetric", axiom.getProperty());
     }
 
+    /**
+     * A unary role axiom, as in {@code Transitive(r)}.
+     *
+     * <p>Every one of these keywords has two spellings — {@code Trans} and
+     * {@code Transitive}, {@code Func} and {@code Functional}, and so on — and both read.
+     * The written-out one is written, because a document is read by people and by things
+     * that have not been told what the abbreviation stands for, and the four characters
+     * saved are worth less than not having to know.
+     */
     private void writeUnaryRoleAxiom(String keyword, OWLPropertyExpression prop) {
         write(keyword);
         write("(");
@@ -460,10 +970,24 @@ public class DLESyntaxObjectRenderer extends DLSyntaxObjectRenderer {
         write(")");
     }
 
+    /**
+     * An n-ary role axiom, as in {@code Disj(p, q)}.
+     *
+     * <p>The grammar is {@code DISJ '(' name (',' name)+ ')'}, so two names is the minimum.
+     * A degenerate one-property axiom does arrive — OWL API accepts
+     * {@code DisjointObjectProperties(:p :p)} and collapses the pair — and it used to be
+     * written {@code Disj(p)}, which stopped the whole document reloading. It says nothing,
+     * so nothing is written for it.
+     *
+     * <p>Dropping it is only defensible because it is vacuous. The general problem of an
+     * axiom the writer cannot spell is filed as #22 and #23, and wants a channel that tells
+     * the user rather than a decision taken quietly here.
+     */
     private void writeNaryRoleAxiom(String keyword, java.util.stream.Stream<? extends OWLPropertyExpression> props) {
+        List<OWLPropertyExpression> list = props.collect(java.util.stream.Collectors.toList());
+        if (list.size() < 2) return;
         write(keyword);
         write("(");
-        List<OWLPropertyExpression> list = props.collect(java.util.stream.Collectors.toList());
         for (int i = 0; i < list.size(); i++) {
             if (i > 0) write(", ");
             list.get(i).accept(this);
@@ -489,43 +1013,104 @@ public class DLESyntaxObjectRenderer extends DLSyntaxObjectRenderer {
     public void visit(OWLDatatypeRestriction restriction) {
         List<OWLFacetRestriction> facets = restriction.facetRestrictions()
             .sorted().collect(java.util.stream.Collectors.toList());
-        boolean compact = !facets.isEmpty()
-            && facets.stream().allMatch(fr -> isNumericFacet(fr.getFacet()));
-        if (compact) {
-            // xsd:integer[≥1 ⊓ ≤5]
-            write(shortFormIRI(restriction.getDatatype().getIRI()));
-            write("[");
-            for (int i = 0; i < facets.size(); i++) {
-                if (i > 0) write(" \u2293 ");
-                OWLFacetRestriction fr = facets.get(i);
+        // One shape: the datatype, then one bracket holding every facet.
+        //
+        // There were two, and which one you got depended on the facets: all-ordered-numeric
+        // gave `xsd:integer[≥1 ⊓ ≤5]`, anything else gave `[xsd:string ⊓ [matches "…"]]` with
+        // the datatype inside and a bracket apiece. Two notations for one concept, and an
+        // author had to know which facets went in which — `xsd:string[matches "…"]` was a
+        // syntax error. The spelling of each facet is now chosen facet by facet rather than
+        // for the whole restriction, so a mixture is expressible and the shape never varies.
+        write(shortFormIRI(restriction.getDatatype().getIRI()));
+        write("[");
+        for (int i = 0; i < facets.size(); i++) {
+            if (i > 0) write(" \u2293 ");
+            OWLFacetRestriction fr = facets.get(i);
+            if (isCompactFacet(fr)) {
                 write(numericFacetSymbol(fr.getFacet()));
+                // Unquoted, which isCompactFacet has established is safe: the operator form
+                // carries a bare NUMBER, and `[\u2265"1"]` is not something the grammar reads.
                 write(fr.getFacetValue().getLiteral());
-            }
-            write("]");
-        } else {
-            // [xsd:string ⊓ [matches "..."]]
-            write("[");
-            write(shortFormIRI(restriction.getDatatype().getIRI()));
-            facets.forEach(fr -> {
-                write(" \u2293 [");
+            } else {
                 write(facetKeyword(fr.getFacet()));
                 write(" ");
                 write(renderLiteral(fr.getFacetValue()));
-                write("]");
-            });
-            write("]");
+            }
         }
+        write("]");
     }
 
-    private static boolean isNumericFacet(OWLFacet facet) {
-        switch (facet) {
+    /**
+     * Whether the reader will rebuild this value's datatype from its spelling alone.
+     *
+     * <p>A bare number carries no datatype, and the reader types it by looking at the text:
+     * digits give {@code xsd:integer}, a decimal point gives {@code xsd:double}. Only those
+     * two survive being written bare.
+     */
+    private static boolean reconstructsFromSpellingAlone(OWLLiteral literal) {
+        String datatype = literal.getDatatype().getIRI().toString();
+        String lexical = literal.getLiteral();
+        boolean rightDatatype = lexical.contains(".")
+            ? "http://www.w3.org/2001/XMLSchema#double".equals(datatype)
+            : "http://www.w3.org/2001/XMLSchema#integer".equals(datatype);
+        // And the spelling has to come back as itself. A bare `007` is read as the integer
+        // seven and written `7` on the next pass, so the lexical form the document had was
+        // lost — silently, and only on a value the OWL API itself preserves. The datatype was
+        // right, which is all this used to ask.
+        return rightDatatype && lexical.equals(canonicalNumber(lexical));
+    }
+
+    /**
+     * The spelling a number comes back with, for comparison with the one it went out as.
+     *
+     * <p>Only the forms a bare token can carry need considering: a leading {@code +} is
+     * dropped, and leading zeros are not kept. Anything else is left alone, so a spelling
+     * this does not change is one that survives.
+     */
+    private static String canonicalNumber(String lexical) {
+        String sign = "";
+        String digits = lexical;
+        if (digits.startsWith("+")) {
+            digits = digits.substring(1);
+        } else if (digits.startsWith("-")) {
+            sign = "-";
+            digits = digits.substring(1);
+        }
+        int firstSignificant = 0;
+        while (firstSignificant < digits.length() - 1 && digits.charAt(firstSignificant) == '0'
+                && digits.charAt(firstSignificant + 1) != '.') {
+            firstSignificant++;
+        }
+        return sign + digits.substring(firstSignificant);
+    }
+
+    /**
+     * Whether a facet can take the compact bracket form, as in {@code xsd:int[\u22651]}.
+     *
+     * <p>Two things have to hold, and each was assumed. Only the four ordered bounds have a
+     * symbol: {@code totalDigits} fell through to its short form and was written hard against
+     * its value as {@code [totalDigits5]}, which is not a token the grammar has. And the
+     * compact form's value is a {@code NUMBER}, so an ordered bound whose value is a date or
+     * an exponent does not fit it either. Both now take the keyword form, which reads back.
+     */
+    private static boolean isCompactFacet(OWLFacetRestriction fr) {
+        switch (fr.getFacet()) {
             case MIN_INCLUSIVE:
             case MAX_INCLUSIVE:
             case MIN_EXCLUSIVE:
             case MAX_EXCLUSIVE:
-            case TOTAL_DIGITS:
-            case FRACTION_DIGITS: return true;
-            default:              return false;
+                // Two conditions, and both are about what comes back. The compact bracket
+                // holds a NUMBER and nothing else, so the spelling has to be one — a date,
+                // an exponent or INF cannot go there. And it has no room for a datatype, so
+                // the reader rebuilds one from the spelling alone: an integer becomes
+                // xsd:integer and a decimal becomes xsd:double. Using the compact form for
+                // any other datatype silently retyped the bound — xsd:int became
+                // xsd:integer, xsd:decimal became xsd:double — so those take the keyword
+                // form, where the datatype can be written out.
+                return NUMBER.matcher(fr.getFacetValue().getLiteral()).matches()
+                    && reconstructsFromSpellingAlone(fr.getFacetValue());
+            default:
+                return false;
         }
     }
 
@@ -556,19 +1141,45 @@ public class DLESyntaxObjectRenderer extends DLSyntaxObjectRenderer {
         }
     }
 
+    /**
+     * An enumeration of individuals, as one set.
+     *
+     * <p>The inherited renderer wrote it as a union of singletons — {@code ObjectOneOf(:b
+     * :c)} became <code>{b} &sqcup; {c}</code> — which is a fair reading of the semantics
+     * and a different axiom. Re-reading gave
+     * {@code ObjectUnionOf(ObjectOneOf(:b) ObjectOneOf(:c))}, and because each pass wrapped
+     * the operands again the text grew a parenthesis level at a time:
+     * <code>({b}) &sqcup; ({c})</code>, then <code>(({b})) &sqcup; (({c}))</code>.
+     *
+     * <p>The class assertion count never changed, so the regression job could not see it.
+     *
+     * <p>The reader has always understood <code>{b, c}</code> as a single enumeration; this
+     * is the writer catching up with it. {@link #visit(OWLDataOneOf)} did so already, which
+     * is why the value form never had the problem.
+     */
+    @Override
+    public void visit(OWLObjectOneOf node) {
+        write("{");
+        List<OWLIndividual> individuals =
+            node.individuals().collect(java.util.stream.Collectors.toList());
+        for (Iterator<OWLIndividual> it = individuals.iterator(); it.hasNext();) {
+            it.next().accept(this);
+            if (it.hasNext()) {
+                write(",");
+            }
+        }
+        write("}");
+    }
+
     @Override
     public void visit(OWLDataOneOf node) {
         write("{");
         List<OWLLiteral> values = node.values().collect(java.util.stream.Collectors.toList());
         for (Iterator<OWLLiteral> it = values.iterator(); it.hasNext();) {
-            OWLLiteral lit = it.next();
-            if (lit.isInteger() || lit.isDouble() || lit.isFloat() || lit.isBoolean()) {
-                write(lit.getLiteral());
-            } else {
-                write("\"");
-                write(lit.getLiteral());
-                write("\"");
-            }
+            // Through renderLiteral, not by hand. Quoting it here dropped the language tag
+            // and escaped nothing, so `DataOneOf("say \"hi\"" "b"@fr)` was written
+            // `{"b","say "hi""}` — the tag gone and the document unreadable.
+            write(renderLiteral(it.next()));
             if (it.hasNext()) {
                 write(",");
             }
@@ -583,7 +1194,12 @@ public class DLESyntaxObjectRenderer extends DLSyntaxObjectRenderer {
         OWLAnnotationValue value = axiom.getValue();
 
         IRI rdfValueIRI = IRI.create("http://www.w3.org/1999/02/22-rdf-syntax-ns#value");
-        if (rdfValueIRI.equals(propIRI) && value instanceof OWLLiteral) {
+        // Only for a plain untagged string. The `≝` line writes the literal's text and
+        // nothing else — there is no room after it for `@en` or `^^xsd:token` — so a tagged
+        // or typed rdf:value was silently reduced to a plain string. The general `@ann` form
+        // below carries both, and is what a literal that needs them goes through.
+        if (rdfValueIRI.equals(propIRI) && value instanceof OWLLiteral
+                && isPlainString((OWLLiteral) value)) {
             String literal = ((OWLLiteral) value).getLiteral();
             int arrowIdx = literal.indexOf('\u2192');  // →
             if (arrowIdx >= 0) {
@@ -607,8 +1223,12 @@ public class DLESyntaxObjectRenderer extends DLSyntaxObjectRenderer {
                 if (labelText.startsWith(subject + "(") && labelText.endsWith(")")) {
                     return;
                 }
-                // Suppress default labels whose value is the entity's own IRI local name.
-                if (axiom.getSubject() instanceof IRI) {
+                // Suppress a default label whose value is the entity's own local name,
+                // since DefaultLabelAdder puts it back on the way in. Only an untagged one:
+                // `rdfs:label :C "C"@en` is not the label that gets regenerated — that one
+                // comes back plain — so suppressing it silently changed the literal, and
+                // with it the axiom.
+                if (axiom.getSubject() instanceof IRI && isPlainString((OWLLiteral) value)) {
                     String localName = ((IRI) axiom.getSubject()).getRemainder().orElse(null);
                     if (labelText.equals(localName)) {
                         return;
@@ -619,12 +1239,18 @@ public class DLESyntaxObjectRenderer extends DLSyntaxObjectRenderer {
             write(subject);
             write(" ");
             write(renderValue(value));
-        } else if (OWLRDFVocabulary.RDFS_COMMENT.getIRI().equals(propIRI)) {
+        // Both shorthands take a STRING in the grammar, so a non-literal value has to go
+        // through the general form instead. `rdfs:seeAlso` pointing at another resource is
+        // its commonest use, and it was written `@storage C Elsewhere` — a document that
+        // would not reload. `rdfs:isDefinedBy` below has always had this guard.
+        } else if (OWLRDFVocabulary.RDFS_COMMENT.getIRI().equals(propIRI)
+                && value instanceof OWLLiteral) {
             write("@doc ");
             write(subject);
             write(" ");
             write(renderValue(value));
-        } else if (OWLRDFVocabulary.RDFS_SEE_ALSO.getIRI().equals(propIRI)) {
+        } else if (OWLRDFVocabulary.RDFS_SEE_ALSO.getIRI().equals(propIRI)
+                && value instanceof OWLLiteral) {
             write("@storage ");
             write(subject);
             write(" ");
@@ -633,8 +1259,10 @@ public class DLESyntaxObjectRenderer extends DLSyntaxObjectRenderer {
                 && value instanceof OWLLiteral) {
             write("@db ");
             write(subject);
-            String dbLiteral = ((OWLLiteral) value).getLiteral();
-            if (!dbLiteral.equals(subject)) {
+            // As with @label: a tagged literal is a different literal, so suppressing it
+            // as redundant and letting the reader regenerate it loses the tag.
+            OWLLiteral dbValue = (OWLLiteral) value;
+            if (!dbValue.getLiteral().equals(subject) || !isPlainString(dbValue)) {
                 write(" ");
                 write(renderValue(value));
             }

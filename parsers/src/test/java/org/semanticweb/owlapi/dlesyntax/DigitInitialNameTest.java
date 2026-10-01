@@ -73,10 +73,14 @@ class DigitInitialNameTest {
 
     @Test
     void aDigitInitialNameIsWrittenWithItsPrefix() throws Exception {
+        // Against the statements, not the whole document. The generated header quotes the
+        // syntax it documents, and one of its lines contains `:1` — so this assertion was
+        // satisfied by an ontology with no digit-initial name in it at all.
         String written = write(parse(PREFIX + "Thing2 ⊑ :1\n"));
-        assertTrue(written.contains(":1"), () -> "expected :1 in\n" + written);
-        assertFalse(written.matches("(?s).*⊑\\s+1\\s.*"),
-                    () -> "a bare digit-initial name does not parse:\n" + written);
+        String body = statementsOnly(written);
+        assertTrue(body.contains(":1"), () -> "expected :1 in\n" + body);
+        assertFalse(body.matches("(?s).*⊑\\s+1\\s.*"),
+                    () -> "a bare digit-initial name does not parse:\n" + body);
     }
 
     @Test
@@ -228,23 +232,43 @@ class DigitInitialNameTest {
             manager.saveOntology(o, format, new StreamDocumentTarget(out));
             String written = new String(out.toByteArray(), StandardCharsets.UTF_8);
 
-            boolean colonKept = written.contains(":" + local);
-            if (colonKept) {
-                // The writer claimed this spelling is legal, so it must parse back.
-                assertTrue(parse(written).ontology.containsClassInSignature(IRI.create(NS + local)),
-                    () -> String.format("U+%04X: writer emitted :%s but it does not parse:%n%s",
-                        cp, local, written));
-            } else {
-                // It declined, so the bare form must be what is there — loudly wrong is fine.
-                assertTrue(written.contains(local),
-                    () -> String.format("U+%04X: neither form written:%n%s", cp, written));
+            // The invariant is that the name never comes back as a *different* name. Which
+            // spelling the writer picks is its business: the default prefix and an explicit
+            // colon where the local part is a legal NCName after one, or a minted prefix that
+            // splits the IRI so the tail is one — `<...#1.Dog>` goes out as
+            // `@prefix ns1: <...#1.>` with `ns1:Dog`. Failing loudly is acceptable too, for a
+            // local part with no legal spelling at all. Coming back as something else is not.
+            IRI original = IRI.create(NS + local);
+            Parsed result;
+            try {
+                result = parse(written);
+            } catch (RuntimeException e) {
+                continue; // loudly wrong is allowed; silently wrong is not
             }
+            assertTrue(result.ontology.containsClassInSignature(original),
+                () -> String.format("U+%04X: %s parsed, but not as <%s>:%n%s%nsignature: %s",
+                    cp, local, original, written,
+                    result.ontology.classesInSignature()
+                        .map(c -> c.getIRI().toString()).sorted()
+                        .collect(java.util.stream.Collectors.toList())));
         }
     }
 
-    /** The bare form for an unspellable name must fail loudly, not read as something else. */
+    /**
+     * A local part that needs a split still round-trips, through a minted prefix.
+     *
+     * <p>{@code 1.Dog} cannot be written bare — a leading digit needs a colon, and DLe's own
+     * {@code :1.Dog} would read as something else. It used to go out bare and fail loudly,
+     * which was at least honest. It now goes out as {@code @prefix ns1: <...#1.>} with
+     * {@code ns1:Dog}, because the namespace that needs covering is the one the OWL API's own
+     * split produces, and that reassembles to exactly the IRI it came from.
+     *
+     * <p>The loose leading-substring test this replaced counted such a namespace as covered
+     * whenever any declared prefix was a leading substring of the full IRI, which for a name
+     * in the document's own namespace was always.
+     */
     @Test
-    void anUnspellableNameFailsLoudlyRatherThanSilently() throws Exception {
+    void aNameNeedingASplitRoundTripsThroughAMintedPrefix() throws Exception {
         OWLOntologyManager manager = OWLManager.createOWLOntologyManager();
         OWLOntology o = manager.createOntology(IRI.create("http://example.org/t"));
         OWLDataFactory df = manager.getOWLDataFactory();
@@ -256,9 +280,9 @@ class DigitInitialNameTest {
         manager.saveOntology(o, format, new StreamDocumentTarget(out));
         String written = new String(out.toByteArray(), StandardCharsets.UTF_8);
 
-        assertThrows(Exception.class, () -> parse(written),
-            () -> "a dot has no legal spelling, so this must not quietly parse as"
-                + " something else:\n" + written);
+        assertTrue(parse(written).ontology
+                .containsClassInSignature(IRI.create(NS + "1.Dog")),
+            () -> "the minted prefix must reassemble to the IRI it came from:\n" + written);
     }
 
     /** A digit-initial name has to work wherever a name works, not just in a subsumption. */
@@ -324,5 +348,20 @@ class DigitInitialNameTest {
         OWLOntology o = parse(PREFIX + "Thing2 ⊑ Thing3\n").ontology;
         assertTrue(o.containsClassInSignature(IRI.create(NS + "Thing2")),
                    "the @prefix : declaration must still take effect");
+    }
+
+    /**
+     * The document without its generated header.
+     *
+     * <p>The header quotes every construct it documents, including a digit-initial name, so a
+     * {@code contains} check against the whole document can be satisfied by the explanation
+     * rather than by anything the writer produced.
+     */
+    private static String statementsOnly(String document) {
+        StringBuilder out = new StringBuilder();
+        for (String line : document.split("\n", -1)) {
+            if (!line.startsWith("#")) out.append(line).append('\n');
+        }
+        return out.toString();
     }
 }

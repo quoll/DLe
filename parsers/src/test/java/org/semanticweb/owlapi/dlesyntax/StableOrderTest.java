@@ -253,7 +253,7 @@ class StableOrderTest {
             + "Func(r)\n"
             + "Trans(r)\n");
         int own = body.indexOf("r ⊑ s");
-        int func = body.indexOf("Func(r)");
+        int func = body.indexOf("Functional(r)");
         assertTrue(own >= 0 && func >= 0, () -> body);
         assertTrue(own < func, () -> "the subsumption must lead the block:\n" + body);
     }

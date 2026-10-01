@@ -4,7 +4,13 @@ import org.semanticweb.owlapi.apibinding.OWLManager;
 import org.semanticweb.owlapi.dlesyntax.DLESyntaxStorer;
 import org.semanticweb.owlapi.formats.*;
 import org.semanticweb.owlapi.model.*;
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Set;
 import org.semanticweb.owlapi.io.StreamDocumentTarget;
+import javax.annotation.Nullable;
+import org.semanticweb.owlapi.io.UnparsableOntologyException;
 import org.semanticweb.owlapi.model.OWLOntologyStorageException;
 import org.semanticweb.owlapi.model.IRI;
 import org.semanticweb.owlapi.model.OWLOntologyLoaderConfiguration;
@@ -94,7 +100,47 @@ public class Main {
      * @param args command-line arguments
      * @throws Exception if the ontology cannot be loaded or written
      */
+    /**
+     * The command line entry point.
+     *
+     * <p>Thin on purpose. {@link #run} does the work and signals the end of the command by
+     * throwing {@link ExitRequest}, so every failure path can be reached from a test. None of
+     * them could be before: {@code die} called {@code System.exit}, so a test that reached one
+     * would have taken the test JVM with it. That is why the message formatters here were
+     * thoroughly tested and the guards that invoke them were not tested at all — reverting the
+     * guard around an unloadable input left the whole module green.
+     */
     public static void main(String[] args) throws Exception {
+        try {
+            run(args);
+        } catch (ExitRequest e) {
+            if (e.getMessage() != null) {
+                System.err.println("Error: " + e.getMessage());
+            }
+            System.exit(e.status);
+        }
+    }
+
+    /**
+     * The command is over, with the status the process should exit with.
+     *
+     * <p>No stack trace and no suppression: it is a control signal, not a fault, and the
+     * trace would be of this class rather than of anything that went wrong.
+     */
+    static class ExitRequest extends RuntimeException {
+        private static final long serialVersionUID = 1L;
+
+        /** The process exit status. */
+        final int status;
+
+        ExitRequest(int status, @Nullable String message) {
+            super(message, null, false, false);
+            this.status = status;
+        }
+    }
+
+    /** Everything {@link #main} does, with the exits raised rather than taken. */
+    static void run(String[] args) throws Exception {
         String formatName  = null;
         String inputFile   = null;
         String outputFile  = null;
@@ -112,8 +158,7 @@ public class Main {
                 case "-h":
                 case "--help":
                     printUsage();
-                    System.exit(0);
-                    break;
+                    throw new ExitRequest(0, null);
                 default:
                     if (args[i].startsWith("-")) {
                         die("Unknown option: " + args[i]);
@@ -130,7 +175,7 @@ public class Main {
 
         if (inputFile == null) {
             printUsage();
-            System.exit(1);
+            throw new ExitRequest(1, null);
         }
 
         // Determine output format: 1. CLI option  2. output file extension  3. default dl
@@ -144,6 +189,12 @@ public class Main {
         if (!input.exists()) {
             die("Input file not found: " + inputFile);
         }
+        // A directory reached the parsers, which found nothing in it and returned an empty
+        // ontology: exit 0, no axioms, nothing on stderr. Indistinguishable from converting
+        // /dev/null, and `owltx somedir out.dle` silently wrote an empty document.
+        if (!input.isFile()) {
+            die("Not a file: " + inputFile);
+        }
 
         // For DLE files, bypass OWLAPI's auto-detection (the Turtle parser
         // would otherwise claim the file by matching its @prefix lines).
@@ -152,10 +203,23 @@ public class Main {
         // An import that cannot be loaded is reported, not fatal. A conversion tool should
         // convert what it was given: the alternative is that an unreachable remote import,
         // or one file in a set that does not parse, takes the whole document down.
-        manager.addMissingImportListener(event ->
-            System.err.println("warning: could not load import <"
-                + event.getImportedOntologyURI() + ">: "
-                + rootMessage(event.getCreationException())));
+        manager.addMissingImportListener(event -> {
+            String target = "<" + event.getImportedOntologyURI() + ">";
+            // Through the same reduction the top-level load path uses. An import that does
+            // not parse carries an UnparsableOntologyException, whose message embeds the log
+            // of every parser that was tried — 634 lines and 54 KB for one bad import, and
+            // at exit 0, since a missing import is a warning here rather than a failure.
+            UnparsableOntologyException unparsable =
+                unparsableCause(event.getCreationException());
+            if (unparsable != null) {
+                System.err.println("warning: could not load import " + target + ":");
+                describeUnparsable(target, unparsable).stream().skip(1)
+                    .forEach(line -> System.err.println("  " + line));
+            } else {
+                System.err.println("warning: could not load import " + target + ": "
+                    + describe(event.getCreationException()));
+            }
+        });
         OWLOntologyLoaderConfiguration loaderConfig = manager.getOntologyLoaderConfiguration()
             .setMissingImportHandlingStrategy(MissingImportHandlingStrategy.SILENT);
         manager.setOntologyLoaderConfiguration(loaderConfig);
@@ -175,34 +239,111 @@ public class Main {
                 // its own — writing to stdout, where otherwise an absolute local path would
                 // appear and `owltx in.dle > out.dle` would disagree with `owltx in.dle out.dle`.
                 manager.setOntologyDocumentIRI(ontology, IRI.create(input));
-            } catch (Exception e) {
-                die("parsing DLE file: " + e.getMessage());
+            } catch (Exception | StackOverflowError e) {
+                die("parsing " + input + ": " + describe(e));
                 return; // unreachable, but satisfies compiler
             }
         } else {
-            ontology = manager.loadOntologyFromOntologyDocument(input);
+            // Guarded, as the DLE branch above already is. An unloadable input threw
+            // UnparsableOntologyException out of main, and because that exception's message
+            // embeds the log of every parser that was tried, the user was shown 583 lines
+            // with a Java stack trace on the end. The parsers' own complaints are the useful
+            // part, so they are kept, one line each, and the trace is not.
+            try {
+                ontology = manager.loadOntologyFromOntologyDocument(input);
+            } catch (UnparsableOntologyException e) {
+                describeUnparsable(input.toString(), e).forEach(System.err::println);
+                throw new ExitRequest(1, null);
+            } catch (Exception | StackOverflowError e) {
+                die("loading " + input + ": " + describe(e));
+                return; // unreachable, but satisfies the compiler
+            }
         }
 
         // Copy prefix mappings from the source format to the output format so
         // that output syntaxes that support prefixes (OFN, Manchester, Turtle, …)
         // use short-form names instead of full IRIs.
+        //
+        // Except a prefix that rebinds a conventional label to some other namespace. Those
+        // writers abbreviate every IRI they can against the map they are given, so handing
+        // them `rdfs:` bound elsewhere made them write the *real* RDFS vocabulary under it:
+        // `C ⊑ D` came out as `:C rdfs:subClassOf :D` against the rebound namespace, and
+        // reading that back gave an annotation assertion on a foreign property with the
+        // subsumption gone. Exit 0, and the document's only logical axiom lost.
+        //
+        // The DLe storer handles the same document correctly — it mints a fresh prefix for
+        // the real namespace — so the rebinding is kept for DLe output, where it round-trips,
+        // and dropped for the formats that cannot express it. A dropped prefix costs
+        // readability, never meaning: the writer falls back to the full IRI.
         OWLDocumentFormat sourceFormat = ontology.getFormat();
         if (sourceFormat instanceof PrefixDocumentFormat
                 && outputFormat instanceof PrefixDocumentFormat) {
+            boolean dleOutput = outputFormat instanceof DLESyntaxDocumentFormat;
             ((PrefixDocumentFormat) sourceFormat).getPrefixName2PrefixMap()
-                .forEach(((PrefixDocumentFormat) outputFormat)::setPrefix);
+                .forEach((label, namespace) -> {
+                    if (!dleOutput && org.semanticweb.owlapi.dlesyntax.DLESyntaxStorerBase
+                            .rebindsConventionalPrefix(label, namespace)) {
+                        return;
+                    }
+                    ((PrefixDocumentFormat) outputFormat).setPrefix(label, namespace);
+                });
         }
 
-        // Write output
+        // Write output. Anything the writer could not represent is reported afterwards, the
+        // way the parser's warnings are: the library logs through SLF4J and the binding is
+        // slf4j-nop, so a warning inside it reaches nobody unless it is asked for.
         if (outputFile != null) {
             try {
                 writeToFile(manager, ontology, outputFormat, outputFile);
-            } catch (Exception e) {
-                die("writing to " + outputFile + ": " + rootMessage(e));
+            } catch (Exception | StackOverflowError e) {
+                die("writing to " + outputFile + ": " + describe(e));
             }
         } else {
-            manager.saveOntology(ontology, outputFormat, new StreamDocumentTarget(System.out));
+            // Guarded, as the file branch above already is. This was the one unguarded save,
+            // so `--format krss` — advertised in --help, with no storer behind it — reached
+            // the user as a raw OWLStorerNotFoundException trace, while the same failure to a
+            // file produced a clean one-line message.
+            try {
+                manager.saveOntology(ontology, outputFormat,
+                    new StreamDocumentTarget(System.out));
+            } catch (Exception | StackOverflowError e) {
+                die("writing to standard output: " + describe(e));
+            }
         }
+        org.semanticweb.owlapi.dlesyntax.DLESyntaxStorerBase.takeWarnings()
+            .forEach(warning -> System.err.println("warning: " + warning));
+    }
+
+    /**
+     * The innermost {@link UnparsableOntologyException} in a chain of causes, if there is one.
+     *
+     * <p>A failed import wraps it, so the message the user would otherwise see is the
+     * embedded parser log rather than the reduced form.
+     */
+    @Nullable
+    static UnparsableOntologyException unparsableCause(@Nullable Throwable t) {
+        for (Throwable at = t; at != null && at.getCause() != at; at = at.getCause()) {
+            if (at instanceof UnparsableOntologyException) {
+                return (UnparsableOntologyException) at;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * A message for a person, including for the failures that carry none of their own.
+     *
+     * <p>{@link StackOverflowError} has a null message, and it is an {@code Error} rather
+     * than an {@code Exception}, so every guard here used to let it out: a document nesting
+     * expressions past about a thousand deep printed 1024 frames of OWL API internals. The
+     * depth is the useful fact, and the only thing the reader can act on.
+     */
+    static String describe(@Nullable Throwable t) {
+        if (t instanceof StackOverflowError) {
+            return "the document nests expressions too deeply to process. Flatten the most"
+                + " deeply nested expression, or give the JVM a larger stack with -Xss.";
+        }
+        return t == null ? "no reason given" : rootMessage(t);
     }
 
     /**
@@ -355,8 +496,60 @@ public class Main {
         System.err.println("If no output file is given, output goes to stdout.");
     }
 
+    /** How many parser complaints are worth reading before they stop adding anything. */
+    static final int PARSER_ERRORS_SHOWN = 6;
+
+    /**
+     * What to tell the user when nothing could parse the input.
+     *
+     * <p>Separate from the printing so it can be tested, and because the raw exception is
+     * not usable as a message: its own text embeds the log of every parser that was tried,
+     * so letting it reach the top printed 583 lines with a Java stack trace on the end.
+     *
+     * <p>Three things make it readable. Each parser gets one line, because some of them
+     * report the token, the position, and then an enumeration of everything they would have
+     * accepted instead. Identical lines are collapsed, because OWL API tries twenty-two
+     * parsers and ten of them share the name {@code RioParserImpl} — they are RDF dialects,
+     * and they mostly fail the same way. And the list is capped, because after half a dozen
+     * the rest add nothing.
+     */
+    static List<String> describeUnparsable(String input, UnparsableOntologyException e) {
+        List<String> lines = new ArrayList<>();
+        lines.add("Error: " + input + " could not be parsed as an ontology.");
+        Set<String> distinct = new LinkedHashSet<>();
+        e.getExceptions().forEach((parser, cause) ->
+            distinct.add(shortParserName(parser) + ": " + firstLine(rootMessage(cause))));
+        distinct.stream().limit(PARSER_ERRORS_SHOWN).forEach(line -> lines.add("  " + line));
+        if (distinct.size() > PARSER_ERRORS_SHOWN) {
+            lines.add("  ... and " + (distinct.size() - PARSER_ERRORS_SHOWN)
+                + " more parsers, all of which also failed.");
+        }
+        lines.add("Use --format to name the syntax if it was not detected from the file name.");
+        return lines;
+    }
+
+    /**
+     * The first line of a message, trimmed.
+     *
+     * <p>Some parsers report a token, the position, and then an enumeration of everything
+     * they would have accepted instead — dozens of lines, and a stack trace after it. One
+     * line each keeps all of them readable side by side, which is the point of listing them.
+     */
+    static String firstLine(String message) {
+        String text = message == null ? "" : message.trim();
+        int newline = text.indexOf('\n');
+        String line = newline < 0 ? text : text.substring(0, newline).trim();
+        return line.isEmpty() ? "could not parse it" : line;
+    }
+
+    /** The parser's class name alone, since the package adds nothing a reader needs. */
+    static String shortParserName(Object parser) {
+        String name = parser.getClass().getSimpleName();
+        return name.isEmpty() ? parser.getClass().getName() : name;
+    }
+
+    /** Ends the command with a message, as a failure. */
     private static void die(String message) {
-        System.err.println("Error: " + message);
-        System.exit(1);
+        throw new ExitRequest(1, message);
     }
 }

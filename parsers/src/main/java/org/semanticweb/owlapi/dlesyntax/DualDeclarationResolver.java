@@ -4,7 +4,6 @@ import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
 
-import org.semanticweb.owlapi.model.AxiomType;
 import org.semanticweb.owlapi.model.IRI;
 import org.semanticweb.owlapi.model.OWLClass;
 import org.semanticweb.owlapi.model.OWLDataFactory;
@@ -24,12 +23,26 @@ import org.semanticweb.owlapi.model.OWLSubObjectPropertyOfAxiom;
  * <p>If all sub-properties of X are annotated, X remains dual-declared. If some are
  * annotated and some are not, only the unannotated ones are pushed; X stays dual-declared
  * because the annotated children still reference it as an object property.
+ *
+ * <p>A name whose kind the document <em>stated</em> — with {@code X ⊑ owl:topObjectProperty}
+ * or {@code X ⊑ owl:topDataProperty}, at either end of the axiom — is left alone. Those statements exist precisely to
+ * say "this name is punned, here", and pushing the pun down to the children would undo
+ * them. Without this exemption the disambiguation only survives for children that happen
+ * to carry an annotation, which made the whole mechanism work on labelled documents such
+ * as SNOMED CT extracts and fail silently on unlabelled ones.
  */
 class DualDeclarationResolver {
 
     private DualDeclarationResolver() {}
 
     static void resolve(OWLOntology ontology) {
+        resolve(ontology, java.util.Collections.emptySet());
+    }
+
+    /**
+     * @param statedKinds IRIs whose kind the document stated outright, which are not pushed
+     */
+    static void resolve(OWLOntology ontology, Set<IRI> statedKinds) {
         OWLOntologyManager manager = ontology.getOWLOntologyManager();
         OWLDataFactory df = manager.getOWLDataFactory();
 
@@ -46,16 +59,28 @@ class DualDeclarationResolver {
 
             for (IRI xIRI : propIRIs) {
                 if (!classIRIs.contains(xIRI)) continue;
+                if (statedKinds.contains(xIRI)) continue;   // the document said so
 
                 OWLObjectProperty xProp = df.getOWLObjectProperty(xIRI);
                 OWLClass xClass = df.getOWLClass(xIRI);
 
+                // Indexed by super-property. Streaming every sub-property axiom in the
+                // document and filtering made this quadratic, once per punned name per
+                // fixpoint pass: against a size-identical document with no puns, the excess
+                // ran 0.8s / 2.6s / 11.9s at 8k / 16k / 32k — quadrupling per doubling while
+                // the control stayed linear. It is masked for documents DLe wrote, which
+                // state their kinds and carry labels, and hits a hand-written punned document
+                // — which is the documented SNOMED CT case.
                 List<OWLSubObjectPropertyOfAxiom> toSwap = ontology
-                    .axioms(AxiomType.SUB_OBJECT_PROPERTY)
-                    .filter(a -> a.getSuperProperty().equals(xProp))
+                    .objectSubPropertyAxiomsForSuperProperty(xProp)
                     .filter(a -> a.getSubProperty().isNamed())
                     .filter(a -> !ontology.annotationAssertionAxioms(
                         a.getSubProperty().getNamedProperty().getIRI()).findAny().isPresent())
+                    // A child whose own kind the document stated is not guessed at either.
+                    // Exempting only the parent left the annotation heuristic deciding
+                    // whether an explicit statement was honoured.
+                    .filter(a -> !statedKinds.contains(
+                        a.getSubProperty().getNamedProperty().getIRI()))
                     .collect(Collectors.toList());
 
                 for (OWLSubObjectPropertyOfAxiom axiom : toSwap) {

@@ -26,8 +26,8 @@
 # - Resources only appear explicitly in the database if they have an @db annotation
 #
 # Datatype facets:
-# A datatype may be narrowed by facets, each in its own brackets:
-#   [xsd:string ⊓ [minLength 2] ⊓ [maxLength 8]]
+# A datatype may be narrowed by facets, in one bracket after it:
+#   xsd:string[minLength 2 ⊓ maxLength 8]
 # The value may be written with or without parentheses — `matches "[A-Z]{3}"` and
 # `matches("[A-Z]{3}")` are the same facet.
 # Numeric bounds have a compact form needing no keyword: xsd:integer[≥1 ⊓ ≤40]

@@ -5,6 +5,9 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.semanticweb.owlapi.apibinding.OWLManager;
 import org.semanticweb.owlapi.io.StringDocumentSource;
+import org.semanticweb.owlapi.model.IRI;
+import org.semanticweb.owlapi.model.OWLDataFactory;
+import org.semanticweb.owlapi.model.OWLObjectProperty;
 import org.semanticweb.owlapi.model.OWLOntology;
 import org.semanticweb.owlapi.model.OWLOntologyManager;
 
@@ -21,7 +24,8 @@ import static org.junit.jupiter.api.Assertions.*;
  */
 class DataPropertyInverseTest {
 
-    private static final String PREFIX = "@prefix : <http://example.org/t#>\n";
+    private static final String NS = "http://example.org/t#";
+    private static final String PREFIX = "@prefix : <" + NS + ">\n";
 
     private OWLOntology parse(String body) throws Exception {
         OWLOntologyManager manager = OWLManager.createOWLOntologyManager();
@@ -71,37 +75,84 @@ class DataPropertyInverseTest {
         "A ≡ ∃(age)⁻.xsd:integer",             // inverse outside the parentheses
     })
     void everyRoleFormIsCaught(String body) {
-        assertThrows(DLESemanticException.class, () -> parse(body + "\n"));
+        // On the message, not just the type. Every fixture here has a *datatype filler*, so
+        // an unrelated backstop — "expected a class expression here, but found the datatype
+        // xsd:integer" — refuses them all anyway: disabling the whole inverse diagnostic left
+        // every one of these green, and the file's only surviving guard was the single test
+        // above it.
+        DLESemanticException error = assertThrows(DLESemanticException.class,
+            () -> parse(body + "\n"));
+        assertTrue(error.getMessage().contains("used as an inverse role"),
+            () -> "the inverse must be what is reported, not the filler: "
+                + error.getMessage());
     }
 
     @Test
     void conflictSpreadAcrossTwoAxiomsIsCaught() {
         // The inverse and the datatype evidence need not be in one expression:
         // `age` is a data property here by virtue of the first axiom.
-        assertThrows(DLESemanticException.class,
+        //
+        // This and the test below claimed to reach the inverse diagnostic and did not: both
+        // were answered by other reporters, and neither asserted a message, so both passed
+        // while saying nothing about the inverse. The needle is what holds them to it.
+        DLESemanticException error = assertThrows(DLESemanticException.class,
             () -> parse("⊤ ⊑ ∀age.xsd:integer\nA ≡ ∃age⁻.B\n"));
+        assertTrue(error.getMessage().contains("used as an inverse role"),
+            () -> "the inverse must be what is reported: " + error.getMessage());
     }
 
+    /**
+     * The same conflict with a sub-property edge between the halves, which a nearer
+     * reporter answers.
+     *
+     * <p>This test claimed to reach the inverse diagnostic "via propagation over
+     * `birthYear ⊑ age`". It never did, and could not: the edge propagation would travel
+     * along is itself a subsumption across the two hierarchies, and that is refused before
+     * anything propagates. Asserting no message let the claim stand for as long as it did.
+     *
+     * <p>Which reporter answers is not arbitrary — the subsumption is the line the author has
+     * to change, so naming it is more use than naming the inverse two lines below. What the
+     * test holds is that the document is refused and that both kinds are named.
+     */
     @Test
-    void conflictReachedThroughSubPropertyPropagationIsCaught() {
-        // `birthYear` becomes a data property only via propagation over
-        // `birthYear ⊑ age`, which is why validation runs after it.
-        assertThrows(DLESemanticException.class,
+    void aSubPropertyEdgeBetweenTheHalvesIsRefusedAsASubsumption() {
+        DLESemanticException error = assertThrows(DLESemanticException.class,
             () -> parse("⊤ ⊑ ∀age.xsd:integer\nbirthYear ⊑ age\nA ≡ ∃birthYear⁻.B\n"));
+        assertTrue(error.getMessage().contains("cannot subsume"),
+            () -> "the subsumption is the line at fault: " + error.getMessage());
+        assertTrue(error.getMessage().contains("object property")
+                && error.getMessage().contains("data property"),
+            () -> "and both kinds must be named: " + error.getMessage());
     }
 
     // ── What must keep working ──────────────────────────────────────────────
 
     @Test
     void inverseOfAnObjectPropertyIsFine() throws Exception {
+        // The axiom itself, not just "something parsed". `assertFalse(isEmpty())` was
+        // satisfied by the setup line alone, so dropping the very axiom each of these is
+        // named for left them all green.
         OWLOntology ontology = parse("⊤ ⊑ ∀owns.Animal\nA ≡ ∃owns⁻.Person\n");
-        assertFalse(ontology.getLogicalAxioms().isEmpty());
+        OWLDataFactory df = OWLManager.getOWLDataFactory();
+        OWLObjectProperty owns = df.getOWLObjectProperty(IRI.create(NS + "owns"));
+        assertTrue(ontology.containsAxiom(df.getOWLEquivalentClassesAxiom(
+                df.getOWLClass(IRI.create(NS + "A")),
+                df.getOWLObjectSomeValuesFrom(owns.getInverseProperty(),
+                    df.getOWLClass(IRI.create(NS + "Person"))))),
+            () -> "the inverse restriction must be built: " + ontology.getLogicalAxioms());
     }
 
     @Test
     void dataPropertyWithoutAnInverseIsFine() throws Exception {
         OWLOntology ontology = parse("⊤ ⊑ ∀age.xsd:integer\nA ≡ ∃age.xsd:integer\n");
-        assertFalse(ontology.getLogicalAxioms().isEmpty());
+        OWLDataFactory df = OWLManager.getOWLDataFactory();
+        assertTrue(ontology.containsAxiom(df.getOWLEquivalentClassesAxiom(
+                df.getOWLClass(IRI.create(NS + "A")),
+                df.getOWLDataSomeValuesFrom(
+                    df.getOWLDataProperty(IRI.create(NS + "age")),
+                    df.getOWLDatatype(IRI.create(
+                        "http://www.w3.org/2001/XMLSchema#integer"))))),
+            () -> "the data restriction must be built: " + ontology.getLogicalAxioms());
     }
 
     @Test

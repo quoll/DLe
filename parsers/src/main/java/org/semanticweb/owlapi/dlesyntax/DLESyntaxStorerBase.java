@@ -16,11 +16,35 @@ import java.util.Set;
 import javax.annotation.Nullable;
 
 import org.semanticweb.owlapi.dlsyntax.renderer.DLSyntaxStorerBase;
+import org.semanticweb.owlapi.model.OWLDataFactory;
+import org.semanticweb.owlapi.model.OWLSubClassOfAxiom;
+import org.semanticweb.owlapi.vocab.OWLRDFVocabulary;
+import java.util.Collection;
+import java.util.TreeSet;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
+
+import org.semanticweb.owlapi.model.OWLClass;
+import org.semanticweb.owlapi.model.OWLSubDataPropertyOfAxiom;
+import org.semanticweb.owlapi.model.OWLSubObjectPropertyOfAxiom;
 import org.semanticweb.owlapi.model.AxiomType;
+import org.semanticweb.owlapi.model.OWLAnnotation;
+import org.semanticweb.owlapi.model.OWLAnnotationPropertyDomainAxiom;
+import org.semanticweb.owlapi.model.OWLAnnotationPropertyRangeAxiom;
+import org.semanticweb.owlapi.model.OWLAnnotationProperty;
+import org.semanticweb.owlapi.model.OWLSubAnnotationPropertyOfAxiom;
 import org.semanticweb.owlapi.model.IRI;
 import org.semanticweb.owlapi.model.OWLAnnotationAssertionAxiom;
 import org.semanticweb.owlapi.model.OWLAxiom;
 import org.semanticweb.owlapi.model.OWLDeclarationAxiom;
+import org.semanticweb.owlapi.model.OWLEquivalentDataPropertiesAxiom;
+import org.semanticweb.owlapi.model.OWLDataCardinalityRestriction;
+import org.semanticweb.owlapi.model.OWLDataPropertyDomainAxiom;
+import org.semanticweb.owlapi.model.OWLDisjointDataPropertiesAxiom;
+import org.semanticweb.owlapi.model.OWLFunctionalDataPropertyAxiom;
+import org.semanticweb.owlapi.model.OWLHasKeyAxiom;
+import org.semanticweb.owlapi.model.OWLEquivalentObjectPropertiesAxiom;
+import org.semanticweb.owlapi.model.OWLPropertyExpression;
 import org.semanticweb.owlapi.model.OWLDocumentFormat;
 import org.semanticweb.owlapi.model.OWLEntity;
 import org.semanticweb.owlapi.model.OWLLiteral;
@@ -96,14 +120,6 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
     }
 
     /**
-     * Renders an import target: a quoted relative path when it sits beside this document or
-     * below it, and an absolute IRI otherwise.
-     *
-     * <p>Relativised only downward. {@link java.net.URI#relativize} declines to produce
-     * {@code ../} chains, which is the behaviour wanted here — a path that climbs out of the
-     * document's own directory is more fragile than an absolute one.
-     */
-    /**
      * Where the document being written came from, used when the output has no location of
      * its own — writing to stdout or a stream.
      *
@@ -124,6 +140,14 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
         return value.replace("\\", "\\\\").replace("\"", "\\\"");
     }
 
+    /**
+     * Renders an import target: a quoted relative path when it sits beside this document or
+     * below it, and an absolute IRI otherwise.
+     *
+     * <p>Relativised only downward. {@link java.net.URI#relativize} declines to produce
+     * {@code ../} chains, which is the behaviour wanted here — a path that climbs out of the
+     * document's own directory is more fragile than an absolute one.
+     */
     private String renderImport(IRI importIRI) {
         IRI location = targetDocumentIRI != null ? targetDocumentIRI : sourceDocumentIRI();
         if (location != null) {
@@ -164,8 +188,20 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
     @Nullable private OWLOntology currentOntology;
     /** Annotation assertions already written inline; set for the duration of {@code storeOntology}. */
     @Nullable private Set<OWLAnnotationAssertionAxiom> writtenAnnotations;
+    /**
+     * Every axiom the entity-block pass wrote, so the ones it never reached can be found.
+     *
+     * <p>The base storer walks entities and writes each axiom under one of them, which
+     * leaves an axiom mentioning no entity it walks with nowhere to go. It was then dropped
+     * in silence: a {@code DatatypeDefinition}, whose subject is a datatype and datatypes
+     * get no block, and an identity axiom whose whole signature is anonymous —
+     * {@code DifferentIndividuals(_:x _:y)} — both disappeared.
+     */
+    @Nullable private Set<OWLAxiom> writtenAxioms;
     /** Prefixes in force while storing: the ontology's, overridden by the caller's. */
     @Nullable private Map<String, String> currentPrefixes;
+    /** Per-document memo for {@link #usedAsARole}; see there for why it is needed. */
+    private final Map<OWLEntity, Boolean> roleEvidence = new java.util.HashMap<>();
     /** Set to true when {@code getRendering} returns {@code ""} so {@code endWritingAxiom} suppresses the blank line. */
     private boolean lastRenderingEmpty = false;
     /** Set to true whenever an axiom renders to non-empty content for the current entity;
@@ -176,20 +212,710 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
     protected void storeOntology(OWLOntology o, PrintWriter printWriter, OWLDocumentFormat outputFormat) {
         renderer.setOntology(o);
         currentOntology = o;
+        usedBeyondDeclaration = null;
         writtenAnnotations = new HashSet<>();
+        writtenAxioms = new HashSet<>();
+        roleEvidence.clear();
+        ACTIVE_WARNINGS.get().clear();
         currentPrefixes = prefixesFor(o, outputFormat);
+        // A label the lexer cannot read is worse than no label: it goes out as
+        // `@prefix a.b: <…>`, is refused on the way back in — `mismatched input 'a'
+        // expecting PNAME_NS` — and takes every name that used it down with it. Dropped
+        // before minting runs, so the namespace gets a label that works instead.
+        currentPrefixes.keySet()
+            .removeIf(label -> !DLESyntaxObjectRenderer.isSpellablePrefixLabel(label));
+        declareUncoveredNamespaces(o, currentPrefixes);
         if (!currentPrefixes.isEmpty()) {
             DefaultPrefixManager pm = new DefaultPrefixManager();
-            currentPrefixes.forEach(pm::setPrefix);
+            // Cleared first. A fresh DefaultPrefixManager pre-seeds owl:, rdf:, rdfs: and
+            // xsd: in BOTH directions, and setPrefix replaces only the forward entry — so a
+            // document that binds owl: to its own namespace left the reverse entry pointing
+            // the real OWL namespace at `owl:`. The renderer then wrote `owl:topObjectProperty`
+            // meaning that document's namespace, which named a different entity entirely, and
+            // the round trip invented a class and an axiom. Clearing makes the reverse map
+            // describe only what the document actually declares.
+            pm.clear();
+            // The default prefix last, so it wins the reverse map. DefaultPrefixManager
+            // keeps one CURIE per namespace and the last one set takes it, so when a second
+            // prefix is bound to the document's own namespace — which happens when an
+            // entity is named for a reserved word — every name in that namespace would
+            // otherwise be written prefixed. Only the reserved name needs to be; see
+            // DLESyntaxObjectRenderer#stripDefaultPrefix.
+            currentPrefixes.forEach((prefix, iri) -> {
+                if (!":".equals(prefix)) pm.setPrefix(prefix, iri);
+            });
+            String defaultNamespace = currentPrefixes.get(":");
+            if (defaultNamespace != null) pm.setPrefix(":", defaultNamespace);
             renderer.setPrefixManager(pm);
         }
         try {
             super.storeOntology(o, printWriter, outputFormat);
+            writeAxiomsWithNoBlock(o, printWriter);
+            // After the orphan pass, so that nothing follows a comment that has no statement
+            // of its own — on the way back in, a comment belongs to the statement below it.
+            writeDocumentComments(o, printWriter);
         } finally {
             currentOntology = null;
+            usedBeyondDeclaration = null;
             writtenAnnotations = null;
+            writtenAxioms = null;
+            roleEvidence.clear();
             currentPrefixes = null;
         }
+    }
+
+    /**
+     * States what kind of thing a name is, where the reader could not otherwise tell.
+     *
+     * <p>DL writes class subsumption and sub-property subsumption identically as
+     * {@code a ⊑ b}, so a reader has to infer which hierarchy a pair belongs to. It manages
+     * on structure where there is any, and otherwise on the convention that concepts are
+     * capitalised and roles are not. Two situations defeat both, and only those two are
+     * written down:
+     *
+     * <ul>
+     *   <li>a <b>pun</b> — a name that is a class <em>and</em> a property, as SNOMED CT's
+     *       attribute roots are. Both statements are written; the pair is what marks it.</li>
+     *   <li>a name whose <b>case contradicts its kind</b> — a lower-case class, or a
+     *       capitalised property.</li>
+     * </ul>
+     *
+     * <p>A numeric local name, which SNOMED CT uses throughout, contradicts nothing, so it
+     * gets a statement only when punned. That keeps this quiet: of the seven example
+     * documents, the four containing the one punned SNOMED CT identifier gain two lines
+     * each — its own two kinds — and the other three gain nothing.
+     *
+     * <p>Both forms are existing DL and OWL: {@code X ⊑ ⊤} and
+     * {@code X ⊑ owl:topObjectProperty}. Nothing is added to the syntax, and both are
+     * tautologies, so a reader that ignores them loses nothing but the disambiguation.
+     *
+     * @return true if anything was queued for the block
+     */
+    private boolean writeKindStatements(OWLEntity entity) {
+        if (currentOntology == null) return false;
+        IRI iri = entity.getIRI();
+        // Never about the built-in vocabulary. Its kind is fixed by OWL, so a statement
+        // says nothing — and one of these is the super of every punned property, which made
+        // the writer emit `owl:topObjectProperty ⊑ owl:topObjectProperty` once the rule
+        // about the super of a pun was added.
+        if (RESERVED_KINDS.contains(iri)) return false;
+        boolean isClass = currentOntology.containsClassInSignature(iri);
+        boolean isObjectProperty = currentOntology.containsObjectPropertyInSignature(iri);
+        boolean isDataProperty = currentOntology.containsDataPropertyInSignature(iri);
+        boolean isProperty = isObjectProperty || isDataProperty;
+
+        // One statement per pass, and only from the pass for the kind it describes. Keying
+        // this on `!entity.isOWLClass()` is not enough: an IRI can be a property *and* a
+        // named individual, annotation property or datatype, and every one of those passes
+        // would then write the property statement again.
+        boolean isPropertyEntity = entity.isOWLObjectProperty() || entity.isOWLDataProperty();
+        if (!entity.isOWLClass() && !isPropertyEntity) return false;
+        if (entity.isOWLClass() && !isClass) return false;
+        if (isPropertyEntity && !isProperty) return false;
+
+        String name = shortFormOrNull(iri);
+        // No DLe spelling means no statement can be written about it here — every branch
+        // below both decides on the name and emits it.
+        if (name == null) return false;
+        boolean punned = isClass && isProperty;
+        // A class directly beneath a pun needs marking too. Role classification crosses a
+        // pun downward — that is what makes SNOMED CT's attribute children roles — so a
+        // child meant as a concept is read as a role unless the document says otherwise.
+        // `Child ⊑ ⊤` puts it beyond reach, using the same mechanism as everything else here.
+        // ...but only one the reader's own case guess will not keep. That guess is the same
+        // rule as `startsUpperCase` here, and it applies below a pun of either kind, so a
+        // capitalised child needs no help: marking it wrote a line that said what the reader
+        // already worked out, and — because the line comes back as a real `X ⊑ ⊤` axiom on
+        // the next read — grew the axiom set and moved the line's own position by one pass.
+        // What still needs it is a child the guess cannot rescue: a numeric name, as all of
+        // SNOMED CT's are, or a lower-case one meant as a concept.
+        boolean classUnderPun =
+            isClass && !punned && !startsUpperCase(name) && subsumedByAPun(iri);
+        // A name contradicts the convention only if its case actively says the wrong
+        // thing. A numeric local name — SNOMED CT's, for instance — says nothing either
+        // way, so it needs a statement only when punned. Testing `!startsUpperCase`
+        // instead would write a statement for every numeric class in the document: 56
+        // lines for one where a single pun is the only ambiguity.
+        // A lower-case class only needs marking when a reader would actually get it wrong.
+        // What gets it wrong is the sub-property heuristic: two lower-case names either side
+        // of a `⊑` are read as a role pair. Anywhere else the name is already pinned as a
+        // class by its own axioms, and marking it added a vacuous `SubClassOf(X, owl:Thing)`
+        // on the way back in for nothing — which is the whole of the round-trip cost this
+        // mechanism used to carry.
+        boolean classContradictsCase =
+            isClass && readerCanGuessRole(name, iri) && inAGuessableRolePair(iri);
+        // The property-side counterpart of the narrowing above: a capitalised role gets a
+        // statement only where a reader would actually misread it.
+        //
+        // What saves it otherwise is role evidence — the name, or a name directly above it,
+        // used somewhere only a role can go. `IsPartOf ⊑ hasPart` alongside `∃hasPart.B`
+        // needs nothing, because the restriction settles what hasPart is and the pair then
+        // settles IsPartOf. `Studies ⊑ rel` on its own needs the statement: nothing makes
+        // either name a role, so the pair reads as a class subsumption and the sub-property
+        // axiom is lost.
+        //
+        // Below a pun it is always needed, because the reader's last-resort case guess
+        // applies there and takes a capitalised child for a concept.
+        // Below a pun, only a child the reader's guess would claim as a concept needs the
+        // statement — and that guess tests the local part for a capital, so it is
+        // `startsUpperCase` here, not `readerCanGuessRole`. The two reader rules genuinely
+        // differ: the pun-child guess strips the prefix, the sub-property guess refuses any
+        // name that has one. Each test below mirrors the one it is about.
+        //
+        // Conflating them marked every numeric child of a pun, which is every SNOMED CT
+        // attribute — names the reader classifies correctly on its own, from the pun above
+        // them.
+        // The reader's case guess yields an OBJECT property and nothing else — `a ⊑ b`
+        // between two bare lower-case names is read as a sub-property pair of object
+        // properties. So the guess can rescue an object property with such a name, and can
+        // never rescue a data property: `a ⊑ b` between two data properties came back as
+        // two object properties, silently, with no statement written because the name
+        // looked like a role and the writer asked no further.
+        // ...and not where a punned sub-property has already put this name inside the
+        // reader's class barrier. The guess needs both sides of the pair to look like
+        // roles, and a pun has been explicitly marked a concept.
+        boolean caseCanRescue = readerCanGuessRole(name, iri) && !entity.isOWLDataProperty()
+            && !supersAPunnedProperty(entity);
+        boolean propertyContradictsCase = isProperty && !caseCanRescue
+            && ((startsUpperCase(name) && propertySubsumedByAPun(entity))
+                || !hasRoleEvidence(entity));
+
+        // An IRI that is somehow both an object and a data property cannot be described at
+        // all: DLe has one statement per role kind and a name can only have one, so the two
+        // lines contradict each other and the reader now refuses the pair outright. Writing
+        // just one is no better — which one got written depended on which entity the base
+        // class happened to ask about, and the document then failed to re-read with a
+        // message about datatypes. Saying nothing leaves the reader to classify from use,
+        // which is the only evidence that survives.
+        //
+        // OWL 2 DL forbids this punning, so nothing well-formed arrives here.
+        boolean dualRoleKinds = isObjectProperty && isDataProperty;
+        // Said out loud rather than dropped. Nothing DLe writes can describe this name, so
+        // the reader will classify it from use and settle on one kind — losing the other
+        // side's axioms, which is the whole of #43. That was silent; it is now reported,
+        // once, from the object-property pass, since the same IRI arrives here twice.
+        if (dualRoleKinds && entity.isOWLObjectProperty()) {
+            warn(iri + " is both an object property and a data property. OWL 2 DL does not"
+                + " allow that, and DLe has one kind statement per name, so neither can be"
+                + " written: reading this document back will give the data property only,"
+                + " and its object property axioms will be missing.");
+        }
+
+        // A pun needs BOTH of its statements: the pair is what says it is punned. If the
+        // property half cannot be spelled — no declared prefix maps to the OWL namespace,
+        // and DLe has no angle-bracket form in a name position — then writing the class
+        // half alone leaves `X ⊑ ⊤` on something the reader must treat as a role, which is
+        // strictly worse than writing nothing: it adds a vacuous axiom and still corrupts
+        // the kind. So the two halves stand or fall together.
+        boolean punStatements = punned && !dualRoleKinds && punIsFullySpellable(iri);
+
+        // An entity the document only declares appears in no other axiom, so there is
+        // nothing for the reader to classify it from and the convention cannot rescue it
+        // whatever its case. With no statement, nothing about it is written at all and the
+        // declaration is simply lost: of the seven declaration-only shapes only a data
+        // property and a capitalised object property survived, and those two only because
+        // some other rule happened to emit their statement. `Declaration(Class(:Solo))` has a
+        // perfectly good spelling in `Solo ⊑ ⊤`, and a lower-case object property in
+        // `r ⊑ owl:topObjectProperty`.
+        boolean declarationOnly = declaresNothingElse(iri);
+
+        boolean wrote = false;
+        if (entity.isOWLClass()
+                && (punStatements || classContradictsCase || classUnderPun || declarationOnly)
+                && !thingSubsumptionExists(iri)) {
+            pendingKindStatements.add(name + " ⊑ ⊤");
+            wrote = true;
+        }
+        // The kind is taken from the entity being written, not from the signature. Reading
+        // it from the signature meant an IRI that is both an object and a data property had
+        // `owl:topDataProperty` written by both passes — twice, with the object statement
+        // never written at all, and the result did not parse.
+        if (isPropertyEntity && !dualRoleKinds
+                && (punStatements || propertyContradictsCase || declarationOnly)) {
+            boolean data = entity.isOWLDataProperty();
+            String top = topPropertyName(data);
+            if (top != null && !topSubPropertyExists(iri, data)) {
+                pendingKindStatements.add(name + " ⊑ " + top);
+                wrote = true;
+            }
+        }
+        return wrote;
+    }
+
+    /**
+     * Whether this IRI appears in no axiom but its own declaration.
+     *
+     * <p>Such an entity has no use to be read from, so nothing the reader does can recover
+     * its kind, and every rule above is about *correcting* a reading rather than supplying
+     * one. Asked of the IRI rather than the entity so that a name declared under two kinds
+     * still counts as used.
+     */
+    /** {@link #namesUsedBeyondDeclaration} for the store in progress, or null before it is asked for. */
+    @Nullable private Set<IRI> usedBeyondDeclaration;
+
+    private boolean declaresNothingElse(IRI iri) {
+        if (currentOntology == null) return false;
+        if (usedBeyondDeclaration == null) {
+            usedBeyondDeclaration = namesUsedBeyondDeclaration(currentOntology);
+        }
+        return !usedBeyondDeclaration.contains(iri);
+    }
+
+    /**
+     * Every IRI some axiom mentions other than a declaration or an annotation assertion.
+     *
+     * <p>Computed once per document, because the question used to be asked of the ontology
+     * once per entity: {@code referencingAxioms} is not indexed for an IRI, so each call
+     * scanned, and the writer was quadratic in the size of the document. Eight thousand
+     * classes took 29.5 s to write and 1.9 s with this method's answer already in hand; the
+     * cost grew by 3.94 for a doubling where linear is 2. The reader was never affected.
+     *
+     * <p>The three sources beyond an axiom's entity signature all have to be here, because
+     * an IRI that is only in one of them is used and must not be reported as declared and
+     * nothing else: an annotation property's domain and its range are plain IRIs rather than
+     * entities, and an annotation on the axiom may carry one as its value. Annotations nest,
+     * so that last one recurses. Each is pinned by a test, and each of the three was
+     * measured to matter — dropping any one of them changes an answer.
+     *
+     * <p>Skipping annotation assertions is faithful to the question rather than load-bearing:
+     * an assertion's subject and value are IRIs and not in its signature, so nothing is
+     * collected from one either way, and dropping the filter changes no corpus document and
+     * no test. It is kept because the question is "used by an axiom that says something about
+     * it", and an assertion does not — so if this ever collects subjects or values, the
+     * filter is what keeps the answer right.
+     *
+     * <p>Equivalence with the {@code referencingAxioms} version it replaced was checked by
+     * computing both and comparing, over all 25 corpus documents and the whole suite: no
+     * disagreement, and every document's output is byte-identical.
+     */
+    private static Set<IRI> namesUsedBeyondDeclaration(OWLOntology o) {
+        Set<IRI> used = new HashSet<>();
+        o.axioms()
+            .filter(axiom -> axiom.getAxiomType() != AxiomType.DECLARATION
+                && axiom.getAxiomType() != AxiomType.ANNOTATION_ASSERTION)
+            .forEach(axiom -> {
+                axiom.signature().forEach(entity -> used.add(entity.getIRI()));
+                if (axiom instanceof OWLAnnotationPropertyDomainAxiom) {
+                    used.add(((OWLAnnotationPropertyDomainAxiom) axiom).getDomain());
+                }
+                if (axiom instanceof OWLAnnotationPropertyRangeAxiom) {
+                    used.add(((OWLAnnotationPropertyRangeAxiom) axiom).getRange());
+                }
+                collectAnnotationIRIs(axiom.getAnnotations(), used);
+            });
+        return used;
+    }
+
+    /** IRI-valued annotations, including those on annotations. */
+    private static void collectAnnotationIRIs(Collection<OWLAnnotation> annotations,
+                                              Set<IRI> used) {
+        for (OWLAnnotation annotation : annotations) {
+            if (annotation.getValue() instanceof IRI) used.add((IRI) annotation.getValue());
+            collectAnnotationIRIs(annotation.getAnnotations(), used);
+        }
+    }
+
+    /**
+     * Where warnings from the store in progress accumulate.
+     *
+     * <p>Thread-local and drained by the caller, mirroring the parser's sink, because the
+     * library logs through SLF4J and the binding here is {@code slf4j-nop} — a
+     * {@code LOGGER.warn} goes nowhere at all. The parser's warnings reach a person only
+     * because the command asks for them explicitly; the writer had no equivalent, so
+     * everything it could not represent was lost in silence.
+     */
+    private static final ThreadLocal<List<String>> ACTIVE_WARNINGS =
+        ThreadLocal.withInitial(java.util.ArrayList::new);
+
+    /** Records something this document could not be written to say. */
+    private static void warn(String message) {
+        ACTIVE_WARNINGS.get().add(message);
+    }
+
+    /**
+     * The warnings from stores on this thread, cleared by the call.
+     *
+     * <p>Cleared when a store begins as well, so an undrained warning from an earlier one
+     * cannot be attributed to this document.
+     */
+    public static List<String> takeWarnings() {
+        List<String> out = List.copyOf(ACTIVE_WARNINGS.get());
+        ACTIVE_WARNINGS.get().clear();
+        return out;
+    }
+
+    /** The built-in entities whose kind OWL already fixes; never worth a statement. */
+    private static final Set<IRI> RESERVED_KINDS = Set.of(
+        OWLRDFVocabulary.OWL_TOP_OBJECT_PROPERTY.getIRI(),
+        OWLRDFVocabulary.OWL_TOP_DATA_PROPERTY.getIRI(),
+        OWLRDFVocabulary.OWL_BOTTOM_OBJECT_PROPERTY.getIRI(),
+        OWLRDFVocabulary.OWL_BOTTOM_DATA_PROPERTY.getIRI(),
+        OWLRDFVocabulary.OWL_THING.getIRI(),
+        OWLRDFVocabulary.OWL_NOTHING.getIRI(),
+        IRI.create(EntityTypeScanner.RDFS_LITERAL_IRI));
+
+    /**
+     * Whether every statement a punned name needs can be spelled in this document.
+     *
+     * <p>Asked before either half is written; see the call site for why a half-written pun
+     * is worse than none. An IRI that is somehow both an object and a data property needs
+     * both top names, so both must be spellable.
+     */
+    private boolean punIsFullySpellable(IRI iri) {
+        if (currentOntology.containsObjectPropertyInSignature(iri)
+                && topPropertyName(false) == null) {
+            return false;
+        }
+        return !(currentOntology.containsDataPropertyInSignature(iri)
+            && topPropertyName(true) == null);
+    }
+
+    @Nullable
+    /**
+     * The name to write for a top property, or null if this document cannot spell it.
+     *
+     * <p>Rendered through the prefix manager rather than hard-coded as {@code "owl:…"}. The
+     * reader resolves these to IRIs precisely because a document may bind {@code owl:} to
+     * some other namespace; writing the literal text in such a document produced a line that
+     * meant a different entity, and the round trip both lost axioms and gained invented ones.
+     *
+     * <p>Null when no declared prefix maps to the OWL namespace — the statement is then
+     * inexpressible, and writing something that resolves elsewhere would be worse than
+     * writing nothing.
+     */
+    /**
+     * Whether this datatype's kind has to be stated for the reader to recover it.
+     *
+     * <p>A built-in is known by its namespace and needs nothing. A datatype the document
+     * defines is settled by the definition itself. What is left is a name that is only
+     * declared, which nothing in the text distinguishes from a class.
+     */
+    private boolean datatypeKindNeedsStating(IRI iri) {
+        if (currentOntology == null) return false;
+        if (org.semanticweb.owlapi.vocab.OWL2Datatype.isBuiltIn(iri)) return false;
+        // The reader recognises a datatype by its namespace as well as by the built-in map,
+        // and the two are not the same set — `xsd:date` is not in OWL 2's datatype map, so
+        // without this the writer stated a kind for it that the reader never needed and
+        // every document mentioning one grew a line of noise.
+        if (EntityTypeScanner.isDatatypeIri(iri.toString())) return false;
+        OWLDataFactory df = currentOntology.getOWLOntologyManager().getOWLDataFactory();
+        return currentOntology.datatypeDefinitions(df.getOWLDatatype(iri)).count() == 0;
+    }
+
+    /** The name to write for the top data range, or null if this document cannot spell it. */
+    @Nullable
+    private String topDataRangeName() {
+        String rendered = renderer.shortForm(
+            IRI.create(EntityTypeScanner.RDFS_LITERAL_IRI));
+        // As with the top properties: a bare name resolves into the default namespace on the
+        // way back in, so an unprefixed rendering is no use as a marker.
+        return rendered != null && rendered.indexOf(':') > 0 ? rendered : null;
+    }
+
+    private String topPropertyName(boolean data) {
+        IRI iri = data ? OWLRDFVocabulary.OWL_TOP_DATA_PROPERTY.getIRI()
+                       : OWLRDFVocabulary.OWL_TOP_OBJECT_PROPERTY.getIRI();
+        String rendered = renderer.shortForm(iri);
+        // shortForm falls back to the bare local part when nothing matches, and a bare name
+        // resolves into the default namespace on the way back in.
+        return rendered != null && rendered.indexOf(':') > 0 ? rendered : null;
+    }
+
+    /**
+     * Whether the ontology already states {@code X ⊑ owl:top…Property}, which the ordinary
+     * axiom renderer writes as the identical line — the property-side counterpart of
+     * {@link #thingSubsumptionExists}. Without it the statement was written twice, and the
+     * duplicate collapsed on the next write, so writing was not idempotent.
+     */
+    private boolean topSubPropertyExists(IRI iri, boolean data) {
+        // Indexed by sub-property, for the same reason {@link #thingSubsumptionExists} is
+        // indexed by sub-class: this runs once per property written, so streaming every
+        // sub-property axiom in the document made writing quadratic. Measured on capitalised
+        // properties with no role evidence, which is the shape that reaches here — 8 000
+        // took 6s, 16 000 took 29s and 32 000 took 121s, each doubling roughly quadrupling.
+        //
+        // The index keys on the sub-property, so it also replaces the identity and
+        // anonymity tests the scan had to make for itself.
+        OWLDataFactory df = currentOntology.getOWLOntologyManager().getOWLDataFactory();
+        if (data) {
+            return currentOntology
+                .dataSubPropertyAxiomsForSubProperty(df.getOWLDataProperty(iri))
+                .anyMatch(ax -> ax.getSuperProperty().isOWLTopDataProperty());
+        }
+        return currentOntology
+            .objectSubPropertyAxiomsForSubProperty(df.getOWLObjectProperty(iri))
+            .anyMatch(ax -> ax.getSuperProperty().isOWLTopObjectProperty());
+    }
+
+    /**
+     * Whether this class sits either side of a name-to-name subsumption whose other side
+     * also lacks an upper-case signal — the shape the reader's sub-property heuristic
+     * claims. Only then does a lower-case class need to say it is one.
+     */
+    private boolean inAGuessableRolePair(IRI iri) {
+        OWLDataFactory df = currentOntology.getOWLOntologyManager().getOWLDataFactory();
+        OWLClass cls = df.getOWLClass(iri);
+        return Stream.concat(
+                currentOntology.subClassAxiomsForSubClass(cls)
+                    .map(OWLSubClassOfAxiom::getSuperClass),
+                currentOntology.subClassAxiomsForSuperClass(cls)
+                    .map(OWLSubClassOfAxiom::getSubClass))
+            .filter(other -> !other.isAnonymous())
+            // shortFormOrNull, not shortForm: this is a heuristic question about some other
+            // class, and an IRI with no DLe spelling must not fail the save. It used to, so
+            // whether a document could be written turned on the capitalisation of an
+            // unrelated name — `:thing1 ⊑ <urn:isbn:123>` threw where `:Thing1` did not.
+            .filter(other -> shortFormOrNull(other.asOWLClass().getIRI()) != null)
+            .anyMatch(other -> readerCanGuessRole(
+                shortFormOrNull(other.asOWLClass().getIRI()), other.asOWLClass().getIRI()));
+    }
+
+    /** Whether any data cardinality in this axiom is written without its filler. */
+    private static boolean hasUnqualifiedDataCardinality(OWLAxiom axiom) {
+        return axiom.nestedClassExpressions()
+            .filter(OWLDataCardinalityRestriction.class::isInstance)
+            .map(OWLDataCardinalityRestriction.class::cast)
+            .anyMatch(r -> r.getFiller().isTopDatatype());
+    }
+
+    /**
+     * Whether an axiom, once rendered, shows the reader that its subject is a role.
+     *
+     * <p>The question is about the DLe text, not the axiom. A declaration writes nothing.
+     * An annotation assertion says nothing about kind. A sub-property axiom renders as
+     * {@code p ⊑ q}, which is exactly a class subsumption — that ambiguity is the reason
+     * kind statements exist at all.
+     *
+     * <p>And an equivalence between two named properties renders as {@code p ≡ q}, which is
+     * likewise exactly a class equivalence. Counting it as evidence meant two data
+     * properties related only by {@code EquivalentDataProperties} were written with no
+     * statement and read back as object properties. Anything else — a restriction, a domain
+     * or range, a characteristic, a chain, an inverse — puts the name somewhere only a role
+     * can go.
+     */
+    private static boolean pinsTheKind(OWLAxiom axiom, boolean dataProperty) {
+        if (axiom instanceof OWLDeclarationAxiom
+                || axiom instanceof OWLSubObjectPropertyOfAxiom
+                || axiom instanceof OWLSubDataPropertyOfAxiom
+                || axiom instanceof OWLAnnotationAssertionAxiom) {
+            return false;
+        }
+        if (axiom instanceof OWLEquivalentObjectPropertiesAxiom) {
+            return ((OWLEquivalentObjectPropertiesAxiom) axiom).properties()
+                .anyMatch(OWLPropertyExpression::isAnonymous);
+        }
+        if (axiom instanceof OWLEquivalentDataPropertiesAxiom) {
+            return false;   // a data property expression is always named
+        }
+        // A data property needs evidence of WHICH KIND of role it is, and three forms give
+        // none: `Func(p)`, `Disj(p, q)` and the domain idiom `∃p.⊤ ⊑ C` are written exactly
+        // the same way for both kinds. An object property can rely on them, because a role
+        // with no data evidence is what the reader guesses object from — but for a data
+        // property they say only "role", and the reader then guesses wrong.
+        //
+        // This is the same error as counting the case convention as a rescue for a data
+        // property: role evidence is not kind evidence. It cost a silent, stable
+        // DataProperty → ObjectProperty on any document whose only mention of a data
+        // property was one of these three.
+        if (dataProperty
+                && (axiom instanceof OWLFunctionalDataPropertyAxiom
+                    || axiom instanceof OWLDisjointDataPropertiesAxiom
+                    || axiom instanceof OWLDataPropertyDomainAxiom
+                    || axiom instanceof OWLHasKeyAxiom)) {
+            return false;
+        }
+        // An *unqualified* data cardinality is the fourth spelling that says only "role".
+        // `\u22652 d` has no filler, so it reads exactly like the object form, and a
+        // document whose only mention of a data property was `C \u2291 \u22652 d` came
+        // back with it an object property. The qualified form `\u22652 d.xsd:string`
+        // names a datatype and does pin the kind, so only the unqualified one is excluded.
+        if (dataProperty && hasUnqualifiedDataCardinality(axiom)) {
+            return false;
+        }
+        return true;
+    }
+
+    /**
+     * Whether the reader's own case guess can take this name for a role.
+     *
+     * <p>Delegates to {@link EntityTypeScanner#caseSuggestsRole}, which is the reader's
+     * actual rule, rather than restating it. Restating it is precisely how this went wrong:
+     * the writer asked whether the local part was upper or lower case while the reader
+     * required a bare name, and two ordinary families of document fell through the gap in
+     * opposite directions — prefixed and digit-initial properties losing their axioms,
+     * prefixed classes gaining vacuous ones. Sharing the method makes that class of bug
+     * unavailable.
+     *
+     * <p>The IRI is passed because the rule excludes datatypes, and a datatype is known by
+     * its namespace and not by how it is spelled.
+     */
+    private boolean readerCanGuessRole(String name, IRI iri) {
+        return EntityTypeScanner.caseSuggestsRole(name, iri.toString());
+    }
+
+    /** Whether this property is a direct sub-property of a name that is also a class. */
+    /**
+     * Whether this property's super-property is a punned name.
+     *
+     * <p><b>Unproven.</b> Stubbing this to false changes no observable behaviour in any shape
+     * that has been constructed for it — a capitalised child with its own role evidence under
+     * a marked pun loses the {@code Child ⊑ owl:topObjectProperty} line and still round-trips
+     * with every kind intact, and the whole suite passes. Reviewed independently with the
+     * same result.
+     *
+     * <p>Left in place rather than removed, because the case it is meant to guard — the case
+     * guess crossing a pun downward onto a capitalised child — is the SNOMED CT shape this
+     * area exists for, and not being able to construct it is not the same as it not
+     * existing. What it costs when it fires unnecessarily is one redundant statement, which
+     * the reader removes again. Worth revisiting with a real punned corpus document.
+     */
+    private boolean propertySubsumedByAPun(OWLEntity entity) {
+        OWLDataFactory df = currentOntology.getOWLOntologyManager().getOWLDataFactory();
+        IRI iri = entity.getIRI();
+        Stream<IRI> supers = entity.isOWLDataProperty()
+            ? currentOntology.dataSubPropertyAxiomsForSubProperty(df.getOWLDataProperty(iri))
+                .map(OWLSubDataPropertyOfAxiom::getSuperProperty)
+                .filter(sup -> !sup.isAnonymous())
+                .map(sup -> sup.asOWLDataProperty().getIRI())
+            : currentOntology.objectSubPropertyAxiomsForSubProperty(df.getOWLObjectProperty(iri))
+                .map(OWLSubObjectPropertyOfAxiom::getSuperProperty)
+                .filter(sup -> !sup.isAnonymous())
+                .map(sup -> sup.getNamedProperty().getIRI());
+        return supers.anyMatch(currentOntology::containsClassInSignature);
+    }
+
+    /**
+     * Whether some sub-property of this one is punned.
+     *
+     * <p>The mirror of {@link #propertySubsumedByAPun}, and needed for the same reason from
+     * the other end. A punned name carries a concept statement, which puts it in the
+     * reader's class barrier; the barrier then propagates <em>up</em> the hierarchy, so the
+     * property above a pun is read as a concept and the sub-property axiom between them
+     * becomes a subsumption.
+     *
+     * <p>The case convention cannot rescue it: that guess needs both sides of the pair to
+     * look like roles, and a punned name has been explicitly marked as a concept. So the
+     * super has to say what it is, however ordinary its name looks.
+     */
+    private boolean supersAPunnedProperty(OWLEntity entity) {
+        OWLDataFactory df = currentOntology.getOWLOntologyManager().getOWLDataFactory();
+        // Object properties only. The caller reaches this behind
+        // `!entity.isOWLDataProperty()`, which short-circuits, so a data-property branch
+        // here was unreachable — and unnecessary too, since a data property always gets a
+        // kind statement anyway.
+        IRI iri = entity.getIRI();
+        return currentOntology
+            .objectSubPropertyAxiomsForSuperProperty(df.getOWLObjectProperty(iri))
+            .map(OWLSubObjectPropertyOfAxiom::getSubProperty)
+            .filter(sub -> !sub.isAnonymous())
+            .map(sub -> sub.getNamedProperty().getIRI())
+            .anyMatch(currentOntology::containsClassInSignature);
+    }
+
+    /**
+     * Whether the document shows, somewhere a reader will see it, that this is a role.
+     *
+     * <p>Anything other than a declaration or a name-to-name sub-property axiom puts the name
+     * in a position only a role can occupy — a restriction, a domain or range, a
+     * characteristic, a chain. One hop up the hierarchy counts too, since the reader
+     * propagates a classification across a {@code ⊑} pair.
+     *
+     * <p>One hop rather than the transitive closure, deliberately. Getting this wrong in the
+     * direction of "no evidence" costs one redundant line; getting it wrong the other way
+     * loses a sub-property axiom. A deeper chain than one hop simply gets the line.
+     */
+    private boolean hasRoleEvidence(OWLEntity entity) {
+        if (usedAsARole(entity)) return true;
+        OWLDataFactory df = currentOntology.getOWLOntologyManager().getOWLDataFactory();
+        IRI iri = entity.getIRI();
+        // The supers are carried as entities, not IRIs, because that is what can be looked
+        // up in an index — see {@link #usedAsARole}. They are properties of the same kind as
+        // the sub, which is what the axiom type already guarantees.
+        Stream<OWLEntity> supers = entity.isOWLDataProperty()
+            ? currentOntology.dataSubPropertyAxiomsForSubProperty(df.getOWLDataProperty(iri))
+                .map(OWLSubDataPropertyOfAxiom::getSuperProperty)
+                .filter(sup -> !sup.isAnonymous())
+                .map(sup -> (OWLEntity) sup.asOWLDataProperty())
+            : currentOntology.objectSubPropertyAxiomsForSubProperty(df.getOWLObjectProperty(iri))
+                .map(OWLSubObjectPropertyOfAxiom::getSuperProperty)
+                .filter(sup -> !sup.isAnonymous())
+                .map(sup -> (OWLEntity) sup.getNamedProperty());
+        return supers.anyMatch(this::usedAsARole);
+    }
+
+    /**
+     * Whether any axiom puts this entity where only a role can go.
+     *
+     * <p>Takes an entity rather than an IRI, which matters a great deal. OWL API indexes
+     * referencing axioms by entity; given an IRI it cannot use that index, and instead
+     * streams every axiom in the ontology into a set — four full passes, eagerly, so even
+     * {@code anyMatch} cannot cut it short. Asking per property then costs a scan of the
+     * whole document, which made writing quadratic: 32 000 properties under one super took
+     * 99s against 0.9s before this mechanism existed, each doubling roughly quadrupling.
+     *
+     * <p>The properties have to be <em>capitalised</em> for that measurement, and the same
+     * goes for reproducing it. A lower-case object property makes {@code readerCanGuessRole}
+     * true, so {@link #hasRoleEvidence} is never asked and nothing here runs: 32 000 of those
+     * emit one kind statement between them and take no measurable time. Leaving the case out
+     * is what made this figure look invented — the obvious fixture built {@code p0…pN} and
+     * measured a path it never entered.
+     *
+     * <p>It is also the more accurate question. A class axiom mentioning the same name is
+     * not evidence that the name is a role, and the IRI form counted it as such.
+     *
+     * <p>Memoised for the document being written, because {@link #hasRoleEvidence} looks one
+     * hop up the hierarchy, so every property under a shared super asks about that same
+     * super. Cleared with the rest of the per-document state in {@link #storeOntology}.
+     */
+    private boolean usedAsARole(OWLEntity entity) {
+        Boolean known = roleEvidence.get(entity);
+        if (known != null) return known;
+        boolean data = entity.isOWLDataProperty();
+        boolean answer = currentOntology.referencingAxioms(entity)
+            .anyMatch(ax -> pinsTheKind(ax, data));
+        roleEvidence.put(entity, answer);
+        return answer;
+    }
+
+    /** Whether this class is a direct sub-class of a name that is both a class and a property. */
+    private boolean subsumedByAPun(IRI iri) {
+        OWLDataFactory df = currentOntology.getOWLOntologyManager().getOWLDataFactory();
+        return currentOntology.subClassAxiomsForSubClass(df.getOWLClass(iri))
+            .map(OWLSubClassOfAxiom::getSuperClass)
+            .filter(sup -> !sup.isAnonymous())
+            .map(sup -> sup.asOWLClass().getIRI())
+            .anyMatch(sup -> currentOntology.containsObjectPropertyInSignature(sup)
+                || currentOntology.containsDataPropertyInSignature(sup));
+    }
+
+    /**
+     * Whether the ontology already states {@code SubClassOf(X, owl:Thing)}, which the
+     * ordinary axiom renderer writes as {@code X ⊑ ⊤} — the identical line. Without this
+     * check both sources fire and the statement is written twice.
+     */
+    private boolean thingSubsumptionExists(IRI iri) {
+        // Indexed by sub-class. Streaming every SUBCLASS_OF axiom per candidate made writing
+        // quadratic — 190s for 100 000 lower-case-named classes against 2s before.
+        //
+        // Lower-case *and* in guessable role pairs, for that measurement and for reproducing
+        // it: what brings a class here is `classContradictsCase`, which needs both halves of
+        // a `⊑` to look like roles. 100 000 lower-case classes that are not paired that way
+        // never reach this at all, which is the other half of why these figures looked
+        // unreproducible.
+        OWLDataFactory df = currentOntology.getOWLOntologyManager().getOWLDataFactory();
+        return currentOntology.subClassAxiomsForSubClass(df.getOWLClass(iri))
+            .anyMatch(ax -> ax.getSuperClass().isOWLThing());
+    }
+
+    /** Whether a name's local part begins with an upper-case letter. */
+    private static boolean startsUpperCase(String name) {
+        String local = localPartOf(name);
+        return !local.isEmpty() && Character.isUpperCase(local.charAt(0));
+    }
+
+    private static String localPartOf(String name) {
+        int colon = name.lastIndexOf(':');
+        return colon < 0 ? name : name.substring(colon + 1);
     }
 
     /**
@@ -218,6 +944,138 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
                 }
             });
         return wrote[0];
+    }
+
+    /**
+     * Gives a prefix to every namespace the document uses but does not declare.
+     *
+     * <p>Writing a name needs a prefix that covers its IRI. When none did, the renderer fell
+     * through to the bare local part and threw the namespace away — and a bare name is read
+     * back into the default namespace, so the entity silently became a different entity:
+     *
+     * <pre>
+     * SubClassOf(:C &lt;http://other.example.com/vocab#Person&gt;)
+     *   &rarr; C &sqsube; Person
+     *   &rarr; SubClassOf(:C :Person)        // :Person is now in the document's own namespace
+     * </pre>
+     *
+     * <p>Any ontology that names anything outside its own namespace hit this, which is most
+     * ontologies that import or align with another — and it was silent in both directions,
+     * so nothing in the output showed that a namespace had been dropped.
+     *
+     * <p>Minted names are {@code ns1:}, {@code ns2:} and so on, assigned in namespace order
+     * so that the same document always produces the same names, and skipping any name the
+     * document has already used for something else.
+     */
+    private static void declareUncoveredNamespaces(OWLOntology o, Map<String, String> prefixes) {
+        Collection<String> covered = prefixes.values();
+        Set<String> uncovered = new TreeSet<>();
+        namesWritten(o).forEach(iri -> {
+            String namespace = namespaceToCover(iri);
+            // Compared exactly. Asking whether any declared prefix is a leading substring of
+            // the whole IRI says yes far too often: with `ex:` bound to
+            // `http://example.org/ex/`, the IRI `http://example.org/ex/deep#B` counted as
+            // covered, so nothing was minted for `.../deep#` and the name went out as
+            // `ex:deep#B` — where `#B` begins a comment. The class was lost, a comment was
+            // invented, and the document no longer parsed.
+            if (!covered.contains(namespace)) {
+                uncovered.add(namespace);
+            }
+        });
+        // A name the grammar keeps for itself cannot be written bare, so the namespace it
+        // sits in needs a prefix other than the default to spell it with. Only the default
+        // namespace is affected: every other name is written prefixed already.
+        String defaultNamespace = prefixes.get(":");
+        if (defaultNamespace != null && !hasNonDefaultPrefix(prefixes, defaultNamespace)
+                && namesWritten(o).anyMatch(iri -> DLESyntaxObjectRenderer
+                    .isReservedLocalName(iri.getRemainder().orElse("")))) {
+            uncovered.add(defaultNamespace);
+        }
+
+        int next = 1;
+        for (String namespace : uncovered) {
+            String name;
+            do {
+                name = "ns" + next++ + ":";
+            } while (prefixes.containsKey(name));
+            prefixes.put(name, namespace);
+        }
+    }
+
+    /**
+     * The namespace a name needs a prefix for.
+     *
+     * <p>{@link IRI#getNamespace} splits so that the remainder is an NCName, and a
+     * digit-initial local part is not one: for {@code <http://snomed.info/id/762705008>} it
+     * hands back the whole IRI and an empty remainder. Minting for that produces a prefix
+     * with nothing after the colon — {@code ns1: \u2291 A} — which does not parse. DLe writes
+     * such a name with an explicit prefix and colon ({@code sct:762705008}), so what has to
+     * be covered is the namespace up to the last separator.
+     *
+     * <p>The loose leading-substring test this replaced hid that: any declared prefix that
+     * happened to be a leading substring of the full IRI counted, so nothing was minted and
+     * nothing went wrong until the namespace really was uncovered.
+     */
+    private static String namespaceToCover(IRI iri) {
+        String full = iri.toString();
+        // The latest split that leaves a tail the lexer will accept. Taking the OWL API's own
+        // split instead produced local parts DLe cannot write: it splits so the remainder is
+        // an NCName, where a dot is legal — so `<...#A.B>` gave the remainder `A.B`, which
+        // reads back as a restriction over `A`, and `<...#762705008>` gave an *empty*
+        // remainder and the whole IRI as the namespace, which minted a prefix with nothing
+        // after the colon. Both wrote a document this reader cannot read.
+        // Forwards, so the *longest* spellable tail wins: `<http://snomed.info/id/762705008>`
+        // splits at the last slash and keeps the whole identifier, rather than shortening to
+        // a one-character tail that would also have been legal.
+        for (int cut = 1; cut < full.length(); cut++) {
+            if (DLESyntaxObjectRenderer.isSpellableLocalName(full.substring(cut))) {
+                return full.substring(0, cut);
+            }
+        }
+        // No tail is spellable, which happens when the IRI ends in a character no name may
+        // contain — `<...#>` or `<.../A.>`. Nothing can be minted that helps; the existing
+        // fallback writes it and the reader refuses it, loudly, which is the honest outcome.
+        return iri.getNamespace();
+    }
+
+    /**
+     * Whether a prefix uses a conventional label for some other namespace.
+     *
+     * <p>{@code owl:}, {@code rdf:}, {@code rdfs:}, {@code xsd:}, {@code xml:} and
+     * {@code dle:} have fixed meanings every reader assumes. A document may bind one of them
+     * elsewhere and DLe keeps that binding, minting a fresh prefix for the real namespace so
+     * both survive. Other writers cannot do that — handed the binding they abbreviate the
+     * real vocabulary with it — so the command asks this before passing prefixes on.
+     *
+     * <p>Public because the question belongs here, beside the map that answers it, rather
+     * than being restated by every caller. The map itself stays package-private.
+     */
+    public static boolean rebindsConventionalPrefix(String label, String namespace) {
+        String conventional = DLE_DEFAULT_PREFIXES.get(label);
+        return conventional != null && !conventional.equals(namespace);
+    }
+
+    /** Whether some prefix other than the default already covers this namespace. */
+    private static boolean hasNonDefaultPrefix(Map<String, String> prefixes, String namespace) {
+        return prefixes.entrySet().stream()
+            .anyMatch(e -> !":".equals(e.getKey()) && namespace.equals(e.getValue()));
+    }
+
+    /**
+     * Every IRI this document will write as a name.
+     *
+     * <p>The signature covers entities. Annotation assertions are the other source: both a
+     * subject and an IRI-valued object may name something the signature never mentions.
+     */
+    private static Stream<IRI> namesWritten(OWLOntology o) {
+        Stream<IRI> entities = o.signature().map(OWLEntity::getIRI);
+        Stream<IRI> annotationSubjects = o.axioms(AxiomType.ANNOTATION_ASSERTION)
+            .map(OWLAnnotationAssertionAxiom::getSubject)
+            .filter(IRI.class::isInstance).map(IRI.class::cast);
+        Stream<IRI> annotationValues = o.axioms(AxiomType.ANNOTATION_ASSERTION)
+            .map(OWLAnnotationAssertionAxiom::getValue)
+            .filter(IRI.class::isInstance).map(IRI.class::cast);
+        return Stream.concat(entities, Stream.concat(annotationSubjects, annotationValues));
     }
 
     /**
@@ -300,6 +1158,17 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
     @Nullable
     private OWLEntity currentEntity;
     private final List<OWLAxiom> heldAxioms = new ArrayList<>();
+    /**
+     * Kind statements for the block being written, held for the same sort as its axioms.
+     *
+     * <p>They used to be printed straight out, above the block. That put a line in a place
+     * the equivalent axiom would never be rendered: {@code X ⊑ ⊤} comes back from the reader
+     * as a real {@code SubClassOf(X, owl:Thing)}, and on the next write it was sorted into
+     * the block instead — so the first write and the second disagreed, and writing was not
+     * idempotent. Sorting the statement by the same text that the axiom will produce makes
+     * the two passes agree.
+     */
+    private final List<String> pendingKindStatements = new ArrayList<>();
     private boolean holdingAxioms;
 
     @Override
@@ -310,17 +1179,123 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
 
     @Override
     protected void writeAxiom(OWLEntity entity, OWLAxiom axiom, PrintWriter writer) {
+        if (writtenAxioms != null) writtenAxioms.add(axiom);
         if (holdingAxioms) {
             heldAxioms.add(axiom);
             return;
         }
-        super.writeAxiom(entity, axiom, writer);
+        // Rendered here rather than by the base class, so that a comment carried on the
+        // axiom is written with it. Several paths reach an axiom without holding it — the
+        // annotation sweep, the direct writes — and each of them would otherwise drop the
+        // comment entirely, which is worse than the misplacement it replaced.
+        Emission emission = Emission.of(getRendering(entity, axiom), axiom);
+        emission.before.forEach(writer::println);
+        lastRenderingEmpty = emission.statement.isEmpty();
+        if (!emission.statement.isEmpty()) writer.write(emission.text());
+    }
+
+    /**
+     * Writes the axioms the entity-block pass never reached.
+     *
+     * <p>An axiom goes under one of the entities the base storer walks — classes, object and
+     * data properties, individuals. An axiom that mentions none of them has no block, and
+     * was simply lost: a {@code DatatypeDefinition} is about a datatype, and
+     * {@code DifferentIndividuals(_:x _:y)} is about nothing named at all.
+     *
+     * <p>Sorted by their rendered text, so a document does not depend on the order a hash
+     * set happened to produce. An axiom that renders to nothing is skipped rather than
+     * written as a blank line — that is how the writer declines the forms it cannot spell,
+     * such as a one-property disjointness, and this pass must not undo those decisions.
+     */
+    /**
+     * Whether the document says enough for `ap ⊑ bp` to read back as an annotation axiom.
+     *
+     * <p>One of the two names has to be recognisable as an annotation property from
+     * something else the document contains — a domain, a range, or being the property of an
+     * annotation assertion. The reader propagates the kind from there along the subsumption,
+     * exactly as it does for the other two property kinds.
+     */
+    private boolean annotationKindIsRecoverable(OWLSubAnnotationPropertyOfAxiom axiom) {
+        if (currentOntology == null) return false;
+        return establishesAnnotationKind(axiom.getSubProperty())
+            || establishesAnnotationKind(axiom.getSuperProperty());
+    }
+
+    private boolean establishesAnnotationKind(OWLAnnotationProperty property) {
+        return currentOntology.annotationPropertyDomainAxioms(property).findAny().isPresent()
+            || currentOntology.annotationPropertyRangeAxioms(property).findAny().isPresent()
+            || currentOntology.axioms(AxiomType.ANNOTATION_ASSERTION)
+                .anyMatch(ax -> property.equals(ax.getProperty()));
+    }
+
+    private void writeAxiomsWithNoBlock(OWLOntology o, PrintWriter writer) {
+        if (writtenAxioms == null) return;
+        // Logical axioms, plus the annotation-property domain and range — which are not
+        // logical axioms, so this pass never saw them and the renderer's working visit methods
+        // for them were never reached. A document whose only content was an
+        // AnnotationPropertyDomain came out empty, at exit 0.
+        //
+        // SubAnnotationPropertyOf only when the reader can tell what it is. Its DLe spelling
+        // is `ap ⊑ bp`, which is what a sub-property axiom between two object properties
+        // looks like, so on its own it reads back as one — changing the axiom type and
+        // punning the name across two property kinds, out of the OWL 2 DL profile. What
+        // settles it is the document saying elsewhere that one of the two names is an
+        // annotation property, through `@ann`, `domain` or `range`; the reader then
+        // propagates that along the edge. Where the document says none of those, the axiom
+        // is still dropped: losing an axiom is better than changing one.
+        List<String> lines = Stream.concat(
+                o.logicalAxioms().map(axiom -> (OWLAxiom) axiom),
+                Stream.concat(
+                    Stream.of(AxiomType.ANNOTATION_PROPERTY_DOMAIN,
+                              AxiomType.ANNOTATION_PROPERTY_RANGE)
+                        .flatMap(type -> o.axioms(type).map(axiom -> (OWLAxiom) axiom)),
+                    o.axioms(AxiomType.SUB_ANNOTATION_PROPERTY_OF)
+                        .filter(this::annotationKindIsRecoverable)
+                        .map(axiom -> (OWLAxiom) axiom)))
+            .filter(axiom -> !writtenAxioms.contains(axiom))
+            .map(axiom -> Emission.of(getRendering(null, axiom), axiom))
+            .filter(e -> e.statement != null && !e.statement.trim().isEmpty())
+            .sorted(Comparator.comparing(e -> e.statement))
+            .distinct()
+            // Comments first, then the statement they belong to.
+            .flatMap(e -> Stream.concat(e.before.stream(), Stream.of(e.text())))
+            .collect(Collectors.toCollection(java.util.ArrayList::new));
+        // Datatype kind statements go here rather than in an entity block, because the
+        // inherited renderer's entity loop has no datatype pass at all — which is why a
+        // datatype that is only declared had nothing written about it anywhere.
+        //
+        // The reader knows a built-in datatype by its namespace, and one the document
+        // *defines* by its definition. A name that is only declared is neither, so
+        // `⊤ ⊑ ∀d.T` came back as an object property range with T a class — the kind lost in
+        // both directions at once, silently.
+        //
+        // `T ⊑ rdfs:Literal` is the datatype counterpart of `C ⊑ ⊤` and
+        // `r ⊑ owl:topObjectProperty`: every datatype lies beneath OWL 2's top data range, so
+        // it asserts nothing that was not already true. Alone among the three it is not also
+        // an axiom — OWL has no datatype subsumption, only DatatypeDefinition, which is an
+        // equivalence and would say something far stronger — so the reader consumes it into a
+        // declaration and there is nothing to filter out afterwards.
+        String literal = topDataRangeName();
+        if (literal != null) {
+            o.datatypesInSignature()
+                .filter(dt -> datatypeKindNeedsStating(dt.getIRI()))
+                .map(dt -> shortFormOrNull(dt.getIRI()))
+                .filter(java.util.Objects::nonNull)
+                .map(dtName -> dtName + " ⊑ " + literal)
+                .sorted()
+                .forEach(lines::add);
+        }
+        if (lines.isEmpty()) return;
+        writer.println();
+        lines.forEach(writer::println);
+        // Comments on those axioms are emitted with them, above; see Emission.
     }
 
     @Override
     protected void beginWritingAxioms(OWLEntity entity, PrintWriter writer) {
         currentEntity = entity;
         heldAxioms.clear();
+        pendingKindStatements.clear();
         holdingAxioms = false;
         entityHadContent = false;
         // Suppress internal dle: entities — their labels are embedded inline in expressions.
@@ -340,6 +1315,10 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
 
         // Emit dle:comment annotations as # lines before the entity's logical axioms.
         if (writeComments(entity.getIRI(), currentOntology, writer)) {
+            entityHadContent = true;
+        }
+
+        if (writeKindStatements(entity)) {
             entityHadContent = true;
         }
 
@@ -415,25 +1394,78 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
     private void flushHeldAxioms(PrintWriter writer) {
         if (!holdingAxioms) return;
         holdingAxioms = false;
-        List<OWLAxiom> ordered = new ArrayList<>(heldAxioms);
-        heldAxioms.clear();
-
-        Map<OWLAxiom, String> rendered = new LinkedHashMap<>();
-        for (OWLAxiom axiom : ordered) {
-            rendered.put(axiom, getRendering(currentEntity, axiom));
+        List<Emission> lines = new ArrayList<>();
+        for (OWLAxiom axiom : heldAxioms) {
+            lines.add(Emission.of(getRendering(currentEntity, axiom), axiom));
         }
-        String own = ownName();
-        ordered.sort(Comparator
-            .comparingInt((OWLAxiom ax) -> startsWithName(rendered.get(ax), own) ? 0 : 1)
-            .thenComparing(ax -> rendered.getOrDefault(ax, ""))
-            .thenComparing(ax -> ax));
+        heldAxioms.clear();
+        // A kind statement is already the text an axiom would render to, so it joins the
+        // list as text and takes its place by the same rule. It carries no comment: nothing
+        // in the document wrote it.
+        for (String kindStatement : pendingKindStatements) {
+            lines.add(Emission.plain(kindStatement));
+        }
+        pendingKindStatements.clear();
 
-        for (OWLAxiom axiom : ordered) {
-            String text = rendered.getOrDefault(axiom, "");
+        // Sorted on the statement alone, so a comment stays with the statement it describes
+        // rather than being ordered by its own text.
+        String own = ownName();
+        lines.sort(Comparator
+            .comparingInt((Emission e) -> startsWithName(e.statement, own) ? 0 : 1)
+            .thenComparing(e -> e.statement));
+
+        for (Emission emission : lines) {
+            emission.before.forEach(writer::println);
             super.beginWritingAxiom(writer);
-            lastRenderingEmpty = text.isEmpty();
-            if (!text.isEmpty()) writer.write(text);
+            lastRenderingEmpty = emission.statement.isEmpty();
+            if (!emission.statement.isEmpty()) writer.write(emission.text());
             endWritingAxiom(writer);
+        }
+    }
+
+    /**
+     * One statement as it will be written, with whatever comments belong to it.
+     *
+     * <p>A comment is an annotation on the axiom, so the two have to travel together through
+     * the sort — and the sort has to key on the statement, or a comment would decide where
+     * its own statement goes.
+     */
+    private static final class Emission {
+        /** The rendered statement, and the sort key. */
+        private final String statement;
+        /** Comment lines to write above it. */
+        private final List<String> before;
+        /** An inline comment, written after it on the same line. */
+        @Nullable private final String inline;
+
+        private Emission(String statement, List<String> before, @Nullable String inline) {
+            this.statement = statement;
+            this.before = before;
+            this.inline = inline;
+        }
+
+        static Emission plain(String statement) {
+            return new Emission(statement, List.of(), null);
+        }
+
+        static Emission of(String statement, OWLAxiom axiom) {
+            List<String> before = new ArrayList<>();
+            String inline = null;
+            for (OWLAnnotation annotation : axiom.getAnnotations()) {
+                IRI property = annotation.getProperty().getIRI();
+                if (!(annotation.getValue() instanceof OWLLiteral)) continue;
+                String value = ((OWLLiteral) annotation.getValue()).getLiteral();
+                if (DLESyntaxAxiomVisitor.DLE_COMMENT_IRI.equals(property)) {
+                    for (String line : value.split("\n", -1)) before.add("# " + line);
+                } else if (DLESyntaxAxiomVisitor.DLE_INLINE_COMMENT_IRI.equals(property)) {
+                    inline = value;
+                }
+            }
+            return new Emission(statement, before, inline);
+        }
+
+        String text() {
+            return inline == null ? statement : statement + "  # " + inline;
         }
     }
 
@@ -448,10 +1480,24 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
      */
     @Nullable
     private String ownName() {
-        if (currentEntity == null) return null;
+        return currentEntity == null ? null : shortFormOrNull(currentEntity.getIRI());
+    }
+
+    /**
+     * This IRI's short form, or null if it has none.
+     *
+     * <p>An IRI with no declared prefix and no remainder — {@code <urn:isbn:123>} — cannot
+     * be spelled as a DLe name, and asking for one throws. That is the right answer where
+     * the name has to be written, and the renderer raises it there. It is the wrong answer
+     * for the two callers here, which only want to know <em>how</em> to write something they
+     * may well not write at all: an ordering preference and a kind statement. Neither is a
+     * reason to fail a save that would otherwise succeed.
+     */
+    @Nullable
+    private String shortFormOrNull(IRI iri) {
         try {
-            return renderer.shortForm(currentEntity.getIRI());
-        } catch (RuntimeException e) {
+            return renderer.shortForm(iri);
+        } catch (RuntimeException noShortForm) {
             return null;
         }
     }
@@ -479,7 +1525,6 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
     protected void endWritingOntology(OWLOntology ontology, PrintWriter writer) {
         // Write any annotation assertions whose subject was not a named entity
         // in the ontology signature (e.g. annotations on external IRIs, blank nodes).
-        // dle:comment annotations are internal and are never emitted standalone.
         Set<OWLAnnotationAssertionAxiom> already = writtenAnnotations != null
             ? writtenAnnotations : new HashSet<>();
         ontology.axioms(AxiomType.ANNOTATION_ASSERTION).sorted()
@@ -491,6 +1536,61 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
                 writeAxiom(null, ax, writer);
                 endWritingAxiom(writer);
             });
+
+        // A comment whose subject never got a block of its own would otherwise be dropped
+        // here: the entity-block pass never saw it, and this pass used to filter every
+        // dle:comment out as internal. That is silent loss of something the author wrote,
+        // so it is written as # lines instead. It loses its attachment — there is no
+        // statement left to sit above — but the text survives.
+        ontology.axioms(AxiomType.ANNOTATION_ASSERTION).sorted()
+            .filter(ax -> !already.contains(ax))
+            .filter(ax -> DLESyntaxAxiomVisitor.DLE_COMMENT_IRI.equals(ax.getProperty().getIRI())
+                       || DLESyntaxAxiomVisitor.DLE_INLINE_COMMENT_IRI.equals(ax.getProperty().getIRI()))
+            .forEach(ax -> {
+                if (ax.getValue() instanceof OWLLiteral) {
+                    writeCommentLines(((OWLLiteral) ax.getValue()).getLiteral(), writer);
+                }
+            });
+
+        // The document's own comments — which belong to no entity at all — are NOT written
+        // here. `endWritingOntology` runs before `writeAxiomsWithNoBlock`, so anything that
+        // pass emits would land beneath them, and a comment with a statement below it is read
+        // as that statement's comment: a document comment came back attached to whichever
+        // axiom happened to be written last. See writeDocumentComments, called after.
+    }
+
+    /**
+     * The document's own comments, written last of all.
+     *
+     * <p>Last because position decides ownership on the way back in: a comment is claimed by
+     * the statement below it. These belong to no statement, so nothing may follow them —
+     * and {@code endWritingOntology} is not the end, because
+     * {@link #writeAxiomsWithNoBlock} comes after it. Written from there, a document comment
+     * acquired an owner on the next read and stopped being a document comment at all.
+     */
+    private void writeDocumentComments(OWLOntology ontology, PrintWriter writer) {
+        ontology.annotations()
+            .filter(a -> DLESyntaxAxiomVisitor.DLE_COMMENT_IRI.equals(a.getProperty().getIRI()))
+            .sorted()
+            .forEach(a -> {
+                if (a.getValue() instanceof OWLLiteral) {
+                    writeCommentLines(((OWLLiteral) a.getValue()).getLiteral(), writer);
+                }
+            });
+    }
+
+    /**
+     * Writes a stored comment literal back out as one {@code #} line per line of it.
+     *
+     * <p>Followed by a blank line, matching what the entity-block path produces. Without it
+     * the same comment written through the two paths differed by one trailing newline, so a
+     * comment that moved from a block to here on one pass changed the file on the next.
+     */
+    private static void writeCommentLines(String literal, PrintWriter writer) {
+        for (String line : literal.split("\n", -1)) {
+            writer.println(line.isEmpty() ? "#" : "# " + line);
+        }
+        writer.println();
     }
 
     @Override

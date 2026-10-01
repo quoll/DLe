@@ -38,3 +38,15 @@ CHANGES.md
 owltx/data/
 
 .DS_Store
+
+# Local review notes, not part of the project
+docs/DEFECTS.md
+
+# Agent configuration, local to whoever is working here
+.claude/
+
+# A local shell note, not part of the project
+session.txt
+
+# A local variant of the owltx launcher, pointed at target/ instead of ~/.m2
+owltx/owltx-dev
