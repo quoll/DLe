@@ -220,7 +220,11 @@ public class DLEOntologyParser extends AbstractOWLParser {
         }
     }
 
-    /** Problems from the last parse that did not stop it; see {@link #ACTIVE_WARNINGS}. */
+    /**
+     * Problems from the last parse that did not stop it; see {@link #ACTIVE_WARNINGS}.
+     *
+     * @return the warnings in the order they were raised, empty if the parse raised none
+     */
     public List<String> getWarnings() {
         return warnings;
     }

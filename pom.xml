@@ -112,6 +112,12 @@
                     <version>3.6.3</version>
                     <configuration>
                         <encoding>UTF-8</encoding>
+                        <!-- A warning here is a missing @param, @return or comment on
+                             something published. Those accumulate silently otherwise: the
+                             release profile is the only thing that ran javadoc, and nothing
+                             read its output, so fourteen of them were found by looking at a
+                             deploy log. Failing the build is what keeps the count at zero. -->
+                        <failOnWarnings>true</failOnWarnings>
                     </configuration>
                 </plugin>
                 <plugin>

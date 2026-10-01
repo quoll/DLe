@@ -109,6 +109,10 @@ public class Main {
      * would have taken the test JVM with it. That is why the message formatters here were
      * thoroughly tested and the guards that invoke them were not tested at all — reverting the
      * guard around an unloadable input left the whole module green.
+     *
+     * @param args the command line, as {@code --help} describes it
+     * @throws Exception if the conversion fails in a way the command has no message for, so
+     *                   that the JVM reports it rather than this swallowing it silently
      */
     public static void main(String[] args) throws Exception {
         try {

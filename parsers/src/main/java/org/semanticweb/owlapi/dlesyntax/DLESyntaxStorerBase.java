@@ -537,6 +537,8 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
      *
      * <p>Cleared when a store begins as well, so an undrained warning from an earlier one
      * cannot be attributed to this document.
+     *
+     * @return the warnings raised since the last call, in order, empty if there were none
      */
     public static List<String> takeWarnings() {
         List<String> out = List.copyOf(ACTIVE_WARNINGS.get());
@@ -1049,6 +1051,11 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
      *
      * <p>Public because the question belongs here, beside the map that answers it, rather
      * than being restated by every caller. The map itself stays package-private.
+     *
+     * @param label     the prefix label, without its trailing colon
+     * @param namespace the namespace this document binds that label to
+     * @return true when DLe reserves the label for some other namespace, so passing the
+     *         binding to another writer would have it abbreviate the wrong vocabulary
      */
     public static boolean rebindsConventionalPrefix(String label, String namespace) {
         String conventional = DLE_DEFAULT_PREFIXES.get(label);
@@ -1157,6 +1164,14 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
      */
     @Nullable
     private OWLEntity currentEntity;
+    /**
+     * The current entity's axioms, kept back so the block can be sorted before it is written.
+     *
+     * <p>The inherited storer writes each axiom as it reaches it, which makes the order of a
+     * block depend on whatever order the ontology yielded — so two writes of one ontology
+     * disagreed. Holding them lets {@code flushHeldAxioms} sort on the rendered statement,
+     * which is the only text both passes are guaranteed to produce alike.
+     */
     private final List<OWLAxiom> heldAxioms = new ArrayList<>();
     /**
      * Kind statements for the block being written, held for the same sort as its axioms.
@@ -1169,6 +1184,13 @@ public abstract class DLESyntaxStorerBase extends DLSyntaxStorerBase {
      * the two passes agree.
      */
     private final List<String> pendingKindStatements = new ArrayList<>();
+    /**
+     * Whether axioms are being collected for the current block rather than written straight out.
+     *
+     * <p>Not every path through the writer holds: the annotation sweep and the no-block pass
+     * reach an axiom with no entity whose block it belongs to, and those write immediately.
+     * The flag is what tells {@code writeAxiom} which of the two it is in.
+     */
     private boolean holdingAxioms;
 
     @Override
