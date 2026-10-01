@@ -95,4 +95,32 @@
             </plugin>
         </plugins>
     </build>
+
+    <profiles>
+        <profile>
+            <id>release</id>
+            <build>
+                <plugins>
+                    <!-- owltx is the command-line tool, and it is shipped as an attachment on
+                         the GitHub release rather than published to Maven Central. The jar is
+                         shaded: OWLAPI, ANTLR and Apache HttpClient are all inside it, which
+                         is what makes it runnable with `java -jar` and exactly what should not
+                         go to Central, where a consumer resolving it would get a second copy
+                         of everything.
+
+                         The `publish` goal is non-aggregator and bound to `deploy`, so it runs
+                         once per module and skipping it here leaves the parent and the parsers
+                         artifact publishing as before. `dlextended-parsers` is the library, and
+                         that is the thing anyone depends on. -->
+                    <plugin>
+                        <groupId>org.sonatype.central</groupId>
+                        <artifactId>central-publishing-maven-plugin</artifactId>
+                        <configuration>
+                            <skipPublishing>true</skipPublishing>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
 </project>
