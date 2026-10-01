@@ -1,0 +1,89 @@
+name: release
+
+# Tag-driven, so a release is always built from a tag rather than from someone's
+# working tree. Pushing `v0.5.0` builds that tag, checks the artifact it produced
+# really is 0.5.0, and publishes a GitHub release with the jars attached.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to build and release"
+        required: true
+
+permissions:
+  contents: write
+
+concurrency:
+  # Releases are not interchangeable, so a second one waits rather than
+  # cancelling the first.
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+          fetch-depth: 0
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+
+      - name: The version comes from the tag
+        id: v
+        run: |
+          tag="${{ inputs.tag || github.ref_name }}"
+          echo "tag=$tag"       >> "$GITHUB_OUTPUT"
+          echo "num=${tag#v}"   >> "$GITHUB_OUTPUT"
+
+      - name: Build and test
+        run: mvn -B --no-transfer-progress clean install
+
+      # The build is the version check. If the tag says 0.5.0 and the reactor
+      # produced owltx-0.5.0.jar, the poms agree by construction — no need to ask
+      # Maven what it thinks, which would mean resolving the help plugin. The
+      # VERSION file is checked separately because nothing in the build reads it,
+      # so it is the one place a version can drift unnoticed.
+      - name: The artifacts are the version the tag claims
+        run: |
+          num="${{ steps.v.outputs.num }}"
+          cli="owltx/target/owltx-$num.jar"
+          lib="parsers/target/dlextended-parsers-$num.jar"
+          for f in "$cli" "$lib"; do
+            test -s "$f" || { echo "::error::$f was not built — tag and poms disagree"; exit 1; }
+          done
+          file=$(cat owltx/VERSION)
+          test "$file" = "$num" || {
+            echo "::error::owltx/VERSION says $file, tag implies $num"; exit 1; }
+          echo "cli=$cli" >> "$GITHUB_OUTPUT"
+          echo "lib=$lib" >> "$GITHUB_OUTPUT"
+        id: art
+
+      # A release claiming to ship a runnable CLI should have run it.
+      - name: The attached CLI runs
+        run: |
+          java -jar "${{ steps.art.outputs.cli }}" --help
+          java -jar "${{ steps.art.outputs.cli }}" \
+            owltx/examples/syntax-coverage.dle /tmp/out.dle --format dle
+          test -s /tmp/out.dle
+
+      # `gh` is preinstalled on the runner, so this needs no third-party action
+      # holding contents:write.
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ steps.v.outputs.tag }}" \
+            --title "DLe ${{ steps.v.outputs.num }}" \
+            --generate-notes \
+            "${{ steps.art.outputs.cli }}" \
+            "${{ steps.art.outputs.lib }}"

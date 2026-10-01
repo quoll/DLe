@@ -1,4 +1,7 @@
 # DLe: Description Logic - Extended
+
+[![build](https://github.com/quoll/DLe/actions/workflows/build.yml/badge.svg)](https://github.com/quoll/DLe/actions/workflows/build.yml)
+[![release](https://img.shields.io/github/v/release/quoll/DLe?sort=semver)](https://github.com/quoll/DLe/releases/latest)
 The DLe module reads and writes Description Logic (DL) with Extensions. DL is a mathematical notation for describing data structures. It is ideal for communicating the structure and behavior of data for Large Language Models (LLMs).
 
 DL provides a compact, formal, and declarative way to describe ontologies, data models, and relationships, while remaining readable to both humans and machines. The syntax is described in [the Wiki](https://github.com/quoll/DLe/wiki).
@@ -17,7 +20,7 @@ This can be added to the ontology manager and used like any other syntax of OWL.
         <dependency>
             <groupId>io.github.quoll.owlapi</groupId>
             <artifactId>dlextended-parsers</artifactId>
-            <version>0.4.1</version>
+            <version>0.5.0</version>
         </dependency>
 ```
 
@@ -100,6 +103,8 @@ DLe introduces a small number of extensions:
  * ≝ (U+225D) for defining symbols or predicates (outside DL semantics)
  * predicate restrictions of the form `∃r₁,…,rₙ.P` (over multiple role values)
  * annotations (e.g. `@label`, `@db`) for metadata and database mapping
+ * narrowed datatypes, as `xsd:integer[≥1 ⊓ ≤40]` (OWL facets)
+ * `C ⊑ key(r₁,…,rₙ)` for the roles that identify an instance (OWL `hasKey`)
 
 These are designed to feel like natural continuations of DL, rather than a separate language.
 
