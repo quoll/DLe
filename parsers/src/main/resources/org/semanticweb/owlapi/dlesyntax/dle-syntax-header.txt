@@ -32,5 +32,5 @@
 # ≝  — defines a symbol or predicate; right-hand side is not DL and is not required to be valid OWL
 # ∃r₁,…,rₙ.P  — predicate restriction: P(r₁,…,rₙ) holds over the role values
 # C ⊑ key(r₁,…,rₙ)  — r₁…rₙ together identify an instance of C
-# xsd:integer[≥1 ⊓ ≤40], [xsd:string ⊓ [matches "[A-Z]{3}"]]  — narrowed datatypes; matches is xsd:pattern
+# name[facet ⊓ …]  — narrows a datatype: xsd:integer[≥1 ⊓ ≤40], xsd:string[matches "[A-Z]{3}"]; matches is xsd:pattern
 

@@ -1804,7 +1804,7 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
         // [datatype ⊓ [facet ...]] is a datatype restriction
         if (atom instanceof DLESyntaxParser.DataRangeAtomContext) return true;
         // xsd:integer[≥1 ⊓ ≤5] compact numeric restriction
-        if (atom instanceof DLESyntaxParser.NumericDataRangeAtomContext) return true;
+        if (atom instanceof DLESyntaxParser.RestrictedDatatypeAtomContext) return true;
         // (xsd:integer ⊔ xsd:string) parenthesised union/intersection of data ranges
         if (atom instanceof DLESyntaxParser.ParenAtomContext) {
             return isDataClassExpr(((DLESyntaxParser.ParenAtomContext) atom).classExpr());

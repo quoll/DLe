@@ -126,7 +126,7 @@ connectsTo ∘ (partOfLine)⁻ ⊑ connectsToLineOf
 ############################################################
 
 (≥1 stationCode) ⊑ Station
-⊤ ⊑ ∀stationCode.[xsd:string ⊓ [matches "[A-Z]{3}"]]
+⊤ ⊑ ∀stationCode.xsd:string[matches "[A-Z]{3}"]
 Functional(stationCode)
 Station ⊑ key(stationCode)
 @db stationCode "station_code"

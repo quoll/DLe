@@ -217,7 +217,7 @@ cardSymbol
     ;
 
 atom
-    : name '[' numericFacet (INTERSECTION numericFacet)* ']'  # NumericDataRangeAtom
+    : name '[' facetItem (INTERSECTION facetItem)* ']'  # RestrictedDatatypeAtom
     // A property expression used where a class expression is expected, as in
     // `contains ≡ locatedIn⁻`. Delegating to propertyExpr rather than matching
     // `name INVERSE` is what gives class positions the same parenthesis and
@@ -234,13 +234,28 @@ atom
     | '[' datatypeRestriction ']'         # DataRangeAtom
     ;
 
-// Compact numeric facet: ≥1, ≤5, >0, <10  (inclusive/exclusive bounds)
-numericFacet
-    : (MIN | MAX | LT | GT) NUMBER
+// One facet, in either of the two spellings a facet has.
+//
+// An ordered bound on a number is written with its operator — `≥1`, `<10` — because that is
+// how a bound is written everywhere else and the keyword adds nothing. Every other facet
+// needs its name, and a value that is not a bare number needs quoting, so those take the
+// keyword form: `matches "[A-Z]{3}"`, `minLength 3`.
+//
+// Both live in the one bracket after the datatype, and may be mixed:
+// `xsd:integer[≥1 ⊓ totalDigits 3]`. There used to be a second shape for the keyword form —
+// `[xsd:string ⊓ [matches "…"]]`, with the datatype inside and a bracket per facet — so one
+// concept had two notations and an author had to know which facets went in which. That shape
+// is still read, so nothing already written stops loading, but it is not written any more.
+facetItem
+    : (MIN | MAX | LT | GT) NUMBER        # ComparisonFacet
+    | name (literal | '(' literal ')')    # KeywordFacet
     ;
 
-// A datatype restriction: base type plus one or more facet constraints.
-// Example: [xsd:string ⊓ [matches "..."]]
+// The older shape for a datatype restriction: base type inside the bracket, and a bracket
+// per facet. Example: [xsd:string ⊓ [matches "..."]]
+//
+// Read but never written — `xsd:string[matches "..."]` says the same thing in one bracket,
+// and two notations for one concept is what the facet syntax was unified to remove.
 datatypeRestriction
     : name (INTERSECTION '[' facet ']')+
     ;

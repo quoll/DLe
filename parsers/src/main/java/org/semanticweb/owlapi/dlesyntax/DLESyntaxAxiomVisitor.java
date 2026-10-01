@@ -2547,23 +2547,42 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
 
     // ── Datatype restrictions ─────────────────────────────────────────────────
 
+    /**
+     * A narrowed datatype: {@code xsd:integer[≥1 ⊓ ≤40]}, {@code xsd:string[matches "…"]}.
+     *
+     * <p>One bracket after the datatype, holding facets in either spelling and in any
+     * mixture. The two spellings used to be two shapes — the keyword facets lived in
+     * {@code [xsd:string ⊓ [matches "…"]]}, with the datatype inside — so one concept had
+     * two notations and an author had to know which facets belonged to which. That shape is
+     * still read; it is no longer written.
+     */
     @Override
-    public OWLObject visitNumericDataRangeAtom(DLESyntaxParser.NumericDataRangeAtomContext ctx) {
+    public OWLObject visitRestrictedDatatypeAtom(
+            DLESyntaxParser.RestrictedDatatypeAtomContext ctx) {
         OWLDatatype base = df.getOWLDatatype(expandName(ctx.name()));
-        List<OWLFacetRestriction> facets = ctx.numericFacet().stream()
-            .map(f -> {
-                OWLFacet facet = f.MIN() != null ? OWLFacet.MIN_INCLUSIVE
-                              : f.MAX() != null ? OWLFacet.MAX_INCLUSIVE
-                              : f.GT()  != null ? OWLFacet.MIN_EXCLUSIVE
-                              :                   OWLFacet.MAX_EXCLUSIVE;
-                String numText = f.NUMBER().getText();
-                OWLLiteral value = numText.contains(".")
-                    ? df.getOWLLiteral(Double.parseDouble(numText))
-                    : integerLiteral(numText);
-                return df.getOWLFacetRestriction(facet, value);
-            })
+        List<OWLFacetRestriction> facets = ctx.facetItem().stream()
+            .map(this::facetRestriction)
             .collect(Collectors.toList());
         return df.getOWLDatatypeRestriction(base, facets);
+    }
+
+    /** One facet, from whichever of the two spellings it was written in. */
+    private OWLFacetRestriction facetRestriction(DLESyntaxParser.FacetItemContext item) {
+        if (item instanceof DLESyntaxParser.ComparisonFacetContext) {
+            DLESyntaxParser.ComparisonFacetContext f =
+                (DLESyntaxParser.ComparisonFacetContext) item;
+            OWLFacet facet = f.MIN() != null ? OWLFacet.MIN_INCLUSIVE
+                          : f.MAX() != null ? OWLFacet.MAX_INCLUSIVE
+                          : f.GT()  != null ? OWLFacet.MIN_EXCLUSIVE
+                          :                   OWLFacet.MAX_EXCLUSIVE;
+            String numText = f.NUMBER().getText();
+            OWLLiteral value = numText.contains(".")
+                ? df.getOWLLiteral(Double.parseDouble(numText))
+                : integerLiteral(numText);
+            return df.getOWLFacetRestriction(facet, value);
+        }
+        DLESyntaxParser.KeywordFacetContext f = (DLESyntaxParser.KeywordFacetContext) item;
+        return df.getOWLFacetRestriction(facetFromName(f.name()), buildFacetLiteral(f.literal()));
     }
 
     @Override

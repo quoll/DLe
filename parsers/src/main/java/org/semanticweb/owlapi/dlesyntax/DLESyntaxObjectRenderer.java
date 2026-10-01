@@ -1013,35 +1013,31 @@ public class DLESyntaxObjectRenderer extends DLSyntaxObjectRenderer {
     public void visit(OWLDatatypeRestriction restriction) {
         List<OWLFacetRestriction> facets = restriction.facetRestrictions()
             .sorted().collect(java.util.stream.Collectors.toList());
-        boolean compact = !facets.isEmpty()
-            && facets.stream().allMatch(DLESyntaxObjectRenderer::isCompactFacet);
-        if (compact) {
-            // xsd:integer[≥1 ⊓ ≤5]
-            write(shortFormIRI(restriction.getDatatype().getIRI()));
-            write("[");
-            for (int i = 0; i < facets.size(); i++) {
-                if (i > 0) write(" \u2293 ");
-                OWLFacetRestriction fr = facets.get(i);
+        // One shape: the datatype, then one bracket holding every facet.
+        //
+        // There were two, and which one you got depended on the facets: all-ordered-numeric
+        // gave `xsd:integer[≥1 ⊓ ≤5]`, anything else gave `[xsd:string ⊓ [matches "…"]]` with
+        // the datatype inside and a bracket apiece. Two notations for one concept, and an
+        // author had to know which facets went in which — `xsd:string[matches "…"]` was a
+        // syntax error. The spelling of each facet is now chosen facet by facet rather than
+        // for the whole restriction, so a mixture is expressible and the shape never varies.
+        write(shortFormIRI(restriction.getDatatype().getIRI()));
+        write("[");
+        for (int i = 0; i < facets.size(); i++) {
+            if (i > 0) write(" \u2293 ");
+            OWLFacetRestriction fr = facets.get(i);
+            if (isCompactFacet(fr)) {
                 write(numericFacetSymbol(fr.getFacet()));
-                // Safe because isCompactFacet has established that this value is spelled
-                // as a NUMBER; the compact bracket carries no other form. Quoting it here
-                // instead would emit `[\u2265"1"]`, which the grammar rejects.
+                // Unquoted, which isCompactFacet has established is safe: the operator form
+                // carries a bare NUMBER, and `[\u2265"1"]` is not something the grammar reads.
                 write(fr.getFacetValue().getLiteral());
-            }
-            write("]");
-        } else {
-            // [xsd:string ⊓ [matches "..."]]
-            write("[");
-            write(shortFormIRI(restriction.getDatatype().getIRI()));
-            facets.forEach(fr -> {
-                write(" \u2293 [");
+            } else {
                 write(facetKeyword(fr.getFacet()));
                 write(" ");
                 write(renderLiteral(fr.getFacetValue()));
-                write("]");
-            });
-            write("]");
+            }
         }
+        write("]");
     }
 
     /**

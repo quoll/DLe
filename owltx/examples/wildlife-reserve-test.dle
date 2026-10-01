@@ -238,7 +238,7 @@ Functional(name)
 
 # `matches` references the OWL xsd:pattern facet. `key()` references owl:hasKey.
 (≥1 id) ⊑ WildlifeConcept
-⊤ ⊑ ∀id.[xsd:string ⊓ [matches "[A-Z]{3}-[0-9]{6}"]]
+⊤ ⊑ ∀id.xsd:string[matches "[A-Z]{3}-[0-9]{6}"]
 WildlifeConcept ⊑ (=1 id.xsd:string)
 Functional(id)
 WildlifeConcept ⊑ key(id)
