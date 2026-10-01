@@ -29,6 +29,13 @@ public class DLESemanticException extends OWLParserException {
         return "DLE semantic error at " + line + ":" + column + " — " + message;
     }
 
+    /**
+     * A failure at a known position in the document.
+     *
+     * @param message what is wrong, without a position; {@link #at} adds that
+     * @param line    the 1-based line, or 0 and below when the position is unknown
+     * @param column  the 0-based column within that line
+     */
     public DLESemanticException(String message, int line, int column) {
         // Deliberately not the (message, line, column) superclass constructor:
         // that makes OWLAPI append its own "(Line N)", which would duplicate the
@@ -37,11 +44,23 @@ public class DLESemanticException extends OWLParserException {
         super(at(message, line, column));
     }
 
+    /**
+     * A failure with no position to report.
+     *
+     * @param message what is wrong
+     */
     public DLESemanticException(String message) {
         super(at(message, 0, 0));
     }
 
-    /** Reports against the position where {@code ctx} starts. */
+    /**
+     * Reports against the position where {@code ctx} starts.
+     *
+     * @param ctx     the rule the failure is about; a null or unstarted context yields an
+     *                exception with no position rather than a misleading one
+     * @param message what is wrong, without a position
+     * @return the exception, ready to throw
+     */
     public static DLESemanticException at(ParserRuleContext ctx, String message) {
         if (ctx == null || ctx.getStart() == null) {
             return new DLESemanticException(message);

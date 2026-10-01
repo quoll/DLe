@@ -27,9 +27,9 @@ jobs:
         java: ["11", "17", "21", "25"]
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: ${{ matrix.java }}
@@ -57,9 +57,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "21"
@@ -247,6 +247,25 @@ jobs:
   # be entirely correct — that is what a parser fix looks like — so a red X here
   # would cry wolf. `continue-on-error` makes that explicit rather than relying on
   # every command happening to succeed.
+      # Last in this job on purpose: the `clean` below deletes target/, and every step
+      # above needs the shaded jar that `Package` put there. Putting it directly after
+      # Package removed the jar before the conversion checks ran, and CI caught it.
+      #
+      # The release profile is what publishing runs, and until now nothing
+      # exercised it: javadoc ran only there, nobody read its output, and
+      # fourteen missing @param/@return/comment warnings had accumulated
+      # unnoticed until a deploy log was read. `failOnWarnings` now makes those
+      # a build failure, so this step is what keeps the count at zero.
+      #
+      # `clean` is load-bearing. Javadoc caches its output, so without it the
+      # goal reports success over a stale run and the guard never fires — which
+      # it did not, the first two times this was tested.
+      #
+      # `javadoc:javadoc` is a direct goal rather than a lifecycle phase, so the
+      # profile's gpg signing does not run and no key is needed here.
+      - name: Javadoc is clean under the release profile
+        run: mvn -B -ntp -P release clean javadoc:javadoc
+
   regression:
     if: github.event_name == 'pull_request'
     continue-on-error: true
@@ -254,7 +273,7 @@ jobs:
     timeout-minutes: 30
     steps:
       - name: Check out the branch
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           # The pull_request event's default ref is refs/pull/N/merge, which is
           # recomputed against whatever main is at the time. Comparing that
@@ -264,12 +283,12 @@ jobs:
           path: head
 
       - name: Check out the base of the pull request
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           ref: ${{ github.event.pull_request.base.sha }}
           path: base
 
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "21"
