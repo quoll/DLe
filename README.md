@@ -7,10 +7,10 @@ The DLe module reads and writes Description Logic (DL) with Extensions. DL is a 
 
 DL provides a compact, formal, and declarative way to describe ontologies, data models, and relationships, while remaining readable to both humans and machines.
 ```
-DLeFile ⊑ OntologyDocument ⊓ ∃expresses.DescriptionLogic
-expresses ≡ expressedIn⁻
-imports ∘ expresses ⊑ expresses
-InvalidDLeFile ≡ DLeFile ⊓ ¬∃expresses.DescriptionLogic
+GitHubProject ⊑ GitProject ⊓ ∃hostedOn.{GitHub}
+GreatProject ≡ GitHubProject ⊓ ∃stars.[≥ 100]
+AspirationalProject ≡ GitHubProject ⊓ ¬GreatProject
+DLe : GitHubProject
 ```
 The syntax is described in [the Wiki](https://github.com/quoll/DLe/wiki).
 
