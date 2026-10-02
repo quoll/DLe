@@ -2,9 +2,17 @@
 
 [![build](https://github.com/quoll/DLe/actions/workflows/build.yml/badge.svg)](https://github.com/quoll/DLe/actions/workflows/build.yml)
 [![release](https://img.shields.io/github/v/release/quoll/DLe?sort=semver)](https://github.com/quoll/DLe/releases/latest)
+
 The DLe module reads and writes Description Logic (DL) with Extensions. DL is a mathematical notation for describing data structures. It is ideal for communicating the structure and behavior of data for Large Language Models (LLMs).
 
-DL provides a compact, formal, and declarative way to describe ontologies, data models, and relationships, while remaining readable to both humans and machines. The syntax is described in [the Wiki](https://github.com/quoll/DLe/wiki).
+DL provides a compact, formal, and declarative way to describe ontologies, data models, and relationships, while remaining readable to both humans and machines.
+```
+GitHubProject ⊑ GitProject ⊓ ∃hostedOn.{GitHub}
+GreatProject ≡ GitHubProject ⊓ ∃stars.[≥ 100]
+AspirationalProject ≡ GitHubProject ⊓ ¬GreatProject
+DLe : GitHubProject
+```
+The syntax is described in [the Wiki](https://github.com/quoll/DLe/wiki).
 
 DLe is [OWL](https://www.w3.org/TR/owl2-overview/) compatible and is implemented as a module for [OWLAPI](https://github.com/owlcs/owlapi). The OWL constructs that are not in standard DL are provided via extensions. DLe also has extensions to describe rules through logic expressions.
 
