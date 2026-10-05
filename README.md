@@ -8,7 +8,7 @@ The DLe module reads and writes Description Logic (DL) with Extensions. DL is a 
 DL provides a compact, formal, and declarative way to describe ontologies, data models, and relationships, while remaining readable to both humans and machines.
 ```
 GitHubProject ⊑ GitProject ⊓ ∃hostedOn.{GitHub}
-GreatProject ≡ GitHubProject ⊓ ∃stars.[≥ 100]
+GreatProject ≡ GitHubProject ⊓ ∃stars.xsd:integer[≥ 100]
 AspirationalProject ≡ GitHubProject ⊓ ¬GreatProject
 DLe : GitHubProject
 ```
@@ -69,41 +69,62 @@ DL uses mathematical notation that is compact in Unicode and minimizes token cou
 SNOMED-CT is a large ontology for clinical data, describing anatomy, drugs, diseases, and many other medical systems. The following is an extract from SNOMED-CT in OWL Functional Notation that describes: "Malignant neoplasm of lower inner quadrant of breast". Since SNOMED-CT uses numerical codes for identifiers, the labels have been included:
 ```
 EquivalentClasses(
-    sct:s373080008
+    sct:373080008
     ObjectIntersectionOf(
-        sct:s64572001
+        sct:64572001
         ObjectSomeValuesFrom(
-            sct:s609096000
+            sct:609096000
             ObjectIntersectionOf(
-                ObjectSomeValuesFrom(sct:s116676008 sct:s1240414004)
-                ObjectSomeValuesFrom(sct:s363698007 sct:s19100000)))))
+                ObjectSomeValuesFrom(sct:116676008 sct:1240414004)
+                ObjectSomeValuesFrom(sct:363698007 sct:19100000)))))
 
-AnnotationAssertion(rdfs:label sct:s373080008 "Malignant neoplasm of lower inner quadrant of breast (disorder)"@en)
-AnnotationAssertion(rdfs:label sct:s64572001 "Disease (disorder)"@en)
-AnnotationAssertion(rdfs:label sct:s609096000 "Role group (attribute)"@en)
-AnnotationAssertion(rdfs:label sct:s116676008 "Associated morphology (attribute)"@en)
-AnnotationAssertion(rdfs:label sct:s363698007 "Finding site (attribute)"@en)
-AnnotationAssertion(rdfs:label sct:s1240414004 "Malignant neoplasm (morphologic abnormality)"@en)
-AnnotationAssertion(rdfs:label sct:s19100000 "Structure of lower inner quadrant of breast (body structure)"@en)
+AnnotationAssertion(rdfs:label sct:373080008 "Malignant neoplasm of lower inner quadrant of breast (disorder)"@en)
+AnnotationAssertion(rdfs:label sct:64572001 "Disease (disorder)"@en)
+AnnotationAssertion(rdfs:label sct:609096000 "Role group (attribute)"@en)
+AnnotationAssertion(rdfs:label sct:116676008 "Associated morphology (attribute)"@en)
+AnnotationAssertion(rdfs:label sct:363698007 "Finding site (attribute)"@en)
+AnnotationAssertion(rdfs:label sct:1240414004 "Malignant neoplasm (morphologic abnormality)"@en)
+AnnotationAssertion(rdfs:label sct:19100000 "Structure of lower inner quadrant of breast (body structure)"@en)
 ```
-For those unfamiliar with SNOMED-CT, each of the labeled attributes and classes also have detailed descriptions in the ontology. However, only `sct:s373080008` has been included in this example.
+For those unfamiliar with SNOMED-CT, each of the labeled attributes and classes also have detailed descriptions in the ontology. However, only `sct:373080008` has been included in this example.
 
 This states:
 > The class of "Malignant neoplasm of lower inner quadrant of breast" is a type of disease, characterized by being in a "role group" in which the finding site is at the "Structure of lower inner quadrant of breast", and the morphology is a Malignant neoplasm.
 
 This appears in DLe as:
 ```
-sct:s373080008 ≡ sct:s64572001 ⊓ (∃sct:s609096000.((∃sct:s116676008.sct:s1240414004) ⊓ (∃sct:s363698007.sct:s19100000)))
+sct:373080008 ≡ sct:64572001 ⊓ (∃sct:609096000.((∃sct:116676008.sct:1240414004) ⊓ (∃sct:363698007.sct:19100000)))
 
-@label sct:s373080008 "Malignant neoplasm of lower inner quadrant of breast (disorder)"
-@label sct:s64572001 "Disease (disorder)"
-@label sct:s609096000 "Role group (attribute)"
-@label sct:s116676008 "Associated morphology (attribute)"
-@label sct:s363698007 "Finding site (attribute)"
-@label sct:s1240414004 "Malignant neoplasm (morphologic abnormality)"
-@label sct:s19100000 "Structure of lower inner quadrant of breast (body structure)"
+@label sct:373080008 "Malignant neoplasm of lower inner quadrant of breast (disorder)"
+@label sct:64572001 "Disease (disorder)"
+@label sct:609096000 "Role group (attribute)"
+@label sct:116676008 "Associated morphology (attribute)"
+@label sct:363698007 "Finding site (attribute)"
+@label sct:1240414004 "Malignant neoplasm (morphologic abnormality)"
+@label sct:19100000 "Structure of lower inner quadrant of breast (body structure)"
 ```
 The extensive labeling does consume a lot of tokens, but no more than the standard labeling form. However, the description logic on the first line contains significantly fewer tokens, and can be easier to read for those familiar with the mathematical syntax.
+
+Note that DLe can use [CURIEs](https://www.w3.org/TR/curie/) as identifiers, rather than the simple names that typically appear in DL. This may be necessary when multiple namespaces appear in the document, or when an identifier may be ambiguous. The SNOMED-CT extract shown here requires the `sct:` namespace prefix since otherwise the identifiers would be interpreted as numbers.
+
+CURIEs with an empty prefix are written and parsed as a simple name, as we usually see in DL syntax. e.g. `:Project` appears as `Project`
+
+### Intro Example
+The top of this README contained the expression:
+```
+GitHubProject ⊑ GitProject ⊓ ∃hostedOn.{GitHub}
+GreatProject ≡ GitHubProject ⊓ ∃stars.xsd:integer[≥ 100]
+AspirationalProject ≡ GitHubProject ⊓ ¬GreatProject
+DLe : GitHubProject
+```
+
+This uses the empty prefix for everything (predefined to `http://quoll.github.io/DLe/ontology#` when nothing is declared). It states the following:
+* `GitHubProject ⊑ GitProject ⊓ ∃hostedOn.{GitHub}` — A `GithubProject` is specified by a `GitProject` that is hosted on the entity `GitHub`.
+* `GreatProject ≡ GitHubProject ⊓ ∃stars.xsd:integer[≥ 100]` — A `GreatProject` is equivalent to a `GitHubProject` that has `stars` value that is an integer of 100 or more.
+* `AspirationalProject ≡ GitHubProject ⊓ ¬GreatProject` — An `AspirationalProject` is equivalent to a `GitHubProject` that is not a `GreatProject`.
+* `DLe : GitHubProject` — `DLe` is an instance of a `GitHubProject`.
+
+This does not state whether `DLe` is a `GreatProject` or an `AspirationalProject`. If you read the stars at the top of this project, you can infer that it is an `AspirationalProject`, but if it gets more popular, then maybe the inference will change!
 
 ## Extensions to DL
 
@@ -158,7 +179,8 @@ DLe follows a small set of constraints:
 
 ## Limitations
 
-DLe is DL, so it says what DL says. Where OWL says more, some things do not survive the trip:
+DLe is DL, so it says what DL says. Where OWL says more, some things do not survive
+conversion in the same form, and may change:
 
 * **SWRL rules are out of scope.** They are a 2004 W3C Member Submission rather than part of
   OWL 2, and DL has no notation for them.
@@ -171,6 +193,12 @@ DLe is DL, so it says what DL says. Where OWL says more, some things do not surv
     annotation property somewhere else — through `@ann`, a domain or a range. `n ⊑ o` is
     otherwise indistinguishable from a subsumption between classes, and the axiom is dropped
     rather than read as the wrong thing.
+* **A few idioms are translated to the axiom OWL provides for them.** `r ∘ r ⊑ r` is read as
+  `TransitiveObjectProperty(r)`, `r ⊑ r⁻` as `SymmetricObjectProperty(r)`, `Disj(r, r⁻)` as
+  `AsymmetricObjectProperty(r)`, and likewise for reflexivity, domains and ranges — nine in
+  all, listed in §6.5 of `docs/inference-design.md`. This is deliberate and it costs a round
+  trip: an ontology holding the long form gets the dedicated axiom back. Nothing changes
+  meaning, and the long forms are strange ways to write something OWL names directly.
 * **Converting to a third format is limited by that format, not by DLe.** Manchester syntax
   cannot express every axiom and silently drops what it cannot. RDF/XML cannot write a name
   that begins with a digit where the serialisation needs it as an XML element name, which
