@@ -38,6 +38,7 @@ import static org.junit.jupiter.api.Assertions.*;
 class IdiomRecognitionTest {
 
     private static final String NS = "http://example.org/i#";
+    private static final String PREFIX_R = "@prefix : <" + NS + ">\nA ⊑ ∃r.B\n";
 
     private final OWLOntologyManager manager = OWLManager.createOWLOntologyManager();
     private final OWLDataFactory df = manager.getOWLDataFactory();
@@ -201,6 +202,74 @@ class IdiomRecognitionTest {
             df.getOWLObjectMinCardinality(1, r));
         assertTrue(read(write(ontology(axiom))).containsAxiom(axiom),
             "⊤ ⊑ ≥1 r is a minimum");
+    }
+
+    /**
+     * {@code r ∘ r ⊑ r} is transitivity, which is what OWL has a dedicated axiom for.
+     *
+     * <p>A chain from a property to itself says exactly what {@code TransitiveObjectProperty}
+     * says, and the chain is the odd way of saying it — so the reader translates toward the
+     * dedicated axiom rather than away from it. That is the opposite direction to the
+     * functionality case above, and deliberately: there, both spellings were things an author
+     * writes and the cardinality form generalises, so collapsing them lost a distinction. Here
+     * there is no generalisation to protect, and `SubObjectPropertyOf(ObjectPropertyChain(r r)
+     * r)` is not a thing anyone writes in preference.
+     *
+     * <p>The cost is accepted and stated: the chain axiom does not survive a round trip, it
+     * becomes the transitivity axiom. Nothing is lost semantically.
+     *
+     * <p>Untested until now. Deleting the whole recognition left all 777 tests green, so the
+     * behaviour could have been removed by anyone tidying up and nothing would have said so.
+     */
+    @Test
+    void aChainFromAPropertyToItselfIsTransitivity() throws Exception {
+        OWLOntology o = read(PREFIX_R + "r ∘ r ⊑ r\n");
+        assertTrue(o.containsAxiom(df.getOWLTransitiveObjectPropertyAxiom(r)),
+            () -> "r ∘ r ⊑ r is transitivity: " + o.getLogicalAxioms());
+        assertTrue(o.getAxioms(AxiomType.SUB_PROPERTY_CHAIN_OF).isEmpty(),
+            () -> "and not also a chain: " + o.getLogicalAxioms());
+    }
+
+    /** An inverse composed with itself is the transitivity of the inverse. */
+    @Test
+    void theSameHoldsForAnInverse() throws Exception {
+        OWLOntology o = read(PREFIX_R + "r⁻ ∘ r⁻ ⊑ r⁻\n");
+        assertTrue(o.containsAxiom(df.getOWLTransitiveObjectPropertyAxiom(
+                df.getOWLObjectInverseOf(r))),
+            () -> o.getLogicalAxioms().toString());
+    }
+
+    /**
+     * Every neighbouring chain stays the chain it is.
+     *
+     * <p>The recognition is exactly "two links, both the super-property". These sit on each
+     * of its boundaries, and each must fall through: a different second link, a different
+     * super-property, three links rather than two, and a super-property that is the inverse
+     * of the links. Without them the test above would pass just as well against a rule that
+     * turned every chain into transitivity.
+     */
+    @Test
+    void aChainThatIsNotTransitivityStaysAChain() throws Exception {
+        String[] chains = {"r ∘ s ⊑ r", "r ∘ r ⊑ s", "r ∘ r ∘ r ⊑ r", "r ∘ r ⊑ r⁻"};
+        for (String chain : chains) {
+            OWLOntology o = read(PREFIX_R + "A ⊑ ∃s.B\n" + chain + "\n");
+            assertEquals(1, o.getAxioms(AxiomType.SUB_PROPERTY_CHAIN_OF).size(),
+                () -> chain + " is a chain: " + o.getLogicalAxioms());
+            assertTrue(o.getAxioms(AxiomType.TRANSITIVE_OBJECT_PROPERTY).isEmpty(),
+                () -> chain + " is not transitivity: " + o.getLogicalAxioms());
+        }
+    }
+
+    /** And a genuine chain survives a round trip, since nothing rewrites it. */
+    @Test
+    void aGenuineChainRoundTrips() throws Exception {
+        OWLAxiom chain = df.getOWLSubPropertyChainOfAxiom(
+            java.util.List.of(r, df.getOWLObjectProperty(IRI.create(NS + "s"))),
+            df.getOWLObjectProperty(IRI.create(NS + "t")));
+        OWLOntology back = read(write(ontology(chain)));
+        assertTrue(back.containsAxiom(chain),
+            () -> "r ∘ s ⊑ t is not an idiom and must come back as itself: "
+                + back.getLogicalAxioms());
     }
 
     /** The idioms that already worked must keep working. */

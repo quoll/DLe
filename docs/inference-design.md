@@ -361,6 +361,43 @@ Measured:
 So the default that serves SNOMED CT is intact, and a document that means otherwise can now
 say so in one line.
 
+### 6.5 Natural idioms are translated to their declarative equivalents — kept
+
+DL states some things by construction that OWL gives a dedicated axiom. Where the
+construction says *exactly* what the axiom says, the reader translates toward the axiom:
+
+| written | read as |
+|---|---|
+| `r ∘ r ⊑ r` | `TransitiveObjectProperty(r)` |
+| `⊤ ⊑ ∃r.Self` | `ReflexiveObjectProperty(r)` |
+| `∃r.Self ⊑ ⊥` | `IrreflexiveObjectProperty(r)` |
+| `∃r.⊤ ⊑ C` | `ObjectPropertyDomain(r, C)` |
+| `(≥1 d) ⊑ C` | `DataPropertyDomain(d, C)` |
+| `⊤ ⊑ ∀r.C` | `ObjectPropertyRange(r, C)` |
+
+This is a service rather than an accident, and it costs a round trip to provide: an
+ontology holding `SubObjectPropertyOf(ObjectPropertyChain(r r) r)` gets
+`TransitiveObjectProperty(r)` back. Nothing is lost semantically — the pairs are
+equivalent — and the long forms are strange constructions when the dedicated axiom is
+sitting right there. An author who writes one in OFN is better served by the canonical
+spelling than by DLe preserving an eccentricity.
+
+**The line, because §6.1 draws it the other way.** Functionality is *not* translated:
+`Func(r)` is the axiom and `⊤ ⊑ ≤1 r` is the cardinality, and both survive as themselves.
+The difference is not arbitrary. Translation is right when the source is the odd way of
+saying something and the target is canonical. It is wrong when both spellings are things
+an author writes, and wrong again when the source form generalises — `≤1 r.C` and `≤3 r`
+are not functionality, so the cardinality syntax has to keep meaning cardinality, and
+collapsing its degenerate case would have made the rule depend on the filler and the
+number. Chains have no such generalisation to protect: `r ∘ s ⊑ t` is already a different
+axiom and stays one.
+
+So the rule is not "normalise across any equivalence". It is: translate only when the
+target is the canonical form, the source is an eccentric way of writing it, and no
+neighbouring case is swept up with it. Each recognition above sits on that boundary, and
+the boundaries are tested — `r ∘ s ⊑ r`, `r ∘ r ⊑ s`, `r ∘ r ∘ r ⊑ r` and `r ∘ r ⊑ r⁻`
+are all chains and must stay chains.
+
 ### 6.4 All of §4.1–§4.3 is in scope
 
 Not deferred again. Staged as below so each step is revertable; tagged
