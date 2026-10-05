@@ -369,6 +369,9 @@ construction says *exactly* what the axiom says, the reader translates toward th
 | written | read as |
 |---|---|
 | `r ∘ r ⊑ r` | `TransitiveObjectProperty(r)` |
+| `r ⊑ r⁻`, `r⁻ ⊑ r` | `SymmetricObjectProperty(r)` |
+| `r ≡ r⁻` | `SymmetricObjectProperty(r)` |
+| `Disj(r, r⁻)` | `AsymmetricObjectProperty(r)` |
 | `⊤ ⊑ ∃r.Self` | `ReflexiveObjectProperty(r)` |
 | `∃r.Self ⊑ ⊥` | `IrreflexiveObjectProperty(r)` |
 | `∃r.⊤ ⊑ C` | `ObjectPropertyDomain(r, C)` |
@@ -394,9 +397,24 @@ axiom and stays one.
 
 So the rule is not "normalise across any equivalence". It is: translate only when the
 target is the canonical form, the source is an eccentric way of writing it, and no
-neighbouring case is swept up with it. Each recognition above sits on that boundary, and
-the boundaries are tested — `r ∘ s ⊑ r`, `r ∘ r ⊑ s`, `r ∘ r ∘ r ⊑ r` and `r ∘ r ⊑ r⁻`
-are all chains and must stay chains.
+neighbouring case is swept up with it.
+
+The four symmetry and asymmetry rows were the last to arrive, and their absence was an
+inconsistency rather than a position: transitivity and reflexivity were being translated
+while `r ⊑ r⁻` came back as the subsumption it was written as. `r ≡ r⁻` was the worst of
+them, producing `InverseObjectProperties(r r)` — "r is the inverse of itself" — which is
+true and is a strange thing to hand anyone.
+
+Every recognition sits on a boundary, and every boundary is tested, because each rule is
+one careless predicate away from swallowing its neighbours:
+
+- `r ∘ s ⊑ r`, `r ∘ r ⊑ s`, `r ∘ r ∘ r ⊑ r`, `r ∘ r ⊑ r⁻` — chains, and must stay chains.
+- `r ⊑ s⁻`, `r ≡ s⁻`, `Disj(r, s⁻)` — two properties, not one and its own inverse.
+- `r⁻ ⊑ r⁻` — a tautology, and the case that forces the test to compare *expressions*
+  rather than names: it shares a name with itself, so a rule written on names calls it
+  symmetry.
+- `Disj(r, r⁻, s)` — three members, where asymmetry says nothing about the third, so
+  translating would drop it.
 
 ### 6.4 All of §4.1–§4.3 is in scope
 

@@ -272,6 +272,90 @@ class IdiomRecognitionTest {
                 + back.getLogicalAxioms());
     }
 
+    /**
+     * A property below its own inverse is symmetry, either way round.
+     *
+     * <p>`r ⊑ r⁻` says every pair in r is in r reversed, which is symmetry; `r⁻ ⊑ r` says the
+     * same from the other side, and `r⁻⁻ ⊑ r⁻` is the first again once the doubled marker
+     * cancels. All three used to come back as the subsumption they were written as, while
+     * transitivity and reflexivity were being translated — the same kind of idiom treated two
+     * ways for no stated reason.
+     */
+    @Test
+    void aPropertyBelowItsOwnInverseIsSymmetry() throws Exception {
+        for (String idiom : new String[] {"r ⊑ r⁻", "r⁻ ⊑ r", "r⁻⁻ ⊑ r⁻"}) {
+            OWLOntology o = read(PREFIX_R + idiom + "\n");
+            assertTrue(o.containsAxiom(df.getOWLSymmetricObjectPropertyAxiom(r)),
+                () -> idiom + " is symmetry: " + o.getLogicalAxioms());
+            assertTrue(o.getAxioms(AxiomType.SUB_OBJECT_PROPERTY).isEmpty(),
+                () -> idiom + " is not also a subsumption: " + o.getLogicalAxioms());
+        }
+    }
+
+    /**
+     * And so is an equivalence with its own inverse.
+     *
+     * <p>This produced `InverseObjectProperties(r r)` — "r is the inverse of itself" — which
+     * is true, and a strange thing to hand anyone when the dedicated axiom exists.
+     */
+    @Test
+    void anEquivalenceWithItsOwnInverseIsSymmetry() throws Exception {
+        OWLOntology o = read(PREFIX_R + "r ≡ r⁻\n");
+        assertTrue(o.containsAxiom(df.getOWLSymmetricObjectPropertyAxiom(r)),
+            () -> o.getLogicalAxioms().toString());
+        assertTrue(o.getAxioms(AxiomType.INVERSE_OBJECT_PROPERTIES).isEmpty(),
+            () -> "and not InverseObjectProperties(r r): " + o.getLogicalAxioms());
+    }
+
+    /** Disjointness with its own inverse is asymmetry. */
+    @Test
+    void disjointnessWithItsOwnInverseIsAsymmetry() throws Exception {
+        OWLOntology o = read(PREFIX_R + "Disj(r, r⁻)\n");
+        assertTrue(o.containsAxiom(df.getOWLAsymmetricObjectPropertyAxiom(r)),
+            () -> o.getLogicalAxioms().toString());
+        assertTrue(o.getAxioms(AxiomType.DISJOINT_OBJECT_PROPERTIES).isEmpty(),
+            () -> "and not also a disjointness: " + o.getLogicalAxioms());
+    }
+
+    /**
+     * Two properties are two properties, and a tautology is not symmetry.
+     *
+     * <p>The boundaries of the three rules above. `r⁻ ⊑ r⁻` is the one worth having: it shares
+     * a name with itself, so a rule written on names rather than on expressions would call it
+     * symmetry, and it is a tautology.
+     */
+    @Test
+    void theNeighboursOfSymmetryAreUntouched() throws Exception {
+        OWLOntology sub = read(PREFIX_R + "A ⊑ ∃s.B\nr ⊑ s⁻\n");
+        assertEquals(1, sub.getAxioms(AxiomType.SUB_OBJECT_PROPERTY).size(),
+            () -> "r ⊑ s⁻ is a subsumption: " + sub.getLogicalAxioms());
+
+        OWLOntology taut = read(PREFIX_R + "r⁻ ⊑ r⁻\n");
+        assertEquals(1, taut.getAxioms(AxiomType.SUB_OBJECT_PROPERTY).size(),
+            () -> "r⁻ ⊑ r⁻ is a tautology, not symmetry: " + taut.getLogicalAxioms());
+        assertTrue(taut.getAxioms(AxiomType.SYMMETRIC_OBJECT_PROPERTY).isEmpty(),
+            () -> taut.getLogicalAxioms().toString());
+
+        OWLOntology inv = read(PREFIX_R + "A ⊑ ∃s.B\nr ≡ s⁻\n");
+        assertEquals(1, inv.getAxioms(AxiomType.INVERSE_OBJECT_PROPERTIES).size(),
+            () -> "r ≡ s⁻ is an inverse pair: " + inv.getLogicalAxioms());
+
+        OWLOntology disj = read(PREFIX_R + "A ⊑ ∃s.B\nDisj(r, s⁻)\n");
+        assertEquals(1, disj.getAxioms(AxiomType.DISJOINT_OBJECT_PROPERTIES).size(),
+            () -> "Disj(r, s⁻) is disjointness: " + disj.getLogicalAxioms());
+        assertTrue(disj.getAxioms(AxiomType.ASYMMETRIC_OBJECT_PROPERTY).isEmpty(),
+            () -> disj.getLogicalAxioms().toString());
+
+        // Three members, the first two of which are a property and its own inverse. Asymmetry
+        // says nothing about the third, so reading this as asymmetry would drop `s` on the
+        // floor — which is what happens without the two-member guard.
+        OWLOntology three = read(PREFIX_R + "A ⊑ ∃s.B\nDisj(r, r⁻, s)\n");
+        assertEquals(1, three.getAxioms(AxiomType.DISJOINT_OBJECT_PROPERTIES).size(),
+            () -> "Disj(r, r⁻, s) stays a disjointness: " + three.getLogicalAxioms());
+        assertTrue(three.getAxioms(AxiomType.ASYMMETRIC_OBJECT_PROPERTY).isEmpty(),
+            () -> "and is not asymmetry: " + three.getLogicalAxioms());
+    }
+
     /** The idioms that already worked must keep working. */
     @Test
     void theExistingIdiomsAreUnaffected() throws Exception {
