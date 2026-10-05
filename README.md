@@ -171,6 +171,12 @@ DLe is DL, so it says what DL says. Where OWL says more, some things do not surv
     annotation property somewhere else — through `@ann`, a domain or a range. `n ⊑ o` is
     otherwise indistinguishable from a subsumption between classes, and the axiom is dropped
     rather than read as the wrong thing.
+* **A few idioms are translated to the axiom OWL provides for them.** `r ∘ r ⊑ r` is read as
+  `TransitiveObjectProperty(r)`, `r ⊑ r⁻` as `SymmetricObjectProperty(r)`, `Disj(r, r⁻)` as
+  `AsymmetricObjectProperty(r)`, and likewise for reflexivity, domains and ranges — nine in
+  all, listed in §6.5 of `docs/inference-design.md`. This is deliberate and it costs a round
+  trip: an ontology holding the long form gets the dedicated axiom back. Nothing changes
+  meaning, and the long forms are strange ways to write something OWL names directly.
 * **Converting to a third format is limited by that format, not by DLe.** Manchester syntax
   cannot express every axiom and silently drops what it cannot. RDF/XML cannot write a name
   that begins with a digit where the serialisation needs it as an XML element name, which
