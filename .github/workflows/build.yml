@@ -274,6 +274,59 @@ jobs:
       - name: Javadoc is clean under the release profile
         run: mvn -B -ntp -P release clean package -DskipTests javadoc:javadoc
 
+      # What a release actually uploads is a single bundle, assembled from the
+      # whole reactor and sent once from the last module. Nothing else checks its
+      # contents, and getting them wrong is silent: 0.5.1 was configured with
+      # `skipPublishing` on owltx, which cancelled the upload for every module and
+      # still left owltx in the bundle. The build succeeded, said "Skipping Central
+      # Publishing at user's request", and published nothing at all.
+      #
+      # `-DskipPublishing=true` builds the bundle and stops before the upload;
+      # `-Dgpg.skip=true` keeps it from wanting a key. Signatures are therefore
+      # absent here — their presence is not what this checks, and Central rejects
+      # a bundle missing them anyway.
+      #
+      # The placeholder settings.xml is needed because the plugin resolves the
+      # server for `publishingServerId` before it looks at `skipPublishing`, and
+      # dies with "server is null" if there is none. The values are never sent:
+      # the upload is skipped, and were it ever not skipped these would simply
+      # fail to authenticate. No secret is involved, so this runs on forks too.
+      - name: The publish bundle holds the library and not the shaded tool
+        run: |
+          set -uo pipefail
+          cat > "${RUNNER_TEMP}/central-dry-run.xml" <<'XML'
+          <settings xmlns="http://maven.apache.org/SETTINGS/1.0.0">
+            <servers>
+              <server>
+                <id>central</id>
+                <username>bundle-dry-run</username>
+                <password>bundle-dry-run</password>
+              </server>
+            </servers>
+          </settings>
+          XML
+          mvn -B -ntp -P release clean deploy -DskipPublishing=true -Dgpg.skip=true -DskipTests \
+            -s "${RUNNER_TEMP}/central-dry-run.xml"
+          bundle=target/central-publishing/central-bundle.zip
+          test -s "$bundle" || { echo "::error::no publish bundle was built"; exit 1; }
+          contents=$(unzip -l "$bundle" | awk '{print $NF}' | grep -E '\.(jar|pom)$' || true)
+          echo "$contents" | sed 's/^/  /'
+
+          # The shaded CLI carries OWLAPI, ANTLR and HttpClient inside it. On
+          # Central a consumer resolving it would get a second copy of all three.
+          if echo "$contents" | grep -q 'owltx'; then
+            echo "::error::owltx is in the publish bundle; it ships on the GitHub release only"
+            exit 1
+          fi
+          # And the converse: an exclusion that swallowed the library would be just
+          # as silent, so name what must be there.
+          for want in dlextended-parsers-.*\.jar dlextended-parsers-.*-sources\.jar \
+                      dlextended-parsers-.*-javadoc\.jar dlextended-parent-.*\.pom; do
+            echo "$contents" | grep -qE "$want" || {
+              echo "::error::publish bundle is missing $want"; exit 1; }
+          done
+          echo "publish bundle is correct"
+
   regression:
     if: github.event_name == 'pull_request'
     continue-on-error: true
