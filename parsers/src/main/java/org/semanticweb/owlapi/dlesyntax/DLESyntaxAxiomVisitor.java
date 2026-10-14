@@ -671,8 +671,17 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
 
         // Sub-property: p ⊑ q (both sides are property expressions)
         if (lhs instanceof OWLObjectPropertyExpression && rhs instanceof OWLObjectPropertyExpression) {
-            axioms.add(df.getOWLSubObjectPropertyOfAxiom(
-                (OWLObjectPropertyExpression) lhs, (OWLObjectPropertyExpression) rhs));
+            OWLObjectPropertyExpression sub = (OWLObjectPropertyExpression) lhs;
+            OWLObjectPropertyExpression sup = (OWLObjectPropertyExpression) rhs;
+            // `r ⊑ r⁻` is symmetry, and so is `r⁻ ⊑ r`: a property below its own inverse
+            // holds in both directions. See §6.5 — the dedicated axiom is what OWL has for
+            // this, and the subsumption is the eccentric way of saying it. `r ⊑ s⁻` names
+            // two properties and stays the subsumption it is.
+            if (isOwnInverse(sub, sup)) {
+                axioms.add(df.getOWLSymmetricObjectPropertyAxiom(namedHalf(sub)));
+            } else {
+                axioms.add(df.getOWLSubObjectPropertyOfAxiom(sub, sup));
+            }
             return null;
         }
         if (lhs instanceof OWLDataPropertyExpression && rhs instanceof OWLDataPropertyExpression) {
@@ -824,7 +833,15 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
                 }
             }
             if (named != null) {
-                axioms.add(df.getOWLInverseObjectPropertiesAxiom(named, inverted));
+                // `r ≡ r⁻` is symmetry too. Left alone it produced
+                // `InverseObjectProperties(r r)` — "r is the inverse of itself" — which is
+                // true, and is a strange thing to hand anyone when SymmetricObjectProperty
+                // says it plainly.
+                if (named.equals(inverted)) {
+                    axioms.add(df.getOWLSymmetricObjectPropertyAxiom(namedHalf(named)));
+                } else {
+                    axioms.add(df.getOWLInverseObjectPropertiesAxiom(named, inverted));
+                }
                 return null;
             }
         }
@@ -1043,8 +1060,38 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
         }
         List<OWLObjectPropertyExpression> props = ctx.propertyExpr().stream()
             .map(this::buildObjectProp).collect(Collectors.toList());
-        axioms.add(df.getOWLDisjointObjectPropertiesAxiom(props));
+        // `Disj(r, r⁻)` is asymmetry: a pair cannot be in r and in its own inverse at once,
+        // which is exactly "if r(x,y) then not r(y,x)". Only the two-member case, and only
+        // when the two are a property and its own inverse — `Disj(r, s⁻)` is disjointness.
+        if (props.size() == 2 && isOwnInverse(props.get(0), props.get(1))) {
+            axioms.add(df.getOWLAsymmetricObjectPropertyAxiom(namedHalf(props.get(0))));
+        } else {
+            axioms.add(df.getOWLDisjointObjectPropertiesAxiom(props));
+        }
         return null;
+    }
+
+    /**
+     * Whether these two are a property and its own inverse, either way round.
+     *
+     * <p>Compared after simplification, so a doubled marker cancels: `r⁻⁻` is `r`. The test
+     * is deliberately not "same core name" — `r⁻ ⊑ r⁻` shares a name with itself and is a
+     * tautology rather than symmetry, and must stay the subsumption it is.
+     */
+    private static boolean isOwnInverse(OWLObjectPropertyExpression one,
+                                        OWLObjectPropertyExpression other) {
+        return one.getInverseProperty().getSimplified().equals(other.getSimplified());
+    }
+
+    /**
+     * The named half of a property expression: `r` for `r`, and `r` for `r⁻`.
+     *
+     * <p>Symmetry and asymmetry of an inverse are symmetry and asymmetry of the property
+     * itself, so the axiom is written about the name rather than about `ObjectInverseOf`,
+     * which OWL allows but which no reader expects to meet.
+     */
+    private static OWLObjectPropertyExpression namedHalf(OWLObjectPropertyExpression p) {
+        return p.isAnonymous() ? p.getInverseProperty().getSimplified() : p;
     }
 
     /**

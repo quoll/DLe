@@ -144,21 +144,26 @@ class InversePropertyPositionTest {
     /**
      * One property and its inverse are two expressions, so this is not a repeat.
      *
-     * <p>The repeat check compares resolved IRIs, and would have called these the same
-     * property if it looked at the name alone.
+     * <p>The repeat check compares resolved IRIs with the inverse marker appended, and would
+     * have called these the same property if it looked at the name alone — so this must be
+     * accepted rather than refused as `Disj(r, r)` is.
+     *
+     * <p>What it produces is asymmetry, not disjointness: a pair cannot be in r and in its
+     * own inverse at once, which is what AsymmetricObjectProperty says. See §6.5. That is a
+     * stronger check of the same thing — reaching the asymmetry at all means the repeat check
+     * let the statement through.
      */
     @Test
     void aPropertyAndItsInverseAreNotARepeat() throws Exception {
-        OWLOntology o = read(PREFIX + ROLES + "Disj(r, r⁻)\n");
-        assertEquals(1, o.getAxioms(AxiomType.DISJOINT_OBJECT_PROPERTIES).size(),
-            () -> o.getLogicalAxioms().toString());
-        // The pair itself. A count of one is what `Disj(r, r)` produces too, because the OWL
-        // API collapses the repeat — so dropping the inverse marker left this green and the
-        // first half of the test could not fail for its stated reason.
+        OWLOntology o = assertDoesNotThrow(() -> read(PREFIX + ROLES + "Disj(r, r\u207b)\n"),
+            "a property and its own inverse are not the same property named twice");
         OWLObjectProperty r = df.getOWLObjectProperty(IRI.create(NS + "r"));
-        assertTrue(o.containsAxiom(df.getOWLDisjointObjectPropertiesAxiom(
-                r, r.getInverseProperty())),
-            () -> "r and its inverse are two different properties: " + o.getLogicalAxioms());
+        assertTrue(o.containsAxiom(df.getOWLAsymmetricObjectPropertyAxiom(r)),
+            () -> "Disj(r, r\u207b) is asymmetry: " + o.getLogicalAxioms());
+        assertTrue(o.getAxioms(AxiomType.DISJOINT_OBJECT_PROPERTIES).isEmpty(),
+            () -> "and not also a disjointness: " + o.getLogicalAxioms());
+        // The contrast, which is what makes the acceptance above mean anything: the same
+        // name twice really is a repeat, and really is refused.
         assertTrue(refusal(PREFIX + ROLES + "Disj(r, r)\n")
             .contains("named twice in this disjointness statement"));
     }
