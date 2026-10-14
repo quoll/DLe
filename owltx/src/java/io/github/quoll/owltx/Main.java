@@ -17,6 +17,9 @@ import org.semanticweb.owlapi.model.OWLOntologyLoaderConfiguration;
 import org.semanticweb.owlapi.model.MissingImportHandlingStrategy;
 
 import java.io.File;
+import java.io.IOException;
+import java.io.InputStream;
+import java.util.Properties;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -162,6 +165,15 @@ public class Main {
                 case "-h":
                 case "--help":
                     printUsage();
+                    throw new ExitRequest(0, null);
+                case "-V":
+                case "--version":
+                    // stdout, where --help goes to stderr, and the difference is
+                    // deliberate: printUsage doubles as the error message when no
+                    // input file is given, so it belongs on the error stream. This
+                    // is an answer to a question that was asked, and a script that
+                    // runs `owltx --version` expects to read it from stdout.
+                    System.out.println(version());
                     throw new ExitRequest(0, null);
                 default:
                     if (args[i].startsWith("-")) {
@@ -474,12 +486,40 @@ public class Main {
         return filename.substring(dot + 1);
     }
 
+    /**
+     * What the command calls itself, and the version it was built at.
+     *
+     * <p>Read from a resource Maven filters, not from the jar manifest: the manifest carries
+     * no version today, and {@code getImplementationVersion} returns null whenever the class
+     * is loaded from a directory rather than a jar, which is exactly the case under test. A
+     * version that is only correct when packaged cannot be checked by the suite that would
+     * notice it going stale.
+     *
+     * @return a line of the form {@code owltx 1.2.3}, or an honest admission if the resource
+     *         is missing, which means the jar was assembled wrongly rather than that the
+     *         version is unknowable
+     */
+    static String version() {
+        Properties properties = new Properties();
+        try (InputStream in = Main.class.getResourceAsStream("version.properties")) {
+            if (in == null) {
+                return "owltx (version resource missing)";
+            }
+            properties.load(in);
+        } catch (IOException e) {
+            return "owltx (version unreadable: " + e.getMessage() + ")";
+        }
+        String version = properties.getProperty("version");
+        return "owltx " + (version == null || version.isEmpty() ? "(version unset)" : version);
+    }
+
     private static void printUsage() {
         System.err.println("Usage: owltx [--format <fmt>] <input-file> [<output-file>]");
         System.err.println();
         System.err.println("Options:");
         System.err.println("  -f, --format <fmt>   Output format (overrides file extension)");
         System.err.println("  -h, --help           Show this help");
+        System.err.println("  -V, --version        Show the version");
         System.err.println();
         System.err.println("Formats (name aliases):");
         System.err.println("  dle, dlesyntax       DLE Syntax — extended DL with annotations (default)");
