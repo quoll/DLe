@@ -86,7 +86,7 @@ AnnotationAssertion(rdfs:label sct:363698007 "Finding site (attribute)"@en)
 AnnotationAssertion(rdfs:label sct:1240414004 "Malignant neoplasm (morphologic abnormality)"@en)
 AnnotationAssertion(rdfs:label sct:19100000 "Structure of lower inner quadrant of breast (body structure)"@en)
 ```
-For those unfamiliar with SNOMED-CT, each of the labeled attributes and classes also have detailed descriptions in the ontology. However, only `sct:373080008` has been included in this example.
+For those unfamiliar with SNOMED-CT, each of the labeled attributes and classes also has detailed descriptions in the ontology. However, only `sct:373080008` has been included in this example.
 
 This states:
 > The class of "Malignant neoplasm of lower inner quadrant of breast" is a type of disease, characterized by being in a "role group" in which the finding site is at the "Structure of lower inner quadrant of breast", and the morphology is a Malignant neoplasm.
@@ -119,7 +119,7 @@ DLe : GitHubProject
 ```
 
 This uses the empty prefix for everything (predefined to `http://quoll.github.io/DLe/ontology#` when nothing is declared). It states the following:
-* `GitHubProject ⊑ GitProject ⊓ ∃hostedOn.{GitHub}` — A `GithubProject` is specified by a `GitProject` that is hosted on the entity `GitHub`.
+* `GitHubProject ⊑ GitProject ⊓ ∃hostedOn.{GitHub}` — A `GitHubProject` is specified by a `GitProject` that is hosted on the entity `GitHub`.
 * `GreatProject ≡ GitHubProject ⊓ ∃stars.xsd:integer[≥ 100]` — A `GreatProject` is equivalent to a `GitHubProject` that has `stars` value that is an integer of 100 or more.
 * `AspirationalProject ≡ GitHubProject ⊓ ¬GreatProject` — An `AspirationalProject` is equivalent to a `GitHubProject` that is not a `GreatProject`.
 * `DLe : GitHubProject` — `DLe` is an instance of a `GitHubProject`.
