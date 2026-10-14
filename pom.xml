@@ -177,6 +177,23 @@
                         <configuration>
                             <publishingServerId>central</publishingServerId>
                             <autoPublish>true</autoPublish>
+                            <!-- owltx is the command-line tool, shipped as an attachment on the
+                                 GitHub release rather than published to Central. The jar is
+                                 shaded — OWLAPI, ANTLR and Apache HttpClient are all inside it,
+                                 which is what makes it runnable with `java -jar` and exactly
+                                 what should not go to Central, where a consumer resolving it
+                                 would get a second copy of everything.
+
+                                 This has to be an exclusion from the bundle, and it has to live
+                                 here. The plugin is an aggregator in effect: every module stages
+                                 into one directory and the upload happens once, from the last
+                                 module in the reactor. Setting `skipPublishing` on owltx — the
+                                 last module — therefore cancelled the single upload for the
+                                 whole reactor while still leaving owltx in the bundle, so 0.5.1
+                                 built a bundle containing everything and published nothing. -->
+                            <excludeArtifacts>
+                                <artifact>owltx</artifact>
+                            </excludeArtifacts>
                         </configuration>
                     </plugin>
                 </plugins>
