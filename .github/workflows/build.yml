@@ -261,10 +261,18 @@ jobs:
       # goal reports success over a stale run and the guard never fires — which
       # it did not, the first two times this was tested.
       #
-      # `javadoc:javadoc` is a direct goal rather than a lifecycle phase, so the
-      # profile's gpg signing does not run and no key is needed here.
+      # `package` is load-bearing too, and for a less obvious reason. A direct
+      # goal invocation does not run the lifecycle, so without it the reactor
+      # never builds the parsers jar, and owltx resolves its dependency from a
+      # repository instead. That works on every build *except* the one after a
+      # version bump, where the new version exists nowhere yet — which is exactly
+      # when the release profile most needs checking. `package` makes the reactor
+      # satisfy the dependency from this build, so the step no longer depends on
+      # the version it is testing having already been published.
+      #
+      # gpg signing binds to `verify`, so stopping at `package` still needs no key.
       - name: Javadoc is clean under the release profile
-        run: mvn -B -ntp -P release clean javadoc:javadoc
+        run: mvn -B -ntp -P release clean package -DskipTests javadoc:javadoc
 
   regression:
     if: github.event_name == 'pull_request'
