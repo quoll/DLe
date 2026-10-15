@@ -17,6 +17,10 @@ import org.semanticweb.owlapi.model.OWLOntologyLoaderConfiguration;
 import org.semanticweb.owlapi.model.MissingImportHandlingStrategy;
 
 import java.io.File;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.PrintStream;
+import java.util.Properties;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -161,7 +165,11 @@ public class Main {
                     break;
                 case "-h":
                 case "--help":
-                    printUsage();
+                    printUsage(System.out);
+                    throw new ExitRequest(0, null);
+                case "-V":
+                case "--version":
+                    System.out.println(version());
                     throw new ExitRequest(0, null);
                 default:
                     if (args[i].startsWith("-")) {
@@ -178,7 +186,9 @@ public class Main {
         }
 
         if (inputFile == null) {
-            printUsage();
+            // A diagnostic rather than an answer: nothing was asked for, so this goes
+            // to stderr, where the exit status says the same thing.
+            printUsage(System.err);
             throw new ExitRequest(1, null);
         }
 
@@ -474,30 +484,69 @@ public class Main {
         return filename.substring(dot + 1);
     }
 
-    private static void printUsage() {
-        System.err.println("Usage: owltx [--format <fmt>] <input-file> [<output-file>]");
-        System.err.println();
-        System.err.println("Options:");
-        System.err.println("  -f, --format <fmt>   Output format (overrides file extension)");
-        System.err.println("  -h, --help           Show this help");
-        System.err.println();
-        System.err.println("Formats (name aliases):");
-        System.err.println("  dle, dlesyntax       DLE Syntax — extended DL with annotations (default)");
-        System.err.println("  dl, dlsyntax         DL Syntax — plain DL, no DLe extensions");
-        System.err.println("  dlhtml, dlsyntaxhtml DL Syntax HTML");
-        System.err.println("  functional, ofn      OWL Functional Syntax");
-        System.err.println("  manchester, omn      Manchester OWL Syntax");
-        System.err.println("  owlxml, owx          OWL/XML");
-        System.err.println("  rdfxml, rdf, owl     RDF/XML");
-        System.err.println("  turtle, ttl          Turtle");
-        System.err.println("  krss                 KRSS");
-        System.err.println("  krss2                KRSS2");
-        System.err.println("  latex, tex           LaTeX");
-        System.err.println();
-        System.err.println("File extensions are also used for format detection:");
-        System.err.println("  .dle .dl .html .htm .ofn .omn .owx .rdf .owl .xml .ttl .krss .krss2 .latex .tex");
-        System.err.println();
-        System.err.println("If no output file is given, output goes to stdout.");
+    /**
+     * What the command calls itself, and the version it was built at.
+     *
+     * <p>Read from a resource Maven filters, not from the jar manifest: the manifest carries
+     * no version today, and {@code getImplementationVersion} returns null whenever the class
+     * is loaded from a directory rather than a jar, which is exactly the case under test. A
+     * version that is only correct when packaged cannot be checked by the suite that would
+     * notice it going stale.
+     *
+     * @return a line of the form {@code owltx 1.2.3}, or an honest admission if the resource
+     *         is missing, which means the jar was assembled wrongly rather than that the
+     *         version is unknowable
+     */
+    static String version() {
+        Properties properties = new Properties();
+        try (InputStream in = Main.class.getResourceAsStream("version.properties")) {
+            if (in == null) {
+                return "owltx (version resource missing)";
+            }
+            properties.load(in);
+        } catch (IOException e) {
+            return "owltx (version unreadable: " + e.getMessage() + ")";
+        }
+        String version = properties.getProperty("version");
+        return "owltx " + (version == null || version.isEmpty() ? "(version unset)" : version);
+    }
+
+    /**
+     * The usage text, on the stream the caller names.
+     *
+     * <p>The stream is a parameter because the same text answers two different situations.
+     * Asked for with {@code --help} it is an answer to a question, and belongs on stdout,
+     * where a reader can page or redirect it. Shown because no input file was given it is a
+     * diagnostic, and belongs on stderr with every other error, so that it does not land in
+     * the middle of whatever the command was piped into.
+     *
+     * @param out where to write it
+     */
+    private static void printUsage(PrintStream out) {
+        out.println("Usage: owltx [--format <fmt>] <input-file> [<output-file>]");
+        out.println();
+        out.println("Options:");
+        out.println("  -f, --format <fmt>   Output format (overrides file extension)");
+        out.println("  -h, --help           Show this help");
+        out.println("  -V, --version        Show the version");
+        out.println();
+        out.println("Formats (name aliases):");
+        out.println("  dle, dlesyntax       DLE Syntax — extended DL with annotations (default)");
+        out.println("  dl, dlsyntax         DL Syntax — plain DL, no DLe extensions");
+        out.println("  dlhtml, dlsyntaxhtml DL Syntax HTML");
+        out.println("  functional, ofn      OWL Functional Syntax");
+        out.println("  manchester, omn      Manchester OWL Syntax");
+        out.println("  owlxml, owx          OWL/XML");
+        out.println("  rdfxml, rdf, owl     RDF/XML");
+        out.println("  turtle, ttl          Turtle");
+        out.println("  krss                 KRSS");
+        out.println("  krss2                KRSS2");
+        out.println("  latex, tex           LaTeX");
+        out.println();
+        out.println("File extensions are also used for format detection:");
+        out.println("  .dle .dl .html .htm .ofn .omn .owx .rdf .owl .xml .ttl .krss .krss2 .latex .tex");
+        out.println();
+        out.println("If no output file is given, output goes to stdout.");
     }
 
     /** How many parser complaints are worth reading before they stop adding anything. */

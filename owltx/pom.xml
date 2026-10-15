@@ -43,6 +43,17 @@
         <sourceDirectory>src/java</sourceDirectory>
         <testSourceDirectory>src/test/java</testSourceDirectory>
 
+        <!-- Filtered so that the version option reports the version the build
+             was made at, rather than a number kept in step by hand. The directory
+             is src/resources to sit alongside src/java, this module having chosen
+             that layout over src/main/java. -->
+        <resources>
+            <resource>
+                <directory>src/resources</directory>
+                <filtering>true</filtering>
+            </resource>
+        </resources>
+
         <plugins>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
