@@ -281,32 +281,20 @@ jobs:
       # still left owltx in the bundle. The build succeeded, said "Skipping Central
       # Publishing at user's request", and published nothing at all.
       #
-      # `-DskipPublishing=true` builds the bundle and stops before the upload;
-      # `-Dgpg.skip=true` keeps it from wanting a key. Signatures are therefore
-      # absent here — their presence is not what this checks, and Central rejects
-      # a bundle missing them anyway.
+      # `-DskipUpload=true` assembles the bundle and sends nothing, which needs no
+      # credentials; `-Dgpg.skip=true` keeps it from wanting a key. Signatures are
+      # therefore absent here — their presence is not what this checks, and Central
+      # rejects a bundle missing them anyway. No secret, so this runs on forks too.
       #
-      # The placeholder settings.xml is needed because the plugin resolves the
-      # server for `publishingServerId` before it looks at `skipPublishing`, and
-      # dies with "server is null" if there is none. The values are never sent:
-      # the upload is skipped, and were it ever not skipped these would simply
-      # fail to authenticate. No secret is involved, so this runs on forks too.
+      # Not `skipPublishing`: under plugin 0.12.0 that means "leave this module out
+      # of the publication", and setting it globally builds no bundle at all, which
+      # would leave this step checking nothing. It meant something different under
+      # 0.6.0, where it cancelled the upload for the whole reactor — the bug that
+      # made 0.5.1 publish nothing.
       - name: The publish bundle holds the library and not the shaded tool
         run: |
           set -uo pipefail
-          cat > "${RUNNER_TEMP}/central-dry-run.xml" <<'XML'
-          <settings xmlns="http://maven.apache.org/SETTINGS/1.0.0">
-            <servers>
-              <server>
-                <id>central</id>
-                <username>bundle-dry-run</username>
-                <password>bundle-dry-run</password>
-              </server>
-            </servers>
-          </settings>
-          XML
-          mvn -B -ntp -P release clean deploy -DskipPublishing=true -Dgpg.skip=true -DskipTests \
-            -s "${RUNNER_TEMP}/central-dry-run.xml"
+          mvn -B -ntp -P release clean deploy -DskipUpload=true -Dgpg.skip=true -DskipTests
           bundle=target/central-publishing/central-bundle.zip
           test -s "$bundle" || { echo "::error::no publish bundle was built"; exit 1; }
           contents=$(unzip -l "$bundle" | awk '{print $NF}' | grep -E '\.(jar|pom)$' || true)
