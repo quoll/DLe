@@ -25,7 +25,27 @@ follows is the part that is not in either, and the order to do it in.
    mvn -P release clean deploy
    ```
 
-## Two things that will bite
+   Read the output rather than the exit status. `Skipping Central Publishing at
+   user's request` means nothing was uploaded, and the build says BUILD SUCCESS
+   anyway — see below.
+6. Confirm what arrived. Central takes a few minutes to sync:
+
+   ```
+   V=0.5.1
+   B=https://repo1.maven.org/maven2/io/github/quoll/owlapi
+   curl -s -O $B/dlextended-parsers/$V/dlextended-parsers-$V.jar \
+           -O $B/dlextended-parsers/$V/dlextended-parsers-$V.jar.asc
+   gpg --verify dlextended-parsers-$V.jar.asc dlextended-parsers-$V.jar
+   ```
+
+   And that what was published is what was tagged, which is the whole point of
+   releasing from a tag at all:
+
+   ```
+   git show v$V:pom.xml | diff - <(curl -s $B/dlextended-parent/$V/dlextended-parent-$V.pom)
+   ```
+
+## Three things that will bite
 
 **The gpg passphrase is not cached in a non-interactive shell.** Sign anything once
 first so the agent holds it, or pass `-Dgpg.pinentryMode=loopback` and let Maven
@@ -33,19 +53,35 @@ prompt. Never `-Dgpg.passphrase=…`: it goes into shell history and the process
 There are two secret keys — the 2023 ed25519 one is revoked — and `gpg.conf` sets
 `default-key` to the rsa4096 one, so the right key is already chosen.
 
+**The upload happens once, for the whole reactor.** Every module stages into one
+directory and the bundle is sent from the last module. So `skipPublishing` set
+anywhere cancels the upload for *everything* — it was set on `owltx`, and 0.5.1
+built a complete bundle, uploaded none of it, and exited 0. Nor does it exclude an
+artifact: the bundle still held `owltx`. Exclusion is `excludeArtifacts` in the root
+pom, and CI now assembles a bundle on every PR and checks its contents both ways, so
+this cannot rot unnoticed again.
+
 **Maven Central is permanent.** A published version cannot be replaced or withdrawn.
 The tag and the GitHub release can be redone; Central cannot. So before step 5:
 
 ```
-mvn -P release clean verify
+mvn -P release clean deploy -DskipPublishing=true
+unzip -l target/central-publishing/central-bundle.zip
 ```
 
-That builds the sources and javadoc jars and signs everything, and uploads nothing.
+That does everything a release does — builds the sources and javadoc jars, signs
+them, assembles the bundle — and stops before the upload. It is a better rehearsal
+than `verify`, because the bundle is the thing that gets sent, and listing it is the
+only way to see what Central would receive.
+
+Redoing them, while step 5 has not run yet: `gh release delete v0.5.1 --yes
+--cleanup-tag`, re-tag the fixed commit, push. Beware `git fetch --prune-tags`, which
+also deletes local-only tags that were never pushed.
 
 ## What goes where
 
 `dlextended-parsers` is the library and the only thing published to Central. `owltx`
-is the command-line tool and is skipped there — it is shaded, with OWLAPI, ANTLR and
-HttpClient inside it, which is what makes it runnable and exactly what a consumer
-resolving it from Central should not receive. It ships as an attachment on the GitHub
-release instead.
+is the command-line tool and is excluded from the bundle — it is shaded, with OWLAPI,
+ANTLR and HttpClient inside it, which is what makes it runnable and exactly what a
+consumer resolving it from Central should not receive. It ships as an attachment on
+the GitHub release instead.
