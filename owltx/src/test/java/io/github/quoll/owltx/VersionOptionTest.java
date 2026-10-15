@@ -68,9 +68,9 @@ class VersionOptionTest {
     }
 
     /**
-     * stdout, not stderr. {@code --help} goes to stderr because it doubles as the message
-     * when no input file is given; this is an answer to a question that was asked, and a
-     * script reading it expects stdout.
+     * stdout, not stderr, on the same principle as {@code --help}: what was asked for is an
+     * answer, and a script reading it expects stdout. Only the unasked-for usage text, shown
+     * when no input file is given, is a diagnostic.
      */
     @Test
     void theVersionGoesToStandardOutput() throws Exception {
