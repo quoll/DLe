@@ -28,7 +28,7 @@ This can be added to the ontology manager and used like any other syntax of OWL.
         <dependency>
             <groupId>io.github.quoll.owlapi</groupId>
             <artifactId>dlextended-parsers</artifactId>
-            <version>0.5.1</version>
+            <version>0.5.2</version>
         </dependency>
 ```
 

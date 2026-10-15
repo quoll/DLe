@@ -25,9 +25,8 @@ follows is the part that is not in either, and the order to do it in.
    mvn -P release clean deploy
    ```
 
-   Read the output rather than the exit status. `Skipping Central Publishing at
-   user's request` means nothing was uploaded, and the build says BUILD SUCCESS
-   anyway — see below.
+   Read the output rather than the exit status. Any line about skipping means
+   nothing was uploaded, and the build says BUILD SUCCESS anyway — see below.
 6. Confirm what arrived. Central takes a few minutes to sync:
 
    ```
@@ -54,23 +53,31 @@ There are two secret keys — the 2023 ed25519 one is revoked — and `gpg.conf`
 `default-key` to the rsa4096 one, so the right key is already chosen.
 
 **The upload happens once, for the whole reactor.** Every module stages into one
-directory and the bundle is sent from the last module. So `skipPublishing` set
-anywhere cancels the upload for *everything* — it was set on `owltx`, and 0.5.1
-built a complete bundle, uploaded none of it, and exited 0. Nor does it exclude an
-artifact: the bundle still held `owltx`. Exclusion is `excludeArtifacts` in the root
-pom, and CI now assembles a bundle on every PR and checks its contents both ways, so
-this cannot rot unnoticed again.
+directory and the bundle is sent at the end, so a flag meant for one module can
+silence the whole release. Under plugin 0.6.0 `skipPublishing` did exactly that: it
+was set on `owltx`, and 0.5.1 built a complete bundle, uploaded none of it, and
+exited 0 — while still leaving `owltx` in the bundle, because skipping an upload was
+never the same as excluding an artifact.
+
+Exclusion is `excludeArtifacts` in the root pom, under every version. Note that
+0.12.0 has since redefined `skipPublishing` to mean per-module exclusion, which is
+what it was reached for in the first place; `excludeArtifacts` is kept because it
+says what it does in one place rather than scattering flags across modules. CI
+assembles a bundle on every PR and checks its contents both ways, so whatever the
+flags mean next, the bundle is what gets inspected.
 
 **Maven Central is permanent.** A published version cannot be replaced or withdrawn.
 The tag and the GitHub release can be redone; Central cannot. So before step 5:
 
 ```
-mvn -P release clean deploy -DskipPublishing=true
+mvn -P release clean deploy -DskipUpload=true
 unzip -l target/central-publishing/central-bundle.zip
 ```
 
 That does everything a release does — builds the sources and javadoc jars, signs
-them, assembles the bundle — and stops before the upload. It is a better rehearsal
+them, assembles the bundle — and sends nothing. `skipUpload` rather than
+`skipPublishing`: the latter now leaves a module out of the publication altogether,
+and set globally it builds no bundle at all, leaving nothing to inspect. It is a better rehearsal
 than `verify`, because the bundle is the thing that gets sent, and listing it is the
 only way to see what Central would receive.
 
