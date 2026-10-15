@@ -1,6 +1,8 @@
 package org.semanticweb.owlapi.dlesyntax;
 
 import org.antlr.v4.runtime.ParserRuleContext;
+import org.antlr.v4.runtime.tree.ParseTree;
+import org.antlr.v4.runtime.tree.TerminalNode;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.Collections;
@@ -1938,6 +1940,127 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
     }
 
     // ── Assertions about individuals ────────────────────────────────────────
+
+    /**
+     * {@code C(a)} — a class assertion written as a unary predicate.
+     *
+     * <p>The form a language model reaches for, and the one first-order logic uses. It means
+     * exactly what {@code a : C} means. Nothing here needs to know that {@code a} may also be
+     * a class elsewhere in the document: punning is settled by the kind scanner, which sees
+     * the same assertion.
+     *
+     * @param ctx the parse tree for the assertion
+     * @return null, the axiom having been collected rather than returned
+     */
+    @Override
+    public OWLObject visitUnaryPredicateAssertion(
+            DLESyntaxParser.UnaryPredicateAssertionContext ctx) {
+        axioms.add(df.getOWLClassAssertionAxiom(
+            df.getOWLClass(expandName(ctx.name(0))),
+            individual(ctx.name(1))));
+        return null;
+    }
+
+    /**
+     * {@code r(a,b)} — an object property assertion written as a binary predicate.
+     *
+     * <p>Object rather than data because the second argument is a name. The spelling with a
+     * literal there is a separate alternative, exactly as {@code (a,b) : r} and
+     * {@code (a,"x") : d} are separate, so the choice is made by the grammar and not by
+     * guessing here.
+     *
+     * @param ctx the parse tree for the assertion
+     * @return null, the axiom having been collected rather than returned
+     */
+    @Override
+    public OWLObject visitBinaryPredicateAssertion(
+            DLESyntaxParser.BinaryPredicateAssertionContext ctx) {
+        axioms.add(df.getOWLObjectPropertyAssertionAxiom(
+            df.getOWLObjectProperty(expandName(ctx.name(0))),
+            individual(ctx.name(1)),
+            individual(ctx.name(2))));
+        return null;
+    }
+
+    /**
+     * {@code d(a,"x")} — a data property assertion written as a binary predicate.
+     *
+     * @param ctx the parse tree for the assertion
+     * @return null, the axiom having been collected rather than returned
+     */
+    @Override
+    public OWLObject visitBinaryDataPredicateAssertion(
+            DLESyntaxParser.BinaryDataPredicateAssertionContext ctx) {
+        axioms.add(df.getOWLDataPropertyAssertionAxiom(
+            df.getOWLDataProperty(expandName(ctx.name(0))),
+            individual(ctx.name(1)),
+            literalOf(ctx.literal())));
+        return null;
+    }
+
+    /**
+     * {@code HasKey(C () (d))} — a key written in OWL functional syntax.
+     *
+     * <p>Object properties first, then data properties, either group possibly empty, as OWL
+     * specifies. Unlike the DLe spelling {@code C ⊑ key(...)}, which carries one flat list and
+     * sorts it by inferred kind, this form states the split itself — so it is taken at its
+     * word, and a property named in the object group is an object property even if nothing
+     * else in the document says so.
+     *
+     * @param ctx the parse tree for the axiom
+     * @return null, the axiom having been collected rather than returned
+     */
+    @Override
+    public OWLObject visitOfnHasKeyAxiom(DLESyntaxParser.OfnHasKeyAxiomContext ctx) {
+        OWLClassExpression ce = asClass(visit(ctx.classExpr()));
+        List<DLESyntaxParser.PropertyExprContext> all = ctx.propertyExpr();
+        int split = objectGroupSize(ctx);
+        List<OWLPropertyExpression> keys = new ArrayList<>();
+        for (int i = 0; i < all.size(); i++) {
+            DLESyntaxParser.PropertyExprContext expr = all.get(i);
+            if (i < split) {
+                keys.add(buildObjectProp(expr));
+            } else {
+                refuseInverseOnDataProperty("key", expr);
+                keys.add(df.getOWLDataProperty(expandName(PropertyExprs.coreName(expr))));
+            }
+        }
+        axioms.add(df.getOWLHasKeyAxiom(ce, keys));
+        return null;
+    }
+
+    /**
+     * How many of a functional-syntax key's properties fall in the object group.
+     *
+     * <p>ANTLR flattens both groups into one {@code propertyExpr()} list, so the boundary has
+     * to be recovered from the token positions: everything before the second {@code (} is an
+     * object property. Counting commas would not do it — the groups are space-separated.
+     *
+     * @param ctx the parse tree for the axiom
+     * @return the number of leading entries belonging to the object property group
+     */
+    private static int objectGroupSize(DLESyntaxParser.OfnHasKeyAxiomContext ctx) {
+        // Walks the axiom's own children, counting the parentheses it opens: the first
+        // belongs to HasKey itself, the second to the object group, the third to the data
+        // group. Any parentheses inside the class expression are that node's children, not
+        // these, so they cannot be miscounted.
+        //
+        // Deliberately not ctx.getToken(DLESyntaxParser.T__1, …): the generated name of an
+        // implicit literal depends on the order literals appear in the grammar, so adding a
+        // rule elsewhere could silently renumber it and move the split.
+        int depth = 0;
+        int n = 0;
+        for (ParseTree child : ctx.children) {
+            if (child instanceof TerminalNode) {
+                if ("(".equals(child.getText())) {
+                    depth++;
+                }
+            } else if (child instanceof DLESyntaxParser.PropertyExprContext && depth == 2) {
+                n++;
+            }
+        }
+        return n;
+    }
 
     @Override
     public OWLObject visitObjectAssertionAxiom(

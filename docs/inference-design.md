@@ -416,6 +416,45 @@ one careless predicate away from swallowing its neighbours:
 - `Disj(r, r⁻, s)` — three members, where asymmetry says nothing about the third, so
   translating would drop it.
 
+### 6.6 Predicate spellings are accepted on input — done
+
+Language models writing DLe produce three constructs that are not DL notation, consistently
+and unprompted, because they are how first-order logic says the same things:
+
+| Written | Means | DLe spelling |
+|---|---|---|
+| `C(a)` | class assertion | `a : C` |
+| `r(a,b)` | object property assertion | `(a,b) : r` |
+| `d(a,"x")` | data property assertion | `(a,"x") : d` |
+| `HasKey(C () (d))` | key, OWL functional syntax | `C ⊑ key(d)` |
+
+All four are accepted. None are written: the writer is unchanged, so a document in these forms
+normalises to the DL spelling on its first round trip. This is the §6.5 line again — forgiving
+on input, precise on output — but it is not idiom translation. Nothing is being recognised as
+equivalent to anything; these are alternative surface syntax for axioms DLe already had, and
+the reader produces the identical axiom either way.
+
+The functional-syntax key differs from the DL one in a way worth stating: `C ⊑ key(...)` carries
+one flat list and sorts it by inferred kind, while `HasKey(C (r) (d))` states the split itself.
+The stated split is taken at its word, so a property in the object group is an object property
+even when nothing else in the document says so.
+
+**Ordering is load-bearing.** The predicate forms are last in the `axiom` rule. `name` includes
+the role-characteristic keywords, so `Transitive(parent)` matches `name '(' name ')'` exactly as
+well as the `TRANS` alternative; ANTLR takes the first alternative that matches, so the keyword
+reading wins. That is the intended reading and the settled rule: where a construct could be a
+keyword form or a general form, it is **always** the keyword. Anyone who genuinely means a class
+named `Transitive` must namespace it — `myns:Transitive(prop)` — because the bare word is
+reserved. `HasKey` is reserved outright and, unlike the role words, is not in `name` at all.
+
+A grammar reordering would change the meaning of existing documents with no error raised, so
+`PredicateFormTest` pins every keyword in both spellings; moving the generic alternatives above
+the keyword ones fails it.
+
+These forms also overlap `PredicateDefinition`, which is the same shape followed by `≝`. That
+one is not settled by ordering but by the trailing token: with a `≝` it is a definition, without
+one it is an assertion.
+
 ### 6.4 All of §4.1–§4.3 is in scope
 
 Not deferred again. Staged as below so each step is revertable; tagged

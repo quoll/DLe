@@ -140,6 +140,28 @@ axiom
     | name NOT_EQUAL name (NOT_EQUAL name)*         # DifferentIndividualsAxiom
     | name PNAME_NS classExpr                       # ClassAssertionAxiom
     | PREFIXED_NAME                                 # PrefixedClassAssertionAxiom
+
+    // Assertions written as predicates, which is how a language model writes them
+    // unprompted, and how they read in first-order logic: `C(a)`, `r(a,b)`, `d(a,"x")`.
+    // Accepted as input; the writer still emits `a : C` and `(a,b) : r`.
+    //
+    // Last on purpose. These overlap every keyword form above — `Transitive(parent)`
+    // matches `name '(' name ')'` just as well as the TRANS alternative, because `name`
+    // includes the role-axiom keywords. ANTLR takes the first alternative that matches,
+    // so the keyword reading always wins, which is the intended one. A user who really
+    // means a class called Transitive must namespace it: `myns:Transitive(prop)`.
+    //
+    // They also overlap PredicateDefinition in the `annotation` rule, which is the same
+    // shape followed by `≝`. That one is settled by the trailing token rather than by
+    // ordering: with a `≝` it is a definition, without one it is an assertion.
+    | name '(' name ')'                             # UnaryPredicateAssertion
+    | name '(' name ',' name ')'                    # BinaryPredicateAssertion
+    | name '(' name ',' literal ')'                 # BinaryDataPredicateAssertion
+
+    // The OWL functional syntax for a key, object properties then data properties, either
+    // group possibly empty: `HasKey(ComponentType () (mm:id))`. The DLe spelling is
+    // `C ⊑ key(...)`, which is what gets written back out.
+    | HASKEY '(' classExpr '(' propertyExpr* ')' '(' propertyExpr* ')' ')'  # OfnHasKeyAxiom
     ;
 
 // a = b   and   a ≠ b   — identity and distinctness of individuals. Both are n-ary in OWL
@@ -379,6 +401,11 @@ IRREF : 'Irref'       | 'Irreflexive' ;
 SYM   : 'Sym'         | 'Symmetric'   ;
 ASYM  : 'Asym'        | 'Asymmetric'  ;
 DISJ  : 'Disj'  ;
+
+// OWL functional syntax, which is what models reach for when writing a key. Reserved
+// rather than context-sensitive: unlike the role-axiom words above it is not in `name`,
+// so `HasKey` cannot also be an entity. `key` is already reserved the same way.
+HASKEY : 'HasKey' ;
 
 // Boolean literals — must precede NAME
 BOOL : 'true' | 'false' ;
