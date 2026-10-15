@@ -459,6 +459,92 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
         return null;
     }
 
+    /**
+     * {@code C(a)} — the predicate spelling of a class assertion.
+     *
+     * <p>Says the same thing about kinds as {@code a : C}: the first name is a class. The
+     * second is an individual, which this pass does not track, and deliberately so — a name
+     * can be an individual and a class at once, which is the punning case this form arrives
+     * in, and recording individual-ness here would not change any decision the pass makes.
+     *
+     * @param ctx the parse tree for the assertion
+     * @return null; this pass collects rather than returns
+     */
+    @Override
+    public Void visitUnaryPredicateAssertion(
+            DLESyntaxParser.UnaryPredicateAssertionContext ctx) {
+        markClass(ctx.name(0).getText(), Findings.Certainty.POSITIONAL, ctx.start.getLine());
+        return visitChildren(ctx);
+    }
+
+    /**
+     * {@code r(a,b)} — the predicate spelling of an object property assertion.
+     *
+     * @param ctx the parse tree for the assertion
+     * @return null; this pass collects rather than returns
+     */
+    @Override
+    public Void visitBinaryPredicateAssertion(
+            DLESyntaxParser.BinaryPredicateAssertionContext ctx) {
+        String property = ctx.name(0).getText();
+        classifyUnknownRole(property);
+        recordKindEvidence(property, false, ctx.start.getLine());
+        return visitChildren(ctx);
+    }
+
+    /**
+     * {@code d(a,"x")} — the predicate spelling of a data property assertion.
+     *
+     * @param ctx the parse tree for the assertion
+     * @return null; this pass collects rather than returns
+     */
+    @Override
+    public Void visitBinaryDataPredicateAssertion(
+            DLESyntaxParser.BinaryDataPredicateAssertionContext ctx) {
+        String property = ctx.name(0).getText();
+        dataPropertyNames.add(property);
+        objectPropertyNames.remove(property);
+        recordKindEvidence(property, true, ctx.start.getLine());
+        // Descend for the same reason visitDataAssertionAxiom does: a `^^` datatype in the
+        // value is evidence too.
+        return visitChildren(ctx);
+    }
+
+    /**
+     * {@code HasKey(C (r) (d))} — a key in OWL functional syntax.
+     *
+     * <p>This form states the object/data split itself, which makes it the strongest kind
+     * evidence available: a property in the data group is a data property because the
+     * document said so, not because anything was inferred.
+     *
+     * @param ctx the parse tree for the axiom
+     * @return null; this pass collects rather than returns
+     */
+    @Override
+    public Void visitOfnHasKeyAxiom(DLESyntaxParser.OfnHasKeyAxiomContext ctx) {
+        String cls = singleBareName(ctx.classExpr());
+        if (cls != null) markClass(cls, Findings.Certainty.POSITIONAL, ctx.start.getLine());
+        int depth = 0;
+        for (org.antlr.v4.runtime.tree.ParseTree child : ctx.children) {
+            if (child instanceof org.antlr.v4.runtime.tree.TerminalNode) {
+                if ("(".equals(child.getText())) {
+                    depth++;
+                }
+            } else if (child instanceof DLESyntaxParser.PropertyExprContext) {
+                String property = child.getText().replace("\u207B", "");
+                if (depth == 2) {
+                    classifyUnknownRole(property);
+                    recordKindEvidence(property, false, ctx.start.getLine());
+                } else {
+                    dataPropertyNames.add(property);
+                    objectPropertyNames.remove(property);
+                    recordKindEvidence(property, true, ctx.start.getLine());
+                }
+            }
+        }
+        return null;
+    }
+
     @Override
     public Void visitClassAssertionAxiom(DLESyntaxParser.ClassAssertionAxiomContext ctx) {
         // Whichever way the visitor resolves the split, the class side is a class either
