@@ -74,6 +74,11 @@ mvn -P release clean deploy -DskipUpload=true
 unzip -l target/central-publishing/central-bundle.zip
 ```
 
+Do not add `-o`. Offline, Maven never resolves the publishing extension, so the
+publish goal does not run, no bundle is built, and the command still reports BUILD
+SUCCESS — a dry run that checks nothing. Confirm the bundle exists rather than
+trusting the exit status.
+
 That does everything a release does — builds the sources and javadoc jars, signs
 them, assembles the bundle — and sends nothing. `skipUpload` rather than
 `skipPublishing`: the latter now leaves a module out of the publication altogether,
