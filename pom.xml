@@ -7,7 +7,7 @@
 
     <groupId>io.github.quoll.owlapi</groupId>
     <artifactId>dlextended-parent</artifactId>
-    <version>0.5.2</version>
+    <version>0.6.0</version>
     <packaging>pom</packaging>
 
     <name>DL Extended</name>
