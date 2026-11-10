@@ -139,9 +139,16 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
      *
      * <p>Shared with {@link DLESyntaxAxiomVisitor}: the two passes keep separate
      * prefix maps and must agree about what a name resolves to.
+     *
+     * <p>These two and no others: the header names exactly this pair beyond the four
+     * — owl, rdfs, rdf, xsd — that the prefix maps have always been seeded with.
+     * Anything else is still a document\u0027s own business to declare.
      */
-    static final Map<String, String> WELL_KNOWN_PREFIXES =
-        Map.of("skos:", "http://www.w3.org/2004/02/skos/core#");
+    static final Map<String, String> WELL_KNOWN_PREFIXES = Map.of(
+        "skos:",    "http://www.w3.org/2004/02/skos/core#",
+        // Slash-terminated, unlike every other namespace here: dcterms:creator is
+        // http://purl.org/dc/terms/creator, with no separator of its own to add.
+        "dcterms:", "http://purl.org/dc/terms/");
 
     // Prefix map, needed only to resolve the kind statements.  Recognising them by
     // spelling is not sound: a document may bind the OWL namespace to some other prefix,
