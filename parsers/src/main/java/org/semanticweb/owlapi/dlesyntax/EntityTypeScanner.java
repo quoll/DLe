@@ -128,6 +128,21 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
      */
     private final Set<String> annotationPropertyNames = new LinkedHashSet<>();
 
+    /**
+     * Namespaces a document may use without declaring them.
+     *
+     * <p>The file header has always said these are implicitly declared, and they were
+     * not — in either implementation. Rather than retract the claim, the prefix is
+     * registered the first time a name actually uses it. A document that never
+     * mentions one neither needs a declaration nor gains one on the way out, because
+     * the writer emits the prefixes the reader ended up holding.
+     *
+     * <p>Shared with {@link DLESyntaxAxiomVisitor}: the two passes keep separate
+     * prefix maps and must agree about what a name resolves to.
+     */
+    static final Map<String, String> WELL_KNOWN_PREFIXES =
+        Map.of("skos:", "http://www.w3.org/2004/02/skos/core#");
+
     // Prefix map, needed only to resolve the kind statements.  Recognising them by
     // spelling is not sound: a document may bind the OWL namespace to some other prefix,
     // in which case the statement is missed, and it may bind `owl:` to some other
@@ -1510,7 +1525,13 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
             String base = prefixes.get(":");
             return base == null ? null : base + name;
         }
-        String base = prefixes.get(name.substring(0, colon + 1));
+        String prefix = name.substring(0, colon + 1);
+        String base = prefixes.get(prefix);
+        if (base == null) {
+            // Not registered into this map: it never reaches the writer, so there is
+            // nothing here to record. The visitor's map is what decides the output.
+            base = WELL_KNOWN_PREFIXES.get(prefix);
+        }
         return base == null ? null : base + name.substring(colon + 1);
     }
 
