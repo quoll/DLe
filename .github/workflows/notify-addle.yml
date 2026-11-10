@@ -1,0 +1,72 @@
+# Tell adDLe when a file it copies from here has changed.
+#
+# quoll/addle vendors three files from this repository — the grammar, the
+# conformance corpus and the document header — and checks them against their
+# source. It used to do that on a weekly timer, which is the wrong instrument:
+# GitHub disables a scheduled workflow after 60 days without repository
+# activity, so the timer switches itself off during precisely the long quiet
+# periods it exists to cover. That happened, and a real drift sat unreported.
+#
+# This repository knows the moment one of those files lands on main, so it says
+# so. The check downstream then runs within the minute, against the commit that
+# caused it, and nothing depends on a timer staying alive.
+#
+# The paths below must stay in step with SHARED_FILES in addle's
+# tools/grammar.py. A file added there and not here is simply never announced,
+# and falls back to the weekly check.
+
+name: notify addle
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "parsers/src/main/antlr4/org/semanticweb/owlapi/dlesyntax/DLESyntax.g4"
+      - "parsers/src/main/resources/org/semanticweb/owlapi/dlesyntax/dle-syntax-header.txt"
+      - "parsers/src/test/resources/data/wildlife-reserve-test.dle"
+  # For testing the wiring without having to change a shared file.
+  workflow_dispatch:
+
+# Nothing is read from or written to this repository; the token used is the
+# cross-repository one below.
+permissions: {}
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      # The default GITHUB_TOKEN is scoped to this repository and cannot
+      # dispatch to another one, so this needs a token of its own: a
+      # fine-grained PAT with Contents: read and write on quoll/addle only.
+      #
+      # Missing or expired, this fails rather than passing quietly. A silent
+      # no-op would leave the impression that adDLe is being told, which is the
+      # failure this workflow exists to prevent; addle's weekly check is the
+      # backstop meanwhile.
+      - name: Check the token is present
+        run: |
+          if [ -z "${{ secrets.ADDLE_DISPATCH_TOKEN }}" ]; then
+            echo "::error::ADDLE_DISPATCH_TOKEN is not set, so adDLe was not told that a shared file changed. Create a fine-grained PAT with Contents: read and write on quoll/addle, then: gh secret set ADDLE_DISPATCH_TOKEN --repo quoll/DLe"
+            exit 1
+          fi
+
+      - name: Tell addle a shared file changed
+        env:
+          GH_TOKEN: ${{ secrets.ADDLE_DISPATCH_TOKEN }}
+        run: |
+          set -uo pipefail
+          # --input - rather than -f: client_payload must be a nested object,
+          # which the -f flag's key=value form cannot express.
+          printf '%s' '{
+            "event_type": "dle-shared-files-changed",
+            "client_payload": {
+              "sha": "${{ github.sha }}",
+              "ref": "${{ github.ref_name }}",
+              "run_url": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            }
+          }' | gh api repos/quoll/addle/dispatches --input - || {
+            echo "::error::dispatch to quoll/addle failed — check that ADDLE_DISPATCH_TOKEN has not expired and still grants Contents: write on quoll/addle"
+            exit 1
+          }
+          echo "told quoll/addle about ${{ github.sha }}" >> "$GITHUB_STEP_SUMMARY"
