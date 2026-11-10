@@ -1919,6 +1919,47 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
         return null;
     }
 
+    /**
+     * Whether a prefix may be used here: declared by the document, or well known.
+     *
+     * <p>Asked where the decision turns on a prefix <em>existing</em> rather than on
+     * what it expands to. Such a decision must not depend on how far into the
+     * document the reader has got — {@code skos:a:C} has to read the same way at the
+     * top of a file and at the bottom — so it consults the well-known set directly
+     * rather than waiting for {@link #namespaceFor} to have registered it.
+     *
+     * @param prefixLabel a prefix including its colon, such as {@code "skos:"}
+     * @return true if a name may use this prefix
+     */
+    private boolean isKnownPrefix(String prefixLabel) {
+        return prefixes.containsKey(prefixLabel)
+            || EntityTypeScanner.WELL_KNOWN_PREFIXES.containsKey(prefixLabel);
+    }
+
+    /**
+     * The namespace a prefix is bound to, registering a well-known one on first use.
+     *
+     * <p>That registration is exactly what puts the prefix in the output, because the
+     * writer emits whatever this map ends up holding. A document that never names one
+     * never reaches that line and so never acquires the declaration; a document that
+     * declares the prefix itself keeps its own binding, since the map is consulted
+     * first.
+     *
+     * @param prefixLabel a prefix including its colon, such as {@code "skos:"}
+     * @return the namespace it expands to, or null if neither declared nor well known
+     */
+    private String namespaceFor(String prefixLabel) {
+        String base = prefixes.get(prefixLabel);
+        if (base != null) {
+            return base;
+        }
+        base = EntityTypeScanner.WELL_KNOWN_PREFIXES.get(prefixLabel);
+        if (base != null) {
+            prefixes.put(prefixLabel, base);
+        }
+        return base;
+    }
+
     /** Resolves a raw name token text (bare or prefixed) to a full IRI using the prefix map. */
     private IRI expandNameText(String text) {
         int colon = text.indexOf(':');
@@ -1931,7 +1972,7 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
         if (colon > 0) {
             String prefix = text.substring(0, colon + 1);
             String local  = text.substring(colon + 1);
-            String base   = prefixes.get(prefix);
+            String base   = namespaceFor(prefix);
             if (base == null) return null;
             return IRI.create(base + local);
         }
@@ -2128,9 +2169,9 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
         boolean readingBPossible = !spaced && colon > 0 && second.indexOf(':') < 0
             && loneClassName != null;
         if (readingBPossible) {
-            boolean aValid = prefixes.containsKey(first.substring(0, colon + 1));
+            boolean aValid = isKnownPrefix(first.substring(0, colon + 1));
             String bPrefix = first.substring(colon + 1) + ":";
-            boolean bValid = prefixes.containsKey(bPrefix);
+            boolean bValid = isKnownPrefix(bPrefix);
             if (aValid && bValid) {
                 throw new DLESemanticException(
                     "'" + first + ":" + second + "' is ambiguous: both '"
@@ -2164,7 +2205,7 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
         String text = ctx.PREFIXED_NAME().getText();
         int colon = text.indexOf(':');
         String prefix = text.substring(0, colon + 1);
-        if (prefixes.containsKey(prefix)) {
+        if (isKnownPrefix(prefix)) {
             throw new DLESemanticException(
                 "'" + text + "' on its own is not a statement. '" + prefix + "' is a"
                     + " declared prefix, so this reads as a name rather than as the"
@@ -2348,7 +2389,7 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
             int colon = text.indexOf(':');
             String prefixLabel = text.substring(0, colon + 1); // "xsd:"
             String local       = text.substring(colon + 1);
-            String base = prefixes.get(prefixLabel);
+            String base = namespaceFor(prefixLabel);
             if (base == null) {
                 // An undeclared prefix is a mistake in the document, not a bug here.
                 throw DLESemanticException.at(ctx,
