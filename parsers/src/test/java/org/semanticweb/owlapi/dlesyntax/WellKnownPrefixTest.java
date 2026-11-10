@@ -15,9 +15,9 @@ import static org.junit.jupiter.api.Assertions.*;
  * A well-known prefix is registered on first use, not required in advance.
  *
  * <p>The file header has always said the standard prefixes are implicitly declared.
- * For {@code skos:} that was not true, in either implementation: it was rejected in
- * every position. Rather than retract the claim, the prefix is now bound the first
- * time a name actually uses it.
+ * For {@code skos:} and {@code dcterms:} that was not true, in either implementation:
+ * both were rejected in every position. Rather than retract the claim, the prefix is
+ * now bound the first time a name actually uses it, and the header is accurate.
  *
  * <p>The written document follows from that and needs no rule of its own. The writer
  * emits the prefixes the reader ended up holding, so a document that never names
@@ -34,6 +34,7 @@ class WellKnownPrefixTest {
 
     private static final String NS = "http://example.org/wk#";
     private static final String SKOS = "http://www.w3.org/2004/02/skos/core#";
+    private static final String DCTERMS = "http://purl.org/dc/terms/";
     private static final String PREFIX = "@prefix : <" + NS + ">\n";
 
     private final OWLOntologyManager manager = OWLManager.createOWLOntologyManager();
@@ -116,14 +117,38 @@ class WellKnownPrefixTest {
     }
 
     /**
-     * The boundary of this change. dcterms: is the other prefix the header names and
-     * is deliberately still undeclared, so that this stayed one prefix wide.
+     * The other prefix the header names, and the one with an unusual namespace.
+     *
+     * <p>Every other namespace here ends in {@code #}. This one ends in {@code /}, so
+     * the IRI is asserted in full: a well-known namespace that quietly gained or lost
+     * its final separator would resolve names to the wrong place without failing.
      */
     @Test
-    void dctermsStillRequiresADeclaration() {
-        assertTrue(refusal(PREFIX + "@ann A dcterms:creator \"x\"\nA ⊑ ⊤\n")
+    void dctermsNeedsNoDeclarationEither() throws Exception {
+        OWLOntology o = read(PREFIX + "@ann A dcterms:creator \"x\"\nA ⊑ ⊤\n");
+        assertTrue(o.containsAnnotationPropertyInSignature(IRI.create(DCTERMS + "creator")),
+            "dcterms:creator should be exactly " + DCTERMS + "creator");
+    }
+
+    /** Both at once, since they are registered independently. */
+    @Test
+    void bothCanBeUsedInOneDocument() throws Exception {
+        String written = rewrite(PREFIX
+            + "@ann A skos:prefLabel \"x\"\n@ann A dcterms:creator \"y\"\nA ⊑ ⊤\n");
+        assertTrue(written.contains("@prefix skos: <" + SKOS + ">"), written);
+        assertTrue(written.contains("@prefix dcterms: <" + DCTERMS + ">"), written);
+    }
+
+    /**
+     * The boundary. The header names six prefixes and no more, so a seventh is still
+     * the document\u0027s own business to declare \u2014 this is what stops "well known"
+     * drifting into "any prefix anyone recognises".
+     */
+    @Test
+    void anotherKnownVocabularyIsStillRefused() {
+        assertTrue(refusal(PREFIX + "@ann A foaf:name \"x\"\nA ⊑ ⊤\n")
                 .contains("unknown prefix"),
-            "dcterms: is not in scope yet and should still be refused");
+            "foaf: is not one the header promises, so it still needs declaring");
     }
 
     // ── Writing ─────────────────────────────────────────────────────────────
@@ -164,6 +189,52 @@ class WellKnownPrefixTest {
             + "@ann X skos:note \"earlier\"\nX ⊑ ⊤\nskos:a:C\n");
         assertTrue(first.contains("ambiguous"), "first mention: " + first);
         assertTrue(afterAnEarlierMention.contains("ambiguous"), "later: " + afterAnEarlierMention);
+    }
+
+    // ── The header's own claim ──────────────────────────────────────────────
+
+    /**
+     * Every prefix the shipped header promises is actually usable without declaring it.
+     *
+     * <p>The header is read far more often than it is edited, and it is prepended to
+     * every document the writer produces, so a promise it makes is one readers act on.
+     * This one was false for two of the six it names for as long as the line existed.
+     * Reading the claim out of the resource rather than restating it here means a
+     * seventh prefix added to that line fails this test until it is implemented.
+     *
+     * <p>Only the prefix resolving is asserted. Whether {@code owl:} or {@code rdf:}
+     * may be used as an annotation property is a different question with its own
+     * answer, so the test demands that the parse not fail <em>for want of a
+     * declaration</em>, not that it succeed.
+     */
+    @Test
+    void everyPrefixTheHeaderPromisesResolves() throws Exception {
+        String header;
+        try (java.io.InputStream in = DLESyntaxStorerBase.class
+                .getResourceAsStream("dle-syntax-header.txt")) {
+            assertNotNull(in, "the header resource should ship with the parser");
+            header = new String(in.readAllBytes(), StandardCharsets.UTF_8);
+        }
+
+        String claim = null;
+        for (String line : header.split("\n")) {
+            if (line.contains("implicitly declared")) claim = line;
+        }
+        assertNotNull(claim, "the header should still carry its implicit-prefix claim");
+
+        String[] named = claim.substring(claim.indexOf("declared:") + 9).split(",");
+        assertTrue(named.length >= 2, "expected a list of prefixes in: " + claim);
+
+        for (String raw : named) {
+            String prefix = raw.trim();
+            try {
+                read(PREFIX + "@ann A " + prefix + ":example \"x\"\nA ⊑ ⊤\n");
+            } catch (Throwable t) {
+                assertFalse(String.valueOf(t.getMessage()).contains("unknown prefix"),
+                    "the header promises '" + prefix + ":' is implicitly declared, but: "
+                        + t.getMessage());
+            }
+        }
     }
 
     /** The same, for the lone-prefixed-name reading. */
