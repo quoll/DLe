@@ -19,6 +19,7 @@
 # - Prefixed names use declared prefixes (e.g., xsd:string) 
 # - All standard prefixes are implicitly declared: owl, rdfs, rdf, xsd, skos, dcterms
 # - Class identifiers conventionally begin with an upper-case letter; role, field and predicate identifiers with a lower-case letter.
+#   A punned IRI is one name in both uses, so it can follow only one of these.
 #
 # Assertions:
 # a : C  — a is an instance of C; C(a) in FOL
