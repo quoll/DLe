@@ -682,9 +682,18 @@ class UnreadableOutputTest {
         assertDoesNotThrow(() -> read(write(o)), () -> body);
     }
 
-    /** The untagged one is still suppressed, since the reader puts it back. */
+    /**
+     * The untagged one is written out, because the reader no longer puts it back.
+     *
+     * <p>It used to be suppressed: {@code @db Thing1} and
+     * {@code @db Thing1 "Thing1"} meant the same thing, so the shorter was
+     * written. They no longer do — the bare form now names the subject's IRI,
+     * since rdfs:isDefinedBy ranges over rdfs:Resource and an identifier that is
+     * a resource should be one. Leaving the literal out would hand back an IRI
+     * on the next read, which is a different axiom.
+     */
     @Test
-    void anUntaggedIsDefinedByValueIsStillSuppressed() throws Exception {
+    void anUntaggedIsDefinedByValueIsWrittenOut() throws Exception {
         IRI subject = IRI.create(NS + "Thing1");
         OWLOntology o = ontology(
             df.getOWLAnnotationAssertionAxiom(
@@ -695,8 +704,15 @@ class UnreadableOutputTest {
                 df.getOWLClass(IRI.create(NS + "B"))));
 
         String body = statementsOnly(write(o));
-        assertTrue(body.contains("@db Thing1\n"),
-            () -> "a redundant value is left out:\n" + body);
+        assertTrue(body.contains("@db Thing1 \"Thing1\""),
+            () -> "the literal has to be written to survive:\n" + body);
+        // The property that matters, rather than the spelling that delivers it.
+        assertTrue(read(write(o)).containsAxiom(
+                df.getOWLAnnotationAssertionAxiom(
+                    df.getOWLAnnotationProperty(IRI.create(
+                        "http://www.w3.org/2000/01/rdf-schema#isDefinedBy")),
+                    subject, df.getOWLLiteral("Thing1"))),
+            () -> "a literal identifier must come back a literal:\n" + body);
     }
 
     /**

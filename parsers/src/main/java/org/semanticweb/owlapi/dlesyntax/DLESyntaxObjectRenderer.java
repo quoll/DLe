@@ -1256,13 +1256,25 @@ public class DLESyntaxObjectRenderer extends DLSyntaxObjectRenderer {
             write(" ");
             write(renderValue(value));
         } else if (OWLRDFVocabulary.RDFS_IS_DEFINED_BY.getIRI().equals(propIRI)
-                && value instanceof OWLLiteral) {
+                && (value instanceof OWLLiteral || value instanceof IRI)) {
             write("@db ");
             write(subject);
-            // As with @label: a tagged literal is a different literal, so suppressing it
-            // as redundant and letting the reader regenerate it loses the tag.
-            OWLLiteral dbValue = (OWLLiteral) value;
-            if (!dbValue.getLiteral().equals(subject) || !isPlainString(dbValue)) {
+            // rdfs:isDefinedBy ranges over rdfs:Resource, so the identifier is a
+            // literal when the store is queried by a key and an IRI when it is
+            // queried by a resource. Both are written here; an IRI used to fall
+            // through to the general `@ann` form.
+            if (value instanceof IRI) {
+                // `@db A` is the short form of naming the subject itself, so the
+                // IRI is written only when it is some other resource.
+                if (!value.equals(axiom.getSubject())) {
+                    write(" ");
+                    write(renderValue(value));
+                }
+            } else {
+                // Always written, now that the bare form means the subject's IRI.
+                // Suppressing a literal equal to the name and letting the reader
+                // regenerate it would hand back an IRI instead, quietly changing
+                // the axiom. A tagged literal was never suppressible either.
                 write(" ");
                 write(renderValue(value));
             }
