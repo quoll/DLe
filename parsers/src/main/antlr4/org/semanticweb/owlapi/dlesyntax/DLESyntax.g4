@@ -38,7 +38,7 @@ annotation
     : AT_LABEL     name annotationString      # LabelAnnotation
     | AT_DOC       name annotationString      # DocAnnotation
     | AT_STORAGE   name annotationString      # StorageAnnotation
-    | AT_DB        name annotationString?      # DbAnnotation
+    | AT_DB        name annotationValue?       # DbAnnotation
     | AT_ANN       name name annotationValue           # AnnAnnotation
     | name '(' name (',' name)* ')' DEFINED_AS_LINE   # PredicateDefinition
     | name DEFINED_AS_LINE                             # FolAnnotation
