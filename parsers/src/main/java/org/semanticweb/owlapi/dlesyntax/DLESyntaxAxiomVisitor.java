@@ -455,9 +455,23 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
     @Override
     public OWLObject visitDbAnnotation(DLESyntaxParser.DbAnnotationContext ctx) {
         IRI subject = expandName(ctx.name());
-        OWLLiteral value = ctx.annotationString() != null
-            ? annotationLiteral(ctx.annotationString())
-            : df.getOWLLiteral(ctx.name().getText());
+        // rdfs:isDefinedBy ranges over rdfs:Resource, so the identifier may be a
+        // literal or an IRI. A string is a key the database is queried by; a name
+        // is the resource it is queried by, once the store speaks RDF. Writing an
+        // IRI as a string and having the reader of the document take it apart
+        // again is a conversion neither end needs.
+        DLESyntaxParser.AnnotationValueContext given = ctx.annotationValue();
+        OWLAnnotationValue value;
+        if (given == null) {
+            // `@db A` says A is in the database under its own identifier, which is
+            // the subject itself rather than its name written out as a string.
+            value = subject;
+        } else if (given instanceof DLESyntaxParser.IriAnnotationValueContext) {
+            value = expandName(((DLESyntaxParser.IriAnnotationValueContext) given).name());
+        } else {
+            value = annotationLiteral(
+                ((DLESyntaxParser.StringAnnotationValueContext) given).annotationString());
+        }
         axioms.add(df.getOWLAnnotationAssertionAxiom(
             df.getOWLAnnotationProperty(OWLRDFVocabulary.RDFS_IS_DEFINED_BY.getIRI()),
             subject, value));
