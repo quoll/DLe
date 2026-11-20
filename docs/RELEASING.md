@@ -10,6 +10,22 @@ follows is the part that is not in either, and the order to do it in.
    and the dependency snippet in `README.md`. Nothing reads `owltx/VERSION` during the
    build, so it is the one that drifts — the release workflow fails if it disagrees
    with the tag.
+
+   **Merging a PR does not bump anything.** The bump is its own commit, and the step
+   that catches its absence is not the build — the tree is perfectly valid at the
+   version already released. What catches it is Central, at the very end, rejecting a
+   version it already has. One line says so first:
+
+   ```
+   V=$(sed -n 's/.*<version>\(.*\)<\/version>.*/\1/p' pom.xml | head -1)
+   curl -s -o /dev/null -w "%{http_code}\n" \
+     https://repo1.maven.org/maven2/io/github/quoll/owlapi/dlextended-parsers/$V/dlextended-parsers-$V.pom
+   ```
+
+   `404` means the version is free. `200` means it is published and the bump was
+   missed; Central is append-only, so a second attempt at the same version is refused
+   rather than overwriting anything, but the deploy fails after building and signing
+   everything.
 2. Open a PR and let the checks pass. `main` is protected: no direct pushes, and the
    four `build` jobs plus `cli` must be green. No approving review is required, so you
    can merge your own.
