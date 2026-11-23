@@ -29,8 +29,31 @@ follows is the part that is not in either, and the order to do it in.
 2. Open a PR and let the checks pass. `main` is protected: no direct pushes, and the
    four `build` jobs plus `cli` must be green. No approving review is required, so you
    can merge your own.
-3. Merge, then tag the merge commit and push the tag:
-   `git tag -a v0.5.0 -m "DLe 0.5.0" && git push origin v0.5.0`
+3. Merge, then tag **the merge commit** and push the tag. Pull first, and tag by
+   hash rather than by whatever `main` happens to point at locally — a tag cut
+   before the bump merged names a tree at the previous version, and the release
+   workflow stops with `tag and poms disagree`:
+
+   ```
+   git pull --ff-only
+   git log --oneline -1                    # the bump's merge commit
+   git show HEAD:owltx/VERSION             # must equal the tag you are about to push
+   git tag -a v0.6.3 -m "DLe 0.6.3" && git push origin v0.6.3
+   ```
+
+   Then ask Central again, because step 1 asked before the work was merged and a
+   lot can happen in between — including someone deploying that version from the
+   release branch while the PR was still open, which is how 0.6.2 came to exist
+   on Central holding code the 0.6.2 tag never contained:
+
+   ```
+   V=$(cat owltx/VERSION)
+   curl -s -o /dev/null -w "%{http_code}\n" \
+     https://repo1.maven.org/maven2/io/github/quoll/owlapi/dlextended-parsers/$V/dlextended-parsers-$V.pom
+   ```
+
+   404 and the version is still yours. 200 and it is spent: Central is
+   append-only, so the remedy is another bump, not another attempt.
 4. The `release` workflow builds the tag, checks the artifacts carry the version the
    tag claims, runs the CLI, and publishes the GitHub release with `owltx-<v>.jar` and
    `dlextended-parsers-<v>.jar` attached. Download the jar and run it — the point of
