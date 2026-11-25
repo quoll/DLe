@@ -8,12 +8,15 @@ import org.semanticweb.owlapi.model.IRI;
 import org.semanticweb.owlapi.formats.DLESyntaxDocumentFormat;
 import org.semanticweb.owlapi.model.OWLOntology;
 import org.semanticweb.owlapi.model.OWLOntologyManager;
+import org.semanticweb.owlapi.model.parameters.Imports;
 
 import java.io.File;
+import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.stream.Collectors;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -30,6 +33,7 @@ import static org.junit.jupiter.api.Assertions.*;
 class ImportResolutionTest {
 
     private static final String NS_F = "http://example.org/f#";
+    private static final String NS_V = "http://example.org/v#";
     private static final String HEAD =
         "@ontology <http://example.org/f>\n@prefix : <http://example.org/f#>\n";
 
@@ -139,6 +143,105 @@ class ImportResolutionTest {
             assertEquals(c[1], DLEOntologyParser.resolveQuotedImport(base, c[0]).toString(),
                 () -> "reference: " + c[0]);
         }
+    }
+
+    // ── @import <ref> ───────────────────────────────────────────────────────
+
+    /**
+     * A relative reference resolves against the document that declares it.
+     *
+     * <p>It used to be handed to OWL API as written, which named nothing: there is no
+     * factory for the bare reference {@code vocab-rdf.dle}, so the import failed with
+     * "could not find an appropriate factory" and everything it declared was silently
+     * missing \u2014 which then changed how the importing document was read, because what
+     * an import declares decides kinds.
+     */
+    @Test
+    void aRelativeIriResolvesAgainstTheDocument() {
+        IRI base = IRI.create("file:/dir/doc.dle");
+        String[][] cases = {
+            {"vocab-rdf.dle",      "file:/dir/vocab-rdf.dle"},
+            {"ontology/vocab.dle", "file:/dir/ontology/vocab.dle"},
+            {"../beside.dle",      "file:/beside.dle"},
+            {"./here.dle",         "file:/dir/here.dle"},
+        };
+        for (String[] c : cases) {
+            assertEquals(c[1], DLEOntologyParser.resolveIriImport(base, c[0]).toString(),
+                () -> "reference: " + c[0]);
+        }
+    }
+
+    /**
+     * An absolute IRI is never touched. It is the escape hatch for any scheme,
+     * including one only an IRI mapper or a catalogue can retrieve.
+     */
+    @Test
+    void anAbsoluteIriIsLeftAlone() {
+        IRI base = IRI.create("file:/dir/doc.dle");
+        for (String ref : new String[] {
+            "http://example.org/vocab.dle",
+            "https://example.org/v",
+            "file:/elsewhere/v.dle",
+            "urn:example:vocab",
+        }) {
+            assertEquals(ref, DLEOntologyParser.resolveIriImport(base, ref).toString(),
+                () -> "reference: " + ref);
+        }
+    }
+
+    /** A string or stream source has no location, so a relative reference stands. */
+    @Test
+    void withNoBaseARelativeIriIsLeftAlone() {
+        assertEquals("vocab.dle", DLEOntologyParser.resolveIriImport(null, "vocab.dle").toString());
+        assertEquals("http://e.org/v",
+            DLEOntologyParser.resolveIriImport(null, "http://e.org/v").toString());
+    }
+
+    /**
+     * Unlike the quoted form, the text is an IRI reference already and is resolved as
+     * written rather than percent-encoded: {@code <a%20b.dle>} names the file a b.dle.
+     */
+    @Test
+    void anIriReferenceIsNotEncodedAgain() {
+        IRI base = IRI.create("file:/dir/doc.dle");
+        assertEquals("file:/dir/a%20b.dle",
+            DLEOntologyParser.resolveIriImport(base, "a%20b.dle").toString());
+    }
+
+    /**
+     * End to end: the document really does import the file beside it.
+     *
+     * <p>The cases above exercise the resolver directly, so they pass whether or not the
+     * parser calls it \u2014 reverting the call site left every one of them green. This one
+     * goes through the parser, which is where the fault was.
+     */
+    @Test
+    void aRelativeIriImportLoadsTheFileBesideIt(@TempDir Path dir) throws Exception {
+        Path vocab = dir.resolve("vocab.dle");
+        Files.write(vocab, ("@ontology <http://example.org/v>\n"
+            + "@prefix : <http://example.org/v#>\n"
+            + "Borrowed \u2291 \u22a4\n").getBytes(StandardCharsets.UTF_8));
+        Path doc = dir.resolve("doc.dle");
+        Files.write(doc, (HEAD + "@import <vocab.dle>\nA \u2291 \u22a4\n")
+            .getBytes(StandardCharsets.UTF_8));
+
+        OWLOntology o = parseFile(doc);
+        IRI target = o.importsDeclarations().findFirst().orElseThrow().getIRI();
+        // Compared as paths, not as text: file:/x and file:///x are the same file,
+        // and which one appears depends on who built the URI.
+        assertEquals(vocab.toRealPath(), Path.of(URI.create(target.toString())).toRealPath(),
+            () -> "the reference should have been resolved against the document, got " + target);
+
+        // What the import was for. Resolving to the right file is only half of it; the
+        // vocabulary's own class has to arrive, which is what a caller writing
+        // \u2203borrows.Borrowed next to this import is relying on.
+        IRI borrowed = IRI.create(NS_V + "Borrowed");
+        assertTrue(o.containsClassInSignature(borrowed, Imports.INCLUDED),
+            () -> borrowed + " should have come in with the import, but the closure holds "
+                + o.classesInSignature(Imports.INCLUDED)
+                    .map(c -> c.getIRI().toString()).collect(Collectors.toList()));
+        assertFalse(o.containsClassInSignature(borrowed, Imports.EXCLUDED),
+            "it belongs to the imported vocabulary, not to this document");
     }
 
     /** A Windows path is its own case, because a drive letter looks like a scheme. */
