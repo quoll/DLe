@@ -21,6 +21,22 @@ concurrency:
   group: release
   cancel-in-progress: false
 
+# Maven's enhanced local repository records, per artifact, which repository it came
+# from. A restored cache can hold an artifact whose recorded repository is not one
+# this build has configured, and Maven then refuses to use it *and* refuses to
+# fetch it again: "present in the local repository, but cached from a remote
+# repository ID that is unavailable", followed by "Unresolveable build extension".
+#
+# It bites hardest on a release, because setup-java keys the cache on the POM hashes
+# and bumping the version is what changes them — so the build restores a partial
+# cache from a prefix match. Three runs were lost to it this way, on different Java
+# versions and different plugins, each passing on a bare re-run.
+#
+# legacyLocalRepo turns that tracking off: an artifact in the local repository is
+# used because it is there, which is what a CI cache is for.
+env:
+  MAVEN_ARGS: -ntp -Dmaven.legacyLocalRepo=true
+
 jobs:
   release:
     runs-on: ubuntu-latest
