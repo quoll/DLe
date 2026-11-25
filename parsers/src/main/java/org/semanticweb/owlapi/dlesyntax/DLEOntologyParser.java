@@ -194,7 +194,8 @@ public class DLEOntologyParser extends AbstractOWLParser {
             // Apply import declarations.
             OWLOntologyManager manager = ontology.getOWLOntologyManager();
             for (String ref : visitor.getIriImportRefs()) {
-                declareAndLoad(manager, ontology, IRI.create(ref), configuration);
+                declareAndLoad(manager, ontology,
+                    resolveIriImport(source.getDocumentIRI(), ref), configuration);
             }
             for (String ref : visitor.getQuotedImportRefs()) {
                 declareAndLoad(manager, ontology,
@@ -261,6 +262,34 @@ public class DLEOntologyParser extends AbstractOWLParser {
      * Reading it literally means percent-<em>encoding</em> it to build the IRI, which is
      * what makes the write side able to hand back the same spelling.
      */
+    /**
+     * Resolves {@code @import <ref>}: a relative reference against the document, an
+     * absolute one as written.
+     *
+     * <p>An absolute IRI is the escape hatch and is never touched \u2014 it may name a
+     * scheme only an IRI mapper or catalogue can retrieve. A <em>relative</em> one is
+     * resolved against the document that declares it, as a relative IRI reference is
+     * everywhere else in RDF. Handed over as written it named nothing: OWL API has no
+     * factory for the bare reference {@code vocab-rdf.dle}, so the import failed with
+     * "could not find an appropriate factory" and the declarations it carried were
+     * silently absent.
+     *
+     * <p>The text inside the brackets is already an IRI reference, so unlike the quoted
+     * form it is not percent-encoded on the way through; it is resolved as written.
+     */
+    static IRI resolveIriImport(@Nullable IRI documentIRI, String ref) {
+        java.net.URI parsed = tryUri(ref);
+        if (parsed == null || parsed.isAbsolute() || documentIRI == null) {
+            return IRI.create(ref);
+        }
+        java.net.URI base = tryUri(documentIRI.toString());
+        if (base == null || !base.isAbsolute() || base.isOpaque()) {
+            // A string or stream source has no location to resolve against.
+            return IRI.create(ref);
+        }
+        return IRI.create(base.resolve(parsed).toString());
+    }
+
     static IRI resolveQuotedImport(@Nullable IRI documentIRI, String ref) {
         java.net.URI parsed = tryUri(ref);
         if (parsed != null && parsed.getScheme() != null
