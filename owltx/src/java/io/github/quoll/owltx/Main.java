@@ -233,6 +233,13 @@ public class Main {
                 System.err.println("warning: could not load import " + target + ": "
                     + describe(event.getCreationException()));
             }
+            // Not only its axioms are missing. What an import declares decides kinds
+            // in the importing document: a datatype it declares is an unknown name
+            // without it, which reads as a class, which makes every data property
+            // ranged on it an object property. The document is then read differently,
+            // and the place it goes wrong is rarely near the import.
+            System.err.println("  names it declares are unknown here, so kinds inferred"
+                + " from them may be wrong");
         });
         OWLOntologyLoaderConfiguration loaderConfig = manager.getOntologyLoaderConfiguration()
             .setMissingImportHandlingStrategy(MissingImportHandlingStrategy.SILENT);
