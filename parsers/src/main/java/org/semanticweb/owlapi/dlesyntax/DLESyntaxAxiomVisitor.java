@@ -50,10 +50,24 @@ class DLESyntaxAxiomVisitor extends DLESyntaxBaseVisitor<OWLObject> {
      */
     private final Set<String> datatypeNames;
 
-    /** Whether this name is a datatype: defined here, or one of the known ones. */
+    /**
+     * Datatype IRIs the imported documents declare; see
+     * {@link #useImportedDatatypes}. By IRI, because an import knows nothing of
+     * the prefixes this document binds.
+     */
+    private Set<String> importedDatatypeIris = java.util.Collections.emptySet();
+
+    /** Tells pass 2 what the imports declare, as pass 1 is told. */
+    void useImportedDatatypes(Set<String> iris) {
+        importedDatatypeIris = iris;
+    }
+
+    /** Whether this name is a datatype: defined here, imported, or one of the known ones. */
     private boolean namesADatatype(String text, @Nullable IRI iri) {
+        String asText = iri == null ? null : iri.toString();
         return datatypeNames.contains(text)
-            || EntityTypeScanner.isDatatypeIri(iri == null ? null : iri.toString());
+            || (asText != null && importedDatatypeIris.contains(asText))
+            || EntityTypeScanner.isDatatypeIri(asText);
     }
     /** Names stated to be roles by {@code X ⊑ owl:topObjectProperty}; see visitSubClassAxiom. */
     private final Set<String> explicitRoleNames;

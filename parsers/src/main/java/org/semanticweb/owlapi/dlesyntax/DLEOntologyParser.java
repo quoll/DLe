@@ -4,6 +4,7 @@ import javax.annotation.Nullable;
 import java.io.IOException;
 import java.io.Reader;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
@@ -103,8 +104,21 @@ public class DLEOntologyParser extends AbstractOWLParser {
 
             DLESyntaxParser.OntologyContext tree = parser.ontology();
 
+            // Imports are read before the scan, because what they declare decides
+            // kinds here. A filler whose datatype is declared in an import is an
+            // unknown name otherwise, which reads as a class, which makes its
+            // property an object property — and the document then fails hundreds
+            // of lines away, complaining about a sub-property axiom.
+            //
+            // Failures are swallowed: the same imports are declared and loaded
+            // below, and that path reports them through the caller's strategy.
+            // Reporting here too would say everything twice.
+            Set<String> importedDatatypes = readImportedDatatypes(
+                ontology.getOWLOntologyManager(), source.getDocumentIRI(), tree);
+
             // Pass 1 — entity type classification
             EntityTypeScanner scanner = new EntityTypeScanner();
+            scanner.useImportedDatatypes(importedDatatypes);
             // Datatype definitions first. A restriction is classified as the scan passes
             // it, so a definition further down the file has to be known before the scan
             // starts or the same document reads two ways depending on the order of its
@@ -129,6 +143,7 @@ public class DLEOntologyParser extends AbstractOWLParser {
                 scanner.getPunnedNames(),
                 scanner.getDatatypeNames(),
                 tokens);
+            visitor.useImportedDatatypes(importedDatatypes);
             visitor.visit(tree);
 
             // Collected here, not at the end of the parse. Everything below can throw —
@@ -436,6 +451,51 @@ public class DLEOntologyParser extends AbstractOWLParser {
         LOGGER.warn("{}", message);
     }
 
+    /**
+     * Loads what the document imports and returns the datatypes they declare.
+     *
+     * <p>Only the two forms that can be resolved without a prefix map: {@code <ref>}
+     * and {@code "ref"}. {@code iriRef} also admits a prefixed name, which needs the
+     * prefixes this document declares, and those are not collected until the scan. No
+     * such import has been seen; one would load below as before, informing nothing.
+     */
+    private static Set<String> readImportedDatatypes(OWLOntologyManager manager,
+                                                     @Nullable IRI documentIRI,
+                                                     DLESyntaxParser.OntologyContext tree) {
+        Set<String> datatypes = new HashSet<>();
+        for (DLESyntaxParser.ImportDeclContext ctx : tree.importDecl()) {
+            IRI target = importTarget(documentIRI, ctx);
+            if (target == null) continue;
+            try {
+                OWLOntology imported =
+                    manager.loadOntologyFromOntologyDocument(target);
+                imported.datatypesInSignature(org.semanticweb.owlapi.model.parameters
+                        .Imports.INCLUDED)
+                    .forEach(d -> datatypes.add(d.getIRI().toString()));
+            } catch (OWLOntologyCreationException | RuntimeException reportedBelow) {
+                // Deliberately silent here; see the call site.
+            }
+        }
+        return datatypes;
+    }
+
+    /** The document an import names, or null if it needs a prefix map to resolve. */
+    @Nullable
+    private static IRI importTarget(@Nullable IRI documentIRI,
+                                    DLESyntaxParser.ImportDeclContext ctx) {
+        if (ctx.STRING() != null) {
+            String ref = ctx.STRING().getText();
+            // A tag is refused during the scan, with a location to report it at.
+            if (ref.lastIndexOf('"') < ref.length() - 1) return null;
+            return resolveQuotedImport(documentIRI, DLESyntaxAxiomVisitor.unquote(ref));
+        }
+        if (ctx.iriRef() != null && ctx.iriRef().IRI() != null) {
+            String raw = ctx.iriRef().IRI().getText();
+            return resolveIriImport(documentIRI, raw.substring(1, raw.length() - 1));
+        }
+        return null;
+    }
+
     /** Records an import declaration and asks the manager to follow it. */
     private void declareAndLoad(OWLOntologyManager manager, OWLOntology ontology, IRI importIRI,
                                 OWLOntologyLoaderConfiguration configuration) {
@@ -472,7 +532,15 @@ public class DLEOntologyParser extends AbstractOWLParser {
                 throw new UnloadableImportException(
                     new OWLOntologyCreationException(describe(e), e), declaration);
             }
-            warn("could not load import <" + declaration.getIRI() + ">: " + describe(e));
+            // Not only the axioms are lost. What an import declares decides kinds
+            // here — a datatype it declares is an unknown name without it, which
+            // reads as a class and makes every property ranged on it an object
+            // property. So the document may be read differently, and the place it
+            // then goes wrong is usually nowhere near the import.
+            warn("could not load import <" + declaration.getIRI() + ">: " + describe(e)
+                + ". Names it declares are unknown here, so kinds inferred from them"
+                + " may be wrong — a datatype reads as a class, and a data property"
+                + " ranged on it reads as an object property.");
         }
     }
 

@@ -48,6 +48,20 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
      * a datatype, and it outranks both the list and the case convention.
      */
     private final Set<String> datatypeNames = new HashSet<>();
+
+    /**
+     * Datatype IRIs the documents this one imports declare.
+     *
+     * <p>Held by IRI rather than by name, because an import knows nothing of the
+     * prefixes this document binds: the same datatype may be {@code graphlake:dt}
+     * here and {@code gl:dt} there. Consulted after a name is resolved.
+     */
+    private Set<String> importedDatatypeIris = java.util.Collections.emptySet();
+
+    /** Tells the scan what the imports declare, before it starts. */
+    void useImportedDatatypes(Set<String> iris) {
+        importedDatatypeIris = iris;
+    }
     /**
      * Names tied together by an equivalence, as groups.
      *
@@ -1076,8 +1090,10 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
     private boolean isDefinitelyADatatype(String name) {
         if (datatypeNames.contains(name)) return true;
         String iri = resolve(name);
-        return iri != null
-            && org.semanticweb.owlapi.vocab.OWL2Datatype.isBuiltIn(
+        if (iri == null) return false;
+        // An import declaring it is as definite as this document declaring it.
+        return importedDatatypeIris.contains(iri)
+            || org.semanticweb.owlapi.vocab.OWL2Datatype.isBuiltIn(
                 org.semanticweb.owlapi.model.IRI.create(iri));
     }
 
@@ -2030,7 +2046,10 @@ class EntityTypeScanner extends DLESyntaxBaseVisitor<Void> {
 
     /** Whether a name, as written in the source, denotes a datatype in this document. */
     boolean isDataTypeName(String name) {
-        return datatypeNames.contains(name) || isDatatypeIri(resolve(name));
+        String iri = resolve(name);
+        return datatypeNames.contains(name)
+            || (iri != null && importedDatatypeIris.contains(iri))
+            || isDatatypeIri(iri);
     }
 
     /**
