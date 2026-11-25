@@ -532,7 +532,15 @@ public class DLEOntologyParser extends AbstractOWLParser {
                 throw new UnloadableImportException(
                     new OWLOntologyCreationException(describe(e), e), declaration);
             }
-            warn("could not load import <" + declaration.getIRI() + ">: " + describe(e));
+            // Not only the axioms are lost. What an import declares decides kinds
+            // here — a datatype it declares is an unknown name without it, which
+            // reads as a class and makes every property ranged on it an object
+            // property. So the document may be read differently, and the place it
+            // then goes wrong is usually nowhere near the import.
+            warn("could not load import <" + declaration.getIRI() + ">: " + describe(e)
+                + ". Names it declares are unknown here, so kinds inferred from them"
+                + " may be wrong — a datatype reads as a class, and a data property"
+                + " ranged on it reads as an object property.");
         }
     }
 

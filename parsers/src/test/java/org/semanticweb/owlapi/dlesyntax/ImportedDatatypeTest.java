@@ -105,6 +105,29 @@ class ImportedDatatypeTest {
     }
 
     /**
+     * A failed import says that kinds may be wrong, not only that axioms are missing.
+     *
+     * <p>Since what an import declares decides kinds here, losing one can change how
+     * the document reads \u2014 and the place it then goes wrong is rarely near the
+     * import. The warning has to say so, or the reader looks in the wrong place.
+     */
+    @Test
+    void aFailedImportWarnsThatKindsMayBeWrong(@TempDir Path dir) throws Exception {
+        Path doc = write(dir, "doc.dle",
+            DOC_HEAD + "@import <urn:example:nope>\n" + FIELD + "A \u2291 \u22a4\n");
+        DLEOntologyParser parser = new DLEOntologyParser();
+        OWLOntologyManager manager = OWLManager.createOWLOntologyManager();
+        parser.parse(new org.semanticweb.owlapi.io.FileDocumentSource(doc.toFile()),
+            manager.createOntology(),
+            manager.getOntologyLoaderConfiguration().setMissingImportHandlingStrategy(
+                MissingImportHandlingStrategy.SILENT));
+        assertFalse(parser.getWarnings().isEmpty(), "a failed import should warn");
+        String warning = parser.getWarnings().get(0);
+        assertTrue(warning.contains("kinds inferred"),
+            () -> "the warning should mention inference: " + warning);
+    }
+
+    /**
      * An unreachable import must not take the document down, only leave it less
      * informed. The missing-import strategy decides that, and reading imports early
      * must not quietly bypass it.
