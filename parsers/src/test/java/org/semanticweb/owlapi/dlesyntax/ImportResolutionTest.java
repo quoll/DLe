@@ -8,12 +8,15 @@ import org.semanticweb.owlapi.model.IRI;
 import org.semanticweb.owlapi.formats.DLESyntaxDocumentFormat;
 import org.semanticweb.owlapi.model.OWLOntology;
 import org.semanticweb.owlapi.model.OWLOntologyManager;
+import org.semanticweb.owlapi.model.parameters.Imports;
 
 import java.io.File;
+import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.stream.Collectors;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -30,6 +33,7 @@ import static org.junit.jupiter.api.Assertions.*;
 class ImportResolutionTest {
 
     private static final String NS_F = "http://example.org/f#";
+    private static final String NS_V = "http://example.org/v#";
     private static final String HEAD =
         "@ontology <http://example.org/f>\n@prefix : <http://example.org/f#>\n";
 
@@ -222,17 +226,22 @@ class ImportResolutionTest {
             .getBytes(StandardCharsets.UTF_8));
 
         OWLOntology o = parseFile(doc);
-        List<IRI> declared = o.importsDeclarations()
-            .map(d -> d.getIRI()).collect(java.util.stream.Collectors.toList());
-        assertEquals(1, declared.size(), () -> "imports: " + declared);
+        IRI target = o.importsDeclarations().findFirst().orElseThrow().getIRI();
         // Compared as paths, not as text: file:/x and file:///x are the same file,
         // and which one appears depends on who built the URI.
-        assertEquals(vocab.toRealPath(),
-            Path.of(java.net.URI.create(declared.get(0).toString())).toRealPath(),
-            () -> "the reference should have been resolved against the document, got "
-                + declared.get(0));
-        assertTrue(o.imports().findAny().isPresent(),
-            "the imported ontology should be loaded, not merely declared");
+        assertEquals(vocab.toRealPath(), Path.of(URI.create(target.toString())).toRealPath(),
+            () -> "the reference should have been resolved against the document, got " + target);
+
+        // What the import was for. Resolving to the right file is only half of it; the
+        // vocabulary's own class has to arrive, which is what a caller writing
+        // \u2203borrows.Borrowed next to this import is relying on.
+        IRI borrowed = IRI.create(NS_V + "Borrowed");
+        assertTrue(o.containsClassInSignature(borrowed, Imports.INCLUDED),
+            () -> borrowed + " should have come in with the import, but the closure holds "
+                + o.classesInSignature(Imports.INCLUDED)
+                    .map(c -> c.getIRI().toString()).collect(Collectors.toList()));
+        assertFalse(o.containsClassInSignature(borrowed, Imports.EXCLUDED),
+            "it belongs to the imported vocabulary, not to this document");
     }
 
     /** A Windows path is its own case, because a drive letter looks like a scheme. */
